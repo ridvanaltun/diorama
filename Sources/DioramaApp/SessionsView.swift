@@ -805,6 +805,7 @@ struct DecisionDetailView: View {
     @State private var mode = 0
     @State private var showTechnical = false
     @State private var showPlayground = false
+    @State private var addedTest: String?
 
     var body: some View {
         ScrollView {
@@ -895,12 +896,33 @@ struct DecisionDetailView: View {
                 }
             }
             Spacer()
+            if let addedTest {
+                Label("Added to \(addedTest)", systemImage: "checkmark").font(.caption).foregroundStyle(.green)
+            }
+            Menu {
+                Section("Add as rule test to") {
+                    ForEach(model.profiles) { p in
+                        Button(p.name) { Task { await addTest(d, to: p) } }
+                    }
+                }
+            } label: { Image(systemName: "checklist") }
+            .menuStyle(.borderlessButton).fixedSize()
+            .disabled(model.profiles.isEmpty)
+            .help("Add as Rule Test…: save this tool result as a test case in a profile, expecting the rules that match it now")
             Button { showPlayground = true } label: { Image(systemName: "testtube.2") }
                 .buttonStyle(.borderless).help("Test rules on this tool result")
             if let onClose {
                 Button(action: onClose) { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }.buttonStyle(.plain).help("Close")
             }
         }
+    }
+
+    func addTest(_ d: DecisionDetail, to p: ProfileSummary) async {
+        guard await model.perform({ try await $0.addRuleTest(p.id, decisionId: d.summary.toolUseId) }) != nil else { return }
+        await model.refreshProfiles()
+        addedTest = p.name
+        try? await Task.sleep(for: .seconds(4))
+        addedTest = nil
     }
 
     func outcomeBanner(_ d: DecisionDetail) -> some View {

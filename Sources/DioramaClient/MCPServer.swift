@@ -273,6 +273,19 @@ enum MCPTools {
             return "Profile \(d.current.profileId), version \(d.current.number) (\(d.current.id)):\n" + (try json(d.current.profile))
         },
         .init(
+            name: "add_rule_test",
+            description: "Save a recorded tool result (decision id from get_session) as a rule test in a profile, expecting the rules that match it now. Saves a new profile version. Adjust expectations with update_profile if needed.",
+            schema: schema(["profile": string("Profile name or id."), "decision_id": string("The tool result's id."), "name": string("Test name (optional).")],
+                           required: ["profile", "decision_id"]),
+            readOnly: false
+        ) { s, a in
+            let id = try arg(a, "decision_id")
+            let d = try await s.daemon().addRuleTest(try arg(a, "profile"), decisionId: id, name: a["name"] as? String)
+            let t = d.current.profile.tests?.first { $0.id == id }
+            let expected = d.current.profile.rules.filter { t?.expectMatch.contains($0.id) == true }.map(\.name)
+            return "Added “\(t?.name ?? id)” to “\(d.current.profile.name)” v\(d.current.number); expects: \(expected.isEmpty ? "no rule matches" : expected.joined(separator: ", "))."
+        },
+        .init(
             name: "run_profile_tests",
             description: "Run a profile's rule tests (sample tool results and which rules should match them). Matching only: free, no model calls. Use after changing rules.",
             schema: schema(["profile": string("Profile name or id.")], required: ["profile"]), readOnly: true

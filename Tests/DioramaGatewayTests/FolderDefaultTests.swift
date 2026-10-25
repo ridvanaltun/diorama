@@ -56,3 +56,27 @@ import Testing
         await #expect(throws: ClientError.self) { try await env.client.runProfileTests("missing") }
     }
 }
+
+@Suite struct AddRuleTestTests {
+    @Test func savesARecordedResultAsATest() async throws {
+        let env = try await TestEnv.start()
+        defer { Task { await env.stop() } }
+        let rename = Rule(id: "rename", name: "Rename", match: RuleMatch(tools: ["WebFetch"], content: "Example"), instructions: "x")
+        let other = Rule(id: "bash", name: "Bash only", match: RuleMatch(tools: ["Bash"]), instructions: "y")
+        _ = try await env.client.createProfile(Profile(name: "web", rules: [rename, other]))
+        let s = try await env.client.createSession(SessionSpec(name: "s", cwd: "/tmp", profile: "web"))
+        _ = try await env.post(s.token, body: sampleBody(results: [("toolu_at1", "Example Domain page")]))
+
+        let d = try await env.client.addRuleTest("web", decisionId: "toolu_at1")
+        #expect(d.current.number == 2)
+        let t = try #require(d.current.profile.tests?.first)
+        #expect(t.id == "toolu_at1" && t.name == "WebFetch https://example.com" && t.text == "Example Domain page" && t.expectMatch == ["rename"])
+        #expect(t.toolInput?.contains("example.com") == true && t.stage == .result)
+        #expect(try await env.client.runProfileTests("web").map(\.passed) == [true])
+
+        // Adding the same result again replaces the test.
+        let again = try await env.client.addRuleTest("web", decisionId: "toolu_at1", name: "renamed")
+        #expect(again.current.profile.tests?.map(\.name) == ["renamed"])
+        await #expect(throws: ClientError.self) { try await env.client.addRuleTest("web", decisionId: "toolu_missing") }
+    }
+}

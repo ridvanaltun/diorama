@@ -1510,3 +1510,14 @@ public struct ProfileTestRequest: Codable, Sendable {
         self.profile = profile
     }
 }
+
+/// Adds a recorded tool result to a profile's rule tests (saving a new version).
+public struct AddRuleTestRequest: Codable, Sendable {
+    public var decisionId: String
+    public var name: String?
+
+    public init(decisionId: String, name: String? = nil) {
+        self.decisionId = decisionId
+        self.name = name
+    }
+}

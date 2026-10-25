@@ -106,6 +106,16 @@ struct ControlAPI: Sendable {
         if Self.match(method, route, "POST", "profiles") != nil {
             return try ok(store.createProfile(try decode(Profile.self, req)), status: 201)
         }
+        if let c = Self.match(method, route, "POST", "profiles/:id/tests") {
+            guard let current = try store.resolveProfile(c[0]) else { throw notFound("profile") }
+            let r = try decode(AddRuleTestRequest.self, req)
+            var profile = current.profile
+            let test: ProfileTestCase
+            do { test = try daemon.ruleTest(fromDecision: r.decisionId, profile: profile, name: r.name) } catch let e as StoreError { throw Failure(status: 404, message: e.description) }
+            profile.tests = (profile.tests ?? []).filter { $0.id != test.id } + [test]
+            _ = try store.updateProfile(id: current.profileId, profile)
+            return try ok(try profileDetail(current.profileId))
+        }
         if let c = Self.match(method, route, "GET", "profiles/:id/stats") {
             guard let current = try store.resolveProfile(c[0]) else { throw notFound("profile") }
             let days = Int(req.query["days"] ?? "") ?? 30

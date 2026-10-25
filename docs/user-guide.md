@@ -193,6 +193,8 @@ A profile can carry **rule tests**: sample tool results, each with the rules tha
            "text": "Version 2 is current.", "expectMatch": ["rename-version"]}]
 ```
 
+To turn a real tool result into a test, open its audit record and choose a profile under the checklist button (**Add as rule test to**). The test expects the rules that match it now. Its id is the tool result's id, so sampled rules sample it the way the session did, and adding the same result again replaces the earlier test. Each addition saves a new profile version. From the terminal: `diorama profiles add-test "Docs steer" --decision toolu_01abc`. From MCP: `add_rule_test`.
+
 `diorama profiles check "Docs steer"` or `diorama profiles check --file profile.json` runs them and exits with status 1 if any fails, so a checked-in profile can be tested in CI. The MCP tool `run_profile_tests` runs them too.
 
 ### What-if replay: compare rules on a past session

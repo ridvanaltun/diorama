@@ -542,7 +542,7 @@ struct Session: AsyncParsableCommand {
 struct Profiles: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Manage profiles (versioned sets of global rules).",
-        subcommands: [List.self, Show.self, Create.self, Update.self, Export.self, Delete.self, Templates.self, Test.self, Stats.self, Diff.self, Check.self], defaultSubcommand: List.self)
+        subcommands: [List.self, Show.self, Create.self, Update.self, Export.self, Delete.self, Templates.self, Test.self, Stats.self, Diff.self, Check.self, AddTest.self], defaultSubcommand: List.self)
 
     struct List: AsyncParsableCommand {
         @OptionGroup var global: GlobalOptions
@@ -627,6 +627,23 @@ struct Profiles: AsyncParsableCommand {
         func run() async throws {
             try await global.client().archiveProfile(id)
             print("Archived.")
+        }
+    }
+
+    struct AddTest: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "add-test",
+            abstract: "Save a recorded tool result as a rule test, expecting the rules that match it now (saves a new version).",
+            discussion: "diorama profiles add-test \"Docs steer\" --decision toolu_01abc --name \"pricing page\"   (ids from `diorama session show`)")
+        @OptionGroup var global: GlobalOptions
+        @Argument(help: "Profile name or id.") var profile: String
+        @Option(help: "The tool result's id.") var decision: String
+        @Option(help: "Test name (default: the tool and its target).") var name: String?
+        func run() async throws {
+            let d = try await global.client().addRuleTest(profile, decisionId: decision, name: name)
+            let t = d.current.profile.tests?.first { $0.id == decision }
+            let expected = d.current.profile.rules.filter { t?.expectMatch.contains($0.id) == true }.map(\.name)
+            print("✓ Added “\(t?.name ?? decision)” to \(d.current.profile.name) v\(d.current.number), expecting " + (expected.isEmpty ? "no rule to match." : expected.joined(separator: ", ") + " to match."))
         }
     }
 

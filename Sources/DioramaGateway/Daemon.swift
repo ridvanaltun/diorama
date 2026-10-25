@@ -507,6 +507,28 @@ public final class DioramaDaemon: @unchecked Sendable {
         return (low, high)
     }
 
+    /// A rule test from a recorded tool result, expecting the rules of `profile` that match it now.
+    /// Its id is the tool result's id, so sampled rules sample it as the session did, and adding
+    /// the same result again replaces the earlier test.
+    func ruleTest(fromDecision id: String, profile: Profile, name: String?) throws -> ProfileTestCase {
+        guard let d = try store.decision(toolUseId: id) else { throw StoreError("no tool result \(id)") }
+        let via = try store.session(id: d.sessionId)?.via ?? .gateway
+        let tool = (d.toolName ?? "tool").replacingOccurrences(of: " (page)", with: "")
+        var t = ProfileTestCase(id: id, name: name ?? Self.testName(tool: tool, input: d.toolInput), toolName: tool, toolInput: d.toolInput,
+                                text: playgroundSegments(d, via: via).joined(separator: "\n\n"), stage: Self.stage(ofDecision: id), isError: d.isError, expectMatch: [])
+        let matched = Set(ProfileTests.run(t, rules: profile.rules).matched)
+        t.expectMatch = profile.rules.filter { matched.contains($0.name) }.map(\.id)
+        return t
+    }
+
+    static func testName(tool: String, input: String?) -> String {
+        guard let data = input?.data(using: .utf8), let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return tool }
+        for key in ["url", "query", "file_path", "command", "pattern"] {
+            if let v = obj[key] as? String, !v.isEmpty { return "\(tool) \(v.count > 60 ? String(v.prefix(60)) + "…" : v)" }
+        }
+        return tool
+    }
+
     static func stage(ofDecision id: String) -> RuleStage {
         id.hasPrefix("page:") ? .page : id.hasPrefix("input:") ? .input : .result
     }

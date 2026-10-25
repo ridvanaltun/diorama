@@ -96,6 +96,10 @@ public struct ControlClient: Sendable {
     public func playground(_ r: PlaygroundRequest) async throws -> PlaygroundResult { try await request("POST", "playground", body: r) }
     public func whatIf(_ r: WhatIfRequest) async throws -> WhatIfResult { try await request("POST", "whatif", body: r) }
     public func spend() async throws -> SpendSummary { try await request("GET", "spend") }
+    /// Adds a recorded tool result to a profile's rule tests, expecting the rules that match it now (saves a new version).
+    public func addRuleTest(_ profile: String, decisionId: String, name: String? = nil) async throws -> ProfileDetail {
+        try await request("POST", "profiles/\(profile.urlPathEscaped)/tests", body: AddRuleTestRequest(decisionId: decisionId, name: name))
+    }
     /// Runs a profile's rule tests (matching only, free): a saved profile by name or id, or an unsaved one.
     public func runProfileTests(_ ref: String? = nil, profile: Profile? = nil) async throws -> [ProfileTestResult] {
         try await request("POST", "profile-tests", body: ProfileTestRequest(profileRef: ref, profile: profile))

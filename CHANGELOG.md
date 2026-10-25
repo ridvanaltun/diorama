@@ -6,6 +6,7 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 ## Unreleased
 
 ### New
+- **Rule tests from real results.** **Add as rule test** in a tool result's audit record (or `diorama profiles add-test --decision`, MCP `add_rule_test`) saves it as a test case expecting the rules that match it now.
 - **Rule tests.** Profiles can carry test cases (a sample tool result and the rules that should match it), checked live in the editor and with `diorama profiles check` (exit 1 on failure, works on a JSON file for CI) or MCP `run_profile_tests`. Matching only: free.
 - **Folder defaults.** Give a project folder a default profile (`diorama folders set`, New Session, Settings → Folder defaults); `diorama run` in that folder or below uses it unless you pass `--profile`, `--prompt` or `--no-folder-default`.
 - **More templates.** New starting points for shadow mode, review mode, sampling, a classifier rule and an input rule (appended, so `--template N` numbers are unchanged).
