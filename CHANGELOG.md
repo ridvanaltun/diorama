@@ -5,6 +5,8 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+## 1.6.0 — 2026-10-25
+
 ### New
 - **Launchers.** Save a session setup from New Session (**Save as Launcher…**) and start it with one click from the menu bar, from Settings → Launchers, or with `diorama launch "Name"`.
 - **Profile folders.** Watch folders (e.g. a git repo's profiles/ directory): profile JSON files become profiles and changed files become new versions within seconds. One way, file wins; **Write to File** saves app edits back; deleting a file keeps its profile. Settings → Profile folders, `diorama profiles folders --add|--remove|--sync`, `diorama profiles write-file`.
