@@ -45,7 +45,8 @@ public struct OllamaRewriteProvider: RewriteProvider, JudgeProvider {
             "model": .string(Self.localModel(model)),
             "stream": .bool(false),
             "format": schema,
-            "options": .object(["temperature": .number("0"), "num_ctx": .number(String(context))]),
+            // num_predict: small models can ramble without end (seen with qwen2.5:1.5b at temperature 0).
+            "options": .object(["temperature": .number("0"), "num_ctx": .number(String(context)), "num_predict": .number(String(maxOutput))]),
             "messages": .array([
                 .object(["role": .string("system"), "content": .string(system)]),
                 .object(["role": .string("user"), "content": .string(user)]),
@@ -71,7 +72,7 @@ public struct OllamaRewriteProvider: RewriteProvider, JudgeProvider {
                 content: v["message"]?["content"]?.stringValue, model: v["model"].flatMap(\.stringValue).map { Self.prefix + $0 },
                 usage: TokenUsage(inputTokens: n("prompt_eval_count"), outputTokens: n("eval_count")), raw: text))
         } catch let e as URLError where e.code == .timedOut {
-            return (requestText, ChatResult(error: "Ollama timed out after \(Int(timeout))s", timedOut: true))
+            return (requestText, ChatResult(error: "Ollama timed out after \(Int(timeout))s (the first request after starting includes loading the model, and large models or a busy Mac are slower; raise the rule's timeout if this repeats)", timedOut: true))
         } catch let e as URLError where e.code == .cannotConnectToHost {
             return (requestText, ChatResult(error: "Ollama is not running at \(baseURL().absoluteString) (start it with `ollama serve`)"))
         } catch {
@@ -82,7 +83,7 @@ public struct OllamaRewriteProvider: RewriteProvider, JudgeProvider {
     public func rewrite(_ r: RewriteRequest) async -> RewriteResponse {
         let start = Date()
         let (request, res) = await chat(model: r.model, system: RewritePrompt.system, user: RewritePrompt.userMessage(r), schema: RewritePrompt.schema, timeout: r.timeout,
-                                        maxOutput: r.maxOutputTokens)
+                                        maxOutput: Self.rewriteOutputLimit(r))
         let latency = Date().timeIntervalSince(start) * 1000
         guard let content = res.content else {
             return RewriteResponse(status: res.timedOut ? .timedOut : .failed, error: res.error, modelServed: res.model, usage: res.usage, rawRequest: request, rawResponse: res.raw, latencyMs: latency)
@@ -93,8 +94,14 @@ public struct OllamaRewriteProvider: RewriteProvider, JudgeProvider {
         return RewriteResponse(status: output.decision == .unchanged ? .unchanged : .succeeded, output: output, modelServed: res.model, usage: res.usage, rawRequest: request, rawResponse: res.raw, latencyMs: latency)
     }
 
+    /// Room for a full replacement of the content (about 1.5× its tokens) plus the JSON around
+    /// it, never more than the rule allows.
+    public static func rewriteOutputLimit(_ r: RewriteRequest) -> Int {
+        min(r.maxOutputTokens, r.segments.reduce(0) { $0 + $1.count } / 2 + 768)
+    }
+
     public func judge(_ r: JudgeRequest) async -> JudgeResult {
-        let (_, res) = await chat(model: r.model, system: JudgePrompt.system, user: JudgePrompt.userMessage(r), schema: JudgePrompt.schema, timeout: r.timeout)
+        let (_, res) = await chat(model: r.model, system: JudgePrompt.system, user: JudgePrompt.userMessage(r), schema: JudgePrompt.schema, timeout: r.timeout, maxOutput: 600)
         guard let content = res.content, let v = try? JSONValue.parse(content), let verdict = v["verdict"]?.stringValue,
               ["adopted", "not_adopted", "unclear"].contains(verdict)
         else { return JudgeResult(verdict: nil, rationale: nil, modelServed: res.model, usage: res.usage, costUSD: 0, error: res.error ?? "judge output did not match the schema") }

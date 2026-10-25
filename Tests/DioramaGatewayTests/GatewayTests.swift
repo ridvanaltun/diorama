@@ -451,6 +451,7 @@ func crc32(_ bytes: [UInt8]) -> UInt32 {
         #expect(sent["stream"] as? Bool == false)
         #expect((sent["format"] as? [String: Any])?["type"] as? String == "object")
         #expect((sent["options"] as? [String: Any])?["num_ctx"] as? Int == 8192, "a context that fits the prompt, not Ollama's small default")
+        #expect((sent["options"] as? [String: Any])?["num_predict"] as? Int == 100, "output is capped (the rule's limit here)")
         #expect(Pricing.cost(model: "ollama:llama3.1", usage: TokenUsage(inputTokens: 1000)) == 0)
         let j = await p.judge(JudgeRequest(task: "t", changes: [JudgedChange(before: "a", after: "b")], finalOutput: "b", question: "q", model: "ollama:llama3.1"))
         #expect(j.verdict == "adopted")

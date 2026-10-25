@@ -40,6 +40,9 @@ public enum EditApplication {
                     return .failure(EditError("edit \(i + 1): `find` text was not found verbatim in the original output: \(preview(edit.find))"))
                 }
                 if hits.count > 1 {
+                    // The output's full text says which occurrences were meant: if it equals the
+                    // original with every occurrence replaced, that's verifiably what was asked.
+                    if let all = everyOccurrence(output, segments) { return .success(all) }
                     return .failure(EditError("edit \(i + 1): `find` text occurs more than once; include more surrounding context: \(preview(edit.find))"))
                 }
                 located.append((hits[0].0, hits[0].1, edit.replace))
@@ -61,6 +64,18 @@ public enum EditApplication {
             }
             return .success(out)
         }
+    }
+
+    /// Every edit applied to every occurrence, if that's exactly the output's own `content`.
+    static func everyOccurrence(_ output: RewriteOutput, _ segments: [String]) -> [String]? {
+        let content = output.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty else { return nil }
+        var out = segments
+        for e in output.edits where !e.find.isEmpty {
+            out = out.map { $0.replacingOccurrences(of: e.find, with: e.replace) }
+        }
+        guard out != segments, out.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines) == content else { return nil }
+        return out
     }
 
     static func preview(_ s: String) -> String {

@@ -12,6 +12,7 @@ swift run DioramaApp              # run the app from source
 ```
 
 - **Contract tests** (`Tests/DioramaContractTests`) run the real `claude` CLI against an in-process daemon and a scripted fake model. They use a temporary HOME and a dummy key, so they need no account and cost nothing. They're skipped when `claude` isn't installed; set `DIORAMA_CLAUDE=/path/to/claude` to choose a binary.
+- **Live Ollama tests** (`LiveOllamaTests`) are opt-in. Run `DIORAMA_LIVE_OLLAMA=qwen2.5:1.5b swift test --filter LiveOllama` with Ollama running (and the model pulled) to check rewriting and classifying against a real local model. They're skipped otherwise, and in CI.
 - **No test may call the real Anthropic API.** Use `MockUpstream`, `ScriptedModel` and `ScriptedRewriteProvider` from `Tests/DioramaTestSupport`.
 - `./scripts/demo-screenshots.sh` regenerates the screenshots in `docs/assets` (needs `node` and `claude`; no account).
 

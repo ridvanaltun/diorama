@@ -298,6 +298,8 @@ Local models never send content off your Mac and cost nothing, but they follow t
 
 Ollama's default context is small (4k tokens on Macs with less than 24 GB of memory) and cuts longer prompts silently. So each request asks Ollama for a context that fits it, between 8k and 64k tokens. A tool result too long even for 64k fails with "too long for a local model" instead of reaching the model cut off. Lower the rule's **Max input**, or use a Claude model for that rule. Larger contexts need more memory and run slower.
 
+**Which local model:** verified with Ollama 0.40.7 and `qwen2.5:1.5b`, which handles simple edits such as changing a version number in about 5 seconds on an M-series Mac. It's too weak for classifiers, though: it said "Pro plan: $20 per month" doesn't state a price. For classifier questions and more subtle edits, use a 7B-or-larger model (for example `qwen2.5:7b` or `llama3.1:8b`) or a Claude model. Diorama caps each local answer's length, because small models can otherwise ramble until the timeout. The first request after Ollama starts also loads the model, which can take a while.
+
 ## Reading the audit trail
 
 After you click a tool result, ↑ and ↓ move to the previous or next one, and its audit record follows. Esc closes the record.

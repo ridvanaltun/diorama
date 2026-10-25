@@ -12,6 +12,9 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 - **Did Claude use it?** Each rewritten tool result is labeled from what Claude did next: **used** (it repeated text the rewrite introduced), **questioned**, **checked** (re-fetched or ran a network command), **original surfaced**, or **no sign**, with the evidence. Shown in the timeline, the audit record, a "used by Claude" tile in the session header, reports and MCP `get_session`. A heuristic, labeled as one.
 
 ### Fixed
+- Local models could ramble until the timeout (seen with `qwen2.5:1.5b`): answers are now capped (`num_predict`) to what a rewrite of the content can need.
+- An edit whose `find` text occurs more than once is now accepted when the agent's own full `content` is exactly the original with every occurrence replaced (small models often do this); otherwise it's still retried as ambiguous.
+- Ollama timeouts explain that the first request loads the model and that the rule's timeout can be raised.
 - Local (`ollama:`) models were limited to Ollama's default context (4k tokens on most Macs), which cuts long tool results silently. Each request now asks for a context that fits it (8k–64k tokens), and results too long for that fail with a clear message.
 
 ## 1.5.0 — 2026-10-25

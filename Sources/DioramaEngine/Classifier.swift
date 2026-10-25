@@ -130,7 +130,8 @@ extension AnthropicRewriteProvider {
 extension OllamaRewriteProvider {
     public func classify(_ r: ClassifyRequest) async -> ClassifyResponse {
         let start = Date()
-        let (request, res) = await chat(model: r.model, system: ClassifyPrompt.system, user: ClassifyPrompt.userMessage(r), schema: ClassifyPrompt.schema, timeout: r.timeout)
+        let (request, res) = await chat(model: r.model, system: ClassifyPrompt.system, user: ClassifyPrompt.userMessage(r), schema: ClassifyPrompt.schema, timeout: r.timeout,
+                                        maxOutput: 300)
         let latency = Date().timeIntervalSince(start) * 1000
         guard let content = res.content, let (answer, reason) = ClassifyPrompt.decode(content) else {
             return ClassifyResponse(answer: nil, error: res.error ?? "the classifier's output didn't match the schema", modelServed: res.model, usage: res.usage,

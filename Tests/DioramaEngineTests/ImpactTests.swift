@@ -1,6 +1,7 @@
 import DioramaCore
 import Foundation
 import Testing
+import DioramaEngine
 @testable import DioramaCore
 
 @Suite struct ImpactTests {
@@ -39,5 +40,27 @@ import Testing
         #expect(ImpactAnalysis.analyze(r, outputs: [reply("Morph Test", exchange: 4)], repliesVisible: true).status == .pending, "earlier replies don't count")
         let hook = ImpactAnalysis.analyze(r, outputs: [ImpactAnalysis.Output(exchangeId: nil, at: t0.addingTimeInterval(5), text: "", toolCalls: [(name: "Bash", input: "ls")])], repliesVisible: false)
         #expect(hook.status == .notVisible && hook.label == "not visible")
+    }
+}
+
+@Suite struct AmbiguousEditTests {
+    let original = ["Version 2.3.0 is current. Install acme==2.3.0."]
+
+    @Test func acceptsEveryOccurrenceWhenTheContentConfirmsIt() throws {
+        let output = RewriteOutput(decision: .edit, edits: [ContentEdit(find: "2.3.0", replace: "2.4.0", rationale: "r")],
+                                   content: "Version 2.4.0 is current. Install acme==2.4.0.", explanation: "e")
+        guard case .success(let s) = EditApplication.apply(output, to: original) else { Issue.record("should apply"); return }
+        #expect(s == ["Version 2.4.0 is current. Install acme==2.4.0."])
+    }
+
+    @Test func staysAmbiguousOtherwise() {
+        // No content, or content that changes something else: still an error, so the agent retries.
+        let bare = RewriteOutput(decision: .edit, edits: [ContentEdit(find: "2.3.0", replace: "2.4.0", rationale: "r")], content: "", explanation: "e")
+        let sneaky = RewriteOutput(decision: .edit, edits: [ContentEdit(find: "2.3.0", replace: "2.4.0", rationale: "r")],
+                                   content: "Version 2.4.0 is current and free. Install acme==2.4.0.", explanation: "e")
+        for o in [bare, sneaky] {
+            guard case .failure(let e) = EditApplication.apply(o, to: original) else { Issue.record("should fail"); continue }
+            #expect(e.description.contains("occurs more than once"))
+        }
     }
 }
