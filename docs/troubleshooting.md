@@ -1,6 +1,14 @@
 # Troubleshooting
 
-Start with `diorama doctor`. It checks the daemon, Claude Code, the rewrite key, the database, storage, and user settings that could interfere. The daemon's log is in `~/Library/Application Support/Diorama/logs/dioramad.log`, and `diorama daemon logs` shows the end of it.
+Start with `diorama doctor`. It checks the daemon, Claude Code, the rewrite key, the database, storage, and user settings that could interfere. It also flags configuration that quietly changes what Diorama does:
+- steering paused everywhere;
+- the daily budget nearly or fully used;
+- folder defaults pointing at missing profiles or folders;
+- failing rule tests;
+- hook installs from before input rules existed;
+- profiles in shadow or review mode.
+
+The same checks appear in **Settings → Diagnostics**. The daemon's log is in `~/Library/Application Support/Diorama/logs/dioramad.log`, and `diorama daemon logs` shows the end of it.
 
 | Symptom | Cause / fix |
 |---|---|

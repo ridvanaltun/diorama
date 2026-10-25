@@ -31,3 +31,27 @@ import Testing
         #expect(try await env.client.sessions().isEmpty)
     }
 }
+
+@Suite struct DoctorConfigurationTests {
+    @Test func flagsConfigurationThatStopsOrSurprisesSteering() async throws {
+        let env = try await TestEnv.start()
+        defer { Task { await env.stop() } }
+        func names() async throws -> [String: String] {
+            Dictionary(try await env.client.doctor().checks.map { ($0.name, $0.detail) }, uniquingKeysWith: { a, b in a + " | " + b })
+        }
+        #expect(try await names()["Steering"] == nil)
+
+        let rule = Rule(id: "r", name: "Rename", match: RuleMatch(tools: ["WebFetch"]), instructions: "x")
+        _ = try await env.client.createProfile(Profile(name: "broken", rules: [rule], tests: [ProfileTestCase(name: "t", toolName: "Bash", text: "x", expectMatch: ["r"])]))
+        _ = try await env.client.createProfile(Profile(name: "quiet", rules: [rule], defaults: ProfileDefaults(shadow: true)))
+        _ = try await env.client.setFolderDefault("/tmp/diorama-doctor-missing", profile: "quiet")
+        try await env.client.archiveProfile("quiet")
+        _ = try await env.client.setSteeringPaused(true)
+
+        let checks = try await names()
+        #expect(checks["Steering"]?.contains("paused everywhere") == true)
+        #expect(checks["Rule tests"]?.contains("“broken” (1 of 1)") == true)
+        #expect(checks["Folder default"]?.contains("'quiet', which doesn't exist") == true)
+        #expect(checks["Shadow mode"] == nil, "archived profiles don't count")
+    }
+}

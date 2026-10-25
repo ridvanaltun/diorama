@@ -1007,6 +1007,15 @@ struct Doctor: AsyncParsableCommand {
             checks.append(DoctorCheck(name: "Daemon", status: h.version == DioramaVersion.current ? .ok : .warning,
                                       detail: "running \(h.version) on 127.0.0.1:\(h.port)" + (h.version == DioramaVersion.current ? "" : " — CLI is \(DioramaVersion.current); restart the daemon")))
             checks += try await c.doctor().checks
+            // Hook installs made before input rules existed miss the PreToolUse hook.
+            let hookFolders = Set(try await c.sessions(limit: 200).filter(\.isHook).map(\.cwd))
+            for folder in hookFolders.sorted() {
+                let url = HookInstaller.projectSettings(folder)
+                guard HookInstaller.installedCommand(settings: url) != nil else { continue }
+                if !HookInstaller.installedEvents(settings: url).contains("PreToolUse") {
+                    checks.append(DoctorCheck(name: "Hook", status: .warning, detail: "\(folder) has an older hook without input rules; run `diorama hook install` there again"))
+                }
+            }
         } catch {
             checks.append(DoctorCheck(name: "Daemon", status: .failure, detail: "\(error)"))
         }

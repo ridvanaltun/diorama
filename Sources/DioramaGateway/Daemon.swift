@@ -715,7 +715,53 @@ public final class DioramaDaemon: @unchecked Sendable {
         }
         checks.append(DoctorCheck(name: "Ollama (optional)", status: .ok, detail: ollamaUp ? "reachable at \(ollamaURL); use models like ollama:llama3.1" : "not running at \(ollamaURL) — only needed for ollama: models"))
         checks.append(DoctorCheck(name: "Gateway", status: .ok, detail: "listening on 127.0.0.1:\(port), upstream \(options.upstream.absoluteString)"))
+        checks += configurationChecks(settings: settings)
         return DoctorReport(checks: checks)
+    }
+
+    /// Checks of Diorama's own configuration: things that silently stop steering or surprise later.
+    func configurationChecks(settings: DioramaSettings) -> [DoctorCheck] {
+        var checks: [DoctorCheck] = []
+        if settings.steeringPaused {
+            checks.append(DoctorCheck(name: "Steering", status: .warning, detail: "paused everywhere: tool results reach Claude unchanged until `diorama resume`"))
+        }
+        if let cap = settings.dailyBudgetUSD, cap > 0 {
+            let spent = store.spend(since: Calendar.current.startOfDay(for: Date()))
+            if spent >= cap * 0.8 {
+                checks.append(DoctorCheck(name: "Budget", status: .warning, detail: String(format: "$%.4f of the $%.2f daily budget used today", spent, cap)
+                    + (spent >= cap ? ": rewrites are paused until tomorrow" : "")))
+            }
+        }
+        let profiles = (try? store.profiles()) ?? []
+        let known = Set(profiles.flatMap { [$0.id, $0.name] })
+        for (folder, profile) in settings.folderProfiles.sorted(by: { $0.key < $1.key }) {
+            if !known.contains(profile) {
+                checks.append(DoctorCheck(name: "Folder default", status: .warning, detail: "\(folder) uses '\(profile)', which doesn't exist (any more); `diorama run` there runs without a profile. Fix with `diorama folders set`"))
+            } else if !FileManager.default.fileExists(atPath: folder) {
+                checks.append(DoctorCheck(name: "Folder default", status: .warning, detail: "\(folder) doesn't exist; remove it with `diorama folders unset`"))
+            }
+        }
+        var failing: [String] = []
+        var shadow: [String] = []
+        var review: [String] = []
+        for p in profiles {
+            guard let v = try? store.currentProfileVersion(profileId: p.id) else { continue }
+            let results = ProfileTests.run(v.profile)
+            let failed = results.filter { !$0.passed }.count
+            if failed > 0 { failing.append("“\(p.name)” (\(failed) of \(results.count))") }
+            if v.profile.defaults.shadow { shadow.append("“\(p.name)”") }
+            if v.profile.defaults.review { review.append("“\(p.name)”") }
+        }
+        if !failing.isEmpty {
+            checks.append(DoctorCheck(name: "Rule tests", status: .warning, detail: "failing in " + failing.joined(separator: ", ") + "; see `diorama profiles check <profile>`"))
+        }
+        if !shadow.isEmpty {
+            checks.append(DoctorCheck(name: "Shadow mode", status: .ok, detail: "on for " + shadow.joined(separator: ", ") + ": rewrites are computed and paid for but never sent"))
+        }
+        if !review.isEmpty {
+            checks.append(DoctorCheck(name: "Review mode", status: .ok, detail: "on for " + review.joined(separator: ", ") + ": Claude waits for you to approve each rewrite"))
+        }
+        return checks
     }
 }
 
