@@ -267,6 +267,14 @@ struct Session: AsyncParsableCommand {
             if !s.flags.isEmpty { print("flags: \(s.flags.joined(separator: ", "))") }
             print("")
             let decisions = Dictionary(uniqueKeysWithValues: t.decisions.map { ($0.toolUseId, $0) })
+            if s.isHook {
+                // Hook mode has no model requests to show: list the tool results Diorama decided.
+                print("hook mode (Claude desktop / IDE): tool results only, no model traffic\n")
+                for d in t.decisions.sorted(by: { $0.createdAt < $1.createdAt }) {
+                    let mark = d.outcome == .rewritten ? "✎ rewritten" : d.outcome == .failed ? "✗ failed" : "· unchanged"
+                    print("    \(mark) \(d.toolName ?? "?") \(d.toolUseId) — \(short(d.reason, 90))")
+                }
+            }
             for e in t.exchanges {
                 let u = e.usage.map { "in \($0.inputTokens) · out \($0.outputTokens) · cache r/w \($0.cacheReadTokens)/\($0.cacheWriteTokens)" } ?? ""
                 print("#\(e.id) \(e.method) \(e.path) [\(e.requestClass ?? "?")] → \(e.status.map(String.init) ?? "…")  \(u)  +\(Int(e.addedLatencyMs ?? 0))ms")
@@ -290,7 +298,7 @@ struct Session: AsyncParsableCommand {
                 }
                 if let err = e.error { print("    ! \(err)") }
             }
-            let anomalies = t.events.filter { $0.kind == .anomaly || $0.kind == .rewriteFailed }
+            let anomalies = t.events.filter { $0.kind == .anomaly || $0.kind == .rewriteFailed || $0.kind == .warning }
             if !anomalies.isEmpty {
                 print("\nEvents:")
                 for ev in anomalies { print("  \(ev.kind.rawValue): \(ev.message)") }

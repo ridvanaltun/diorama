@@ -5,6 +5,9 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+### Fixed
+- `diorama session show` now lists a hook-mode session's tool results (it showed only model requests, which hook sessions don't have), and includes budget warnings.
+
 ## 1.2.0 — 2026-10-25
 
 ### New
