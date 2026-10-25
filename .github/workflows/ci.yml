@@ -12,13 +12,17 @@ concurrency:
 
 jobs:
   build-and-test:
-    # Self-hosted runner on the maintainer's Mac (private repository only — never use
-    # self-hosted runners for public repositories). Never run for pull requests from forks.
+    # Never run for pull requests from forks.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, macOS, ARM64]
+    # Private repository: the maintainer's self-hosted Mac. Public repository: GitHub's free
+    # hosted macOS runner. Self-hosted runners must never serve a public repository.
+    runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted","macOS","ARM64"]') || 'macos-26' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
+      - name: Install Claude Code CLI (hosted runners only; used by contract tests, no account needed)
+        if: runner.environment == 'github-hosted'
+        run: npm install -g @anthropic-ai/claude-code
       - name: Toolchain
         run: |
           swift --version

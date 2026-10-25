@@ -51,9 +51,18 @@ Optionally, set the repository **variable** `BUNDLE_ID` (default `io.github.dior
 
 Each release includes `diorama.rb`, a cask pinned to that release's zip and checksum. Copy it into your tap (`Casks/diorama.rb`). For a private repository, users need access to the release assets.
 
-## Before the first public release
+## Going public
 
-- Run a trademark and name search for "Diorama" in software.
-- Choose the final bundle identifier and set the `BUNDLE_ID` variable.
-- Enable GitHub Security Advisories, and consider making the repository public. Actions minutes are free for public repositories, but **don't** use the self-hosted runner for a public repository.
-- Optional: a live smoke test on your account (`diorama run --profile <p>` on a small task).
+**Name check (2026-10-25, web search, not legal advice).** "Diorama" is crowded in software:
+- **A pending US word-mark application, DIORAMA,** by Bratte Ltd. (filed 2023-10-25, intent to use). It's in Class 042: online software for creating and editing visual and multimedia content with generative AI.
+- **Older marks:** DIORAMA, from Visual Modeling Inc. (a data-visualization program feature), and DIORAMA DESIGNER (registered 2003, renewed).
+- **Products:** Diorama by Litho (an AR filmmaking app), Diorama Worlds (VR), and "dioramas", an open-source framework for 3D websites.
+
+Diorama's use (a developer research tool for AI agents) is a different market. Even so, the pending Class 042 application is close enough that you should check the USPTO (and EUIPO, if relevant) status, or consider a more distinctive name, before a public launch. Renaming touches the binaries, bundle ID, data folder and docs.
+
+**Checklist:**
+1. Resolve the name question above, then set the `BUNDLE_ID` repository variable.
+2. Make the repository public. CI and Release then switch to GitHub's free hosted `macos-26` runner automatically (`runs-on` checks `github.event.repository.private`).
+3. **Remove the self-hosted runner** from the repository (Settings → Actions → Runners), and on the Mac run `cd ~/actions-runner && ./svc.sh uninstall`. A self-hosted runner on a public repository would let anyone's pull request run code on your Mac.
+4. Enable private vulnerability reporting (Settings → Security). `SECURITY.md` points reporters there.
+5. Without an Apple Developer ID, releases stay ad-hoc signed, and the release notes include the Gatekeeper instructions.

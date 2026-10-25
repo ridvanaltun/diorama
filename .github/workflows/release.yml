@@ -28,13 +28,18 @@ concurrency:
 
 jobs:
   release:
-    runs-on: [self-hosted, macOS, ARM64]
+    # Private repository: the maintainer's self-hosted Mac. Public repository: GitHub's free
+    # hosted macOS runner. Self-hosted runners must never serve a public repository.
+    runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted","macOS","ARM64"]') || 'macos-26' }}
     timeout-minutes: 60
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUNDLE_ID: ${{ vars.BUNDLE_ID || 'io.github.diorama.Diorama' }}
     steps:
       - uses: actions/checkout@v7
+      - name: Install Claude Code CLI (hosted runners only; used by contract tests, no account needed)
+        if: runner.environment == 'github-hosted'
+        run: npm install -g @anthropic-ai/claude-code
         with:
           fetch-depth: 0
 
