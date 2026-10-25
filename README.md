@@ -83,7 +83,7 @@ diorama experiment run exp.json                   # shows a cost estimate and as
 diorama experiment report <run-id> --format md --output report.md
 ```
 
-Each trial runs `claude -p` in an APFS clone of your project, so your files are never touched. Variants are interleaved by blocked randomization, and each trial records a manifest: Claude Code version, arguments, rule versions, prompt versions, project snapshot, seed, and order. By default, identical tool results reuse one rewrite across trials ("frozen treatment"), so you measure Claude's response to a single treatment.
+An example report from a real run is in [docs/assets/example-report.md](docs/assets/example-report.md). Each trial runs `claude -p` in an APFS clone of your project, so your files are never touched. Variants are interleaved by blocked randomization, and each trial records a manifest: Claude Code version, arguments, rule versions, prompt versions, project snapshot, seed, and order. By default, identical tool results reuse one rewrite across trials ("frozen treatment"), so you measure Claude's response to a single treatment.
 
 ## Documentation
 

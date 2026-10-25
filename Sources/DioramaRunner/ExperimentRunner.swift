@@ -170,6 +170,7 @@ public final class ExperimentRunner: @unchecked Sendable {
             }
             await group.waitForAll()
         }
+        if !Task.isCancelled { recomputeEchoes(run: run) }
         if !Task.isCancelled, let config = def.judge, config.enabled, let judge {
             await judgeRun(run: run, definition: def, config: config, judge: judge)
         }
@@ -307,11 +308,10 @@ public final class ExperimentRunner: @unchecked Sendable {
         store.addEvent(sessionId: launch.session.id, kind: .trialFinished, message: "Trial \(trial.order + 1) (\(variant.key)) \(status.rawValue)", refId: trial.id)
     }
 
-    /// Asks the LLM judge about every successful trial, controls included (their verdicts are
-    /// the baseline), against the changes the run's rewrites introduced.
-    func judgeRun(run: RunSummary, definition def: ExperimentDefinition, config: JudgeConfig, judge: JudgeProvider) async {
-        let trials = (try? store.trials(runId: run.id)) ?? []
+    /// Every change the run's rewrites made (phrase-level pairs) and the original texts.
+    func runChanges(_ trials: [TrialInfo]) -> (changes: [JudgedChange], originals: [String]) {
         var changes: [JudgedChange] = []
+        var originals: [String] = []
         for t in trials where t.status == .succeeded {
             guard let sid = t.sessionId else { continue }
             for d in (try? store.decisions(sessionId: sid)) ?? [] where d.outcome == .rewritten {
@@ -319,9 +319,37 @@ public final class ExperimentRunner: @unchecked Sendable {
                       let original = (try? store.blobs.getString(d.originalBlob)).map(ContentText.displayText(fromContentJSON:)),
                       let replacement = (try? store.blobs.getString(rb)).map(ContentText.displayText(fromContentJSON:))
                 else { continue }
+                if !originals.contains(original) { originals.append(original) }
                 for c in Heuristics.changePairs(original: original, replacement: replacement) where !changes.contains(c) { changes.append(c) }
             }
         }
+        return (changes, originals)
+    }
+
+    /// Recomputes "echoed rewritten content" for every successful trial against the run's
+    /// shared set of introduced words, so controls get a real baseline instead of 0 by
+    /// construction.
+    func recomputeEchoes(run: RunSummary) {
+        let trials = (try? store.trials(runId: run.id)) ?? []
+        let (changes, originals) = runChanges(trials)
+        let novel = Heuristics.novelWords(changes: changes, originals: originals)
+        for t in trials where t.status == .succeeded {
+            guard let facts = t.facts, var signals = t.signals else { continue }
+            let hits = novel.isEmpty ? [] : Heuristics.echoes(facts.finalOutput, novel: novel)
+            signals.echoedRewrittenContent = !hits.isEmpty
+            signals.evidence.removeAll { $0.hasPrefix("final output contains rewritten text") || $0.hasPrefix("final output contains words") }
+            if !hits.isEmpty {
+                signals.evidence.insert("final output contains words introduced by this run's rewrites: \(hits.prefix(5).joined(separator: ", "))", at: 0)
+            }
+            try? store.updateTrialSignals(id: t.id, signals: signals)
+        }
+    }
+
+    /// Asks the LLM judge about every successful trial, controls included (their verdicts are
+    /// the baseline), against the changes the run's rewrites introduced.
+    func judgeRun(run: RunSummary, definition def: ExperimentDefinition, config: JudgeConfig, judge: JudgeProvider) async {
+        let trials = (try? store.trials(runId: run.id)) ?? []
+        var changes = runChanges(trials).changes
         guard !changes.isEmpty else {
             store.addEvent(sessionId: nil, kind: .warning, message: "LLM judge skipped: no rewrites in this run", refId: run.id)
             return

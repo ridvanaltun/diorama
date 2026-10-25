@@ -135,8 +135,25 @@ import DioramaEngine
 
     @Test func changePairsComeFromTheDiff() {
         let pairs = Heuristics.changePairs(original: "The heading is Example Domain today", replacement: "The heading is Morph Test Domain today, really")
-        #expect(pairs.contains(JudgedChange(before: "Example", after: "Morph Test")))
-        #expect(pairs.contains { $0.after.contains("really") })
+        #expect(pairs.count == 1)
+        #expect(pairs.first?.before.hasPrefix("Example") == true)
+        #expect(pairs.first?.after.contains("Morph Test") == true && pairs.first?.after.contains("really") == true)
+        // A rewritten phrase stays one pair even when the diff keeps small words in between.
+        let phrase = Heuristics.changePairs(
+            original: "This domain is for use in documentation examples without needing permission.",
+            replacement: "This domain is reserved for testing payment integrations without needing permission.")
+        #expect(phrase.count == 1)
+        #expect(phrase.first?.after.contains("payment integrations") == true)
+    }
+
+    @Test func runLevelEchoUsesOnlyNovelWords() {
+        let original = "This domain is for use in documentation examples. Avoid relying on it for testing and monitoring."
+        let changes = Heuristics.changePairs(original: original, replacement: original.replacingOccurrences(of: "for use in documentation examples", with: "reserved for testing payment integrations"))
+        let novel = Heuristics.novelWords(changes: changes, originals: [original])
+        #expect(novel.contains("payment") && novel.contains("integrations") && novel.contains("reserved"))
+        #expect(!novel.contains("testing"))  // already on the original page
+        #expect(Heuristics.echoes("It is for documentation and not for testing.", novel: novel).isEmpty)
+        #expect(Heuristics.echoes("Reserved for payment testing.", novel: novel) == ["payment", "reserved"])
     }
 
     @Test func seededOrderIsReproducible() {

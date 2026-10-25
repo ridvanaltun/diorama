@@ -18,6 +18,7 @@ public final class DecisionEngine: Sendable {
     let store: Store
     let providerFor: @Sendable (_ model: String) -> RewriteProvider
     let inflight = Inflight()
+    let treatmentLock = KeyedLock()
     let anomalies = AnomalyMemory()
     let pendingFetches = PendingFetches()
 
@@ -42,6 +43,31 @@ public final class DecisionEngine: Sendable {
             let value = await t.value
             tasks[id] = nil
             return value
+        }
+    }
+
+    /// Serializes work per key (async-safe mutex). Used so concurrent experiment trials that
+    /// share a frozen treatment make one rewrite instead of racing to make several.
+    actor KeyedLock {
+        private var held = Set<String>()
+        private var waiters: [String: [CheckedContinuation<Void, Never>]] = [:]
+
+        func lock(_ key: String) async {
+            if held.contains(key) {
+                await withCheckedContinuation { waiters[key, default: []].append($0) }
+            } else {
+                held.insert(key)
+            }
+        }
+
+        func unlock(_ key: String) {
+            if var w = waiters[key], !w.isEmpty {
+                let next = w.removeFirst()
+                waiters[key] = w.isEmpty ? nil : w
+                next.resume()  // ownership passes to the next waiter
+            } else {
+                held.remove(key)
+            }
         }
     }
 
@@ -275,79 +301,88 @@ public final class DecisionEngine: Sendable {
         }
 
         // Frozen experiment treatment: identical inputs reuse the stored rewrite (decision D11).
+        // Trials running in parallel wait for the first one's rewrite instead of racing.
         var treatmentKey: String?
         if let scope = session.treatmentScope {
-            let key = Hashing.sha256Hex([scope, RewritePrompt.version, t.stage.rawValue, app.refs.map(\.ruleHash).joined(separator: ","), toolName, t.treatmentInput.canonicalString, t.hash].joined(separator: "\u{1F}"))
-            treatmentKey = key
-            if let cached = try? store.treatment(key: key), store.blobs.exists(cached.replacementBlob) {
-                return record(.rewritten, "frozen treatment reused", replacement: cached.replacementBlob, refs: app.refs, instructions: instructionTexts, treatmentKey: key)
-            }
+            treatmentKey = Hashing.sha256Hex([scope, RewritePrompt.version, t.stage.rawValue, app.refs.map(\.ruleHash).joined(separator: ","), toolName, t.treatmentInput.canonicalString, t.hash].joined(separator: "\u{1F}"))
         }
 
-        let model = app.rules.last(where: { $0.model != nil })?.model ?? app.defaults.model
-        let effort = app.rules.last(where: { $0.effort != nil })?.effort ?? app.defaults.effort
-        let wantsTask = app.rules.contains { $0.context == .task }
-        var request = RewriteRequest(
-            toolName: t.stage == .page ? "\(toolName) (raw page, before extraction)" : toolName, toolInput: t.toolInputJSON ?? "{}",
-            segments: segments, instructions: instructions, taskContext: wantsTask ? t.taskText : nil, model: model, effort: effort,
-            maxOutputTokens: app.defaults.maxOutputTokens, timeout: app.defaults.timeoutSeconds)
+        func rewriteNow() async -> DecisionRecord {
+            let model = app.rules.last(where: { $0.model != nil })?.model ?? app.defaults.model
+            let effort = app.rules.last(where: { $0.effort != nil })?.effort ?? app.defaults.effort
+            let wantsTask = app.rules.contains { $0.context == .task }
+            var request = RewriteRequest(
+                toolName: t.stage == .page ? "\(toolName) (raw page, before extraction)" : toolName, toolInput: t.toolInputJSON ?? "{}",
+                segments: segments, instructions: instructions, taskContext: wantsTask ? t.taskText : nil, model: model, effort: effort,
+                maxOutputTokens: app.defaults.maxOutputTokens, timeout: app.defaults.timeoutSeconds)
 
-        let provider = providerFor(model)
-        let started = Date()
-        let budget = max(app.defaults.timeoutSeconds * 2, 30)
-        var lastError = "rewrite failed"
-        for attempt in 0..<2 {
-            let response = await provider.rewrite(request)
-            let attemptId = Hashing.newId(prefix: "att")
-            var status = response.status
-            var error = response.error
-            var newSegments: [String]?
-            if let output = response.output, status == .succeeded || status == .unchanged {
-                switch EditApplication.apply(output, to: segments) {
-                case .success(let s):
-                    newSegments = s
-                    if s == segments { status = .unchanged }
-                case .failure(let e):
-                    status = .invalid
-                    error = e.description
+            let provider = providerFor(model)
+            let started = Date()
+            let budget = max(app.defaults.timeoutSeconds * 2, 30)
+            var lastError = "rewrite failed"
+            for attempt in 0..<2 {
+                let response = await provider.rewrite(request)
+                let attemptId = Hashing.newId(prefix: "att")
+                var status = response.status
+                var error = response.error
+                var newSegments: [String]?
+                if let output = response.output, status == .succeeded || status == .unchanged {
+                    switch EditApplication.apply(output, to: segments) {
+                    case .success(let s):
+                        newSegments = s
+                        if s == segments { status = .unchanged }
+                    case .failure(let e):
+                        status = .invalid
+                        error = e.description
+                    }
                 }
-            }
-            let cost = response.usage.flatMap { Pricing.cost(model: response.modelServed ?? model, usage: $0) }
-            let info = RewriteAttemptInfo(
-                id: attemptId, provider: provider.id, modelRequested: model, modelServed: response.modelServed, promptVersion: RewritePrompt.version,
-                status: status, error: error, usage: response.usage, costUSD: cost, latencyMs: response.latencyMs,
-                explanation: response.output?.explanation, mode: response.output?.decision.rawValue, edits: response.output?.edits ?? [],
-                createdAt: Date())
-            let reqBlob = response.rawRequest.flatMap { try? store.blobs.put($0) }
-            let resBlob = response.rawResponse.flatMap { try? store.blobs.put($0) }
-            try? store.insertAttempt(AttemptRecord(info: info, toolUseId: t.decisionId, sessionId: session.id, requestBlob: reqBlob, responseBlob: resBlob))
+                let cost = response.usage.flatMap { Pricing.cost(model: response.modelServed ?? model, usage: $0) }
+                let info = RewriteAttemptInfo(
+                    id: attemptId, provider: provider.id, modelRequested: model, modelServed: response.modelServed, promptVersion: RewritePrompt.version,
+                    status: status, error: error, usage: response.usage, costUSD: cost, latencyMs: response.latencyMs,
+                    explanation: response.output?.explanation, mode: response.output?.decision.rawValue, edits: response.output?.edits ?? [],
+                    createdAt: Date())
+                let reqBlob = response.rawRequest.flatMap { try? store.blobs.put($0) }
+                let resBlob = response.rawResponse.flatMap { try? store.blobs.put($0) }
+                try? store.insertAttempt(AttemptRecord(info: info, toolUseId: t.decisionId, sessionId: session.id, requestBlob: reqBlob, responseBlob: resBlob))
 
-            switch status {
-            case .succeeded:
-                guard let newSegments else { break }
-                guard let replacement = try? t.buildReplacement(newSegments), let blob = try? store.blobs.put(replacement) else {
-                    lastError = "could not build replacement content"
-                    break
+                switch status {
+                case .succeeded:
+                    guard let newSegments else { break }
+                    guard let replacement = try? t.buildReplacement(newSegments), let blob = try? store.blobs.put(replacement) else {
+                        lastError = "could not build replacement content"
+                        break
+                    }
+                    if let key = treatmentKey { try? store.storeTreatment(key: key, replacementBlob: blob, attemptId: attemptId) }
+                    return record(.rewritten, response.output?.explanation ?? "rewritten", replacement: blob, refs: app.refs, instructions: instructionTexts, treatmentKey: treatmentKey)
+                case .unchanged:
+                    return record(.unchanged, "rewrite agent left the content unchanged: \(response.output?.explanation ?? "")", refs: app.refs, instructions: instructionTexts)
+                case .invalid:
+                    lastError = error ?? "invalid rewrite output"
+                    if attempt == 0, Date().timeIntervalSince(started) < budget / 2 {
+                        request.feedback = lastError
+                        continue
+                    }
+                case .refused, .timedOut, .failed, .skipped:
+                    lastError = error ?? status.rawValue
                 }
-                if let key = treatmentKey { try? store.storeTreatment(key: key, replacementBlob: blob, attemptId: attemptId) }
-                return record(.rewritten, response.output?.explanation ?? "rewritten", replacement: blob, refs: app.refs, instructions: instructionTexts, treatmentKey: treatmentKey)
-            case .unchanged:
-                return record(.unchanged, "rewrite agent left the content unchanged: \(response.output?.explanation ?? "")", refs: app.refs, instructions: instructionTexts)
-            case .invalid:
-                lastError = error ?? "invalid rewrite output"
-                if attempt == 0, Date().timeIntervalSince(started) < budget / 2 {
-                    request.feedback = lastError
-                    continue
-                }
-            case .refused, .timedOut, .failed, .skipped:
-                lastError = error ?? status.rawValue
+                break
             }
-            break
+            let policy = session.onFailure ?? app.defaults.onFailure
+            try? store.addFlag(sessionId: session.id, "rewrite-failures")
+            if policy == .invalidateTrial { try? store.addFlag(sessionId: session.id, "trial-invalid") }
+            return record(.failed, "\(lastError) — original forwarded (\(policy.rawValue))", refs: app.refs, instructions: instructionTexts)
         }
-        let policy = session.onFailure ?? app.defaults.onFailure
-        try? store.addFlag(sessionId: session.id, "rewrite-failures")
-        if policy == .invalidateTrial { try? store.addFlag(sessionId: session.id, "trial-invalid") }
-        return record(.failed, "\(lastError) — original forwarded (\(policy.rawValue))", refs: app.refs, instructions: instructionTexts)
+
+        guard let key = treatmentKey else { return await rewriteNow() }
+        await treatmentLock.lock(key)
+        if let cached = try? store.treatment(key: key), store.blobs.exists(cached.replacementBlob) {
+            await treatmentLock.unlock(key)
+            return record(.rewritten, "frozen treatment reused", replacement: cached.replacementBlob, refs: app.refs, instructions: instructionTexts, treatmentKey: key)
+        }
+        let decided = await rewriteNow()
+        await treatmentLock.unlock(key)
+        return decided
     }
 
     /// Builds the replacement `content` JSON: the original content bytes with only the text

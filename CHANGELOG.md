@@ -14,6 +14,9 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ### Improved
 - Experiment comparisons record how many rewrites were reused (`rewritesReused`), and warn when a frozen treatment couldn't be reused.
+- Frozen treatments are serialized: trials running in parallel now wait for one rewrite instead of each making its own (seen in a live run).
+- The "echoed rewritten content" heuristic is computed the same way for every trial, controls included, against the whole run's set of new words. Words already present in the original page no longer count. Before, controls scored 0 by construction.
+- Changes shown to the LLM judge are now whole phrases rather than single words, which removes a false "adopted" verdict seen on a control trial.
 - Verified against real Claude Code: MCP tool results (text and image blocks) and WebSearch results.
 
 ## 1.0.0 — 2026-10-25

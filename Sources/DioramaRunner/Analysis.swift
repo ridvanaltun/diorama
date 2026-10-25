@@ -149,7 +149,9 @@ public enum Heuristics {
                 after += seg.text
                 open = true
             case .equal:
-                if open, seg.text.count <= 3, seg.text.allSatisfy(\.isWhitespace) {
+                // Short unchanged gaps (up to two words) stay inside the change, so a rewritten
+                // phrase is one pair rather than several single-word fragments.
+                if open, seg.text.count <= 16, seg.text.split(whereSeparator: \.isWhitespace).count <= 2, !seg.text.contains("\n") {
                     before += seg.text
                     after += seg.text
                 } else {
@@ -159,6 +161,27 @@ public enum Heuristics {
         }
         flush()
         return out
+    }
+
+    static let stopwords: Set<String> = ["about", "above", "after", "again", "their", "there", "these", "those", "which", "while", "would", "could", "should", "where", "being", "other", "under", "until", "using"]
+
+    /// Words a rewrite introduced: present in some change's "after" text but nowhere in the
+    /// originals (≥ 5 letters, not a stopword). Matching these avoids crediting words the page
+    /// already contained (e.g. "testing").
+    public static func novelWords(changes: [JudgedChange], originals: [String]) -> Set<String> {
+        let originalWords = Set(originals.flatMap { words($0) })
+        return Set(changes.flatMap { words($0.after) }.filter { $0.count >= 5 && !originalWords.contains($0) && !stopwords.contains($0) })
+    }
+
+    static func words(_ s: String) -> [String] {
+        s.lowercased().split { !($0.isLetter || $0.isNumber) }.map(String.init)
+    }
+
+    /// Run-level echo check, applied identically to every trial (controls included): does the
+    /// final answer contain a word the run's rewrites introduced?
+    public static func echoes(_ output: String, novel: Set<String>) -> [String] {
+        let present = Set(words(output))
+        return novel.filter(present.contains).sorted()
     }
 
     /// Inserted runs (≥ 6 non-space characters) from a word diff of original → replacement.

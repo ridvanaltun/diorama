@@ -457,3 +457,27 @@ func extractionBody(page: String, prompt: String) -> [UInt8] {
         #expect(msg.contains("<final_answer>"))
     }
 }
+
+@Suite struct TreatmentConcurrencyTests {
+    @Test func parallelTrialsShareOneFrozenRewrite() async throws {
+        let store = try tempStore()
+        let profile = try webProfile(store)
+        let counter = CallCounter()
+        let engine = DecisionEngine(store: store) { countingProvider(counter, delay: .milliseconds(100), ScriptedRewriteProvider.replacing("Example", with: "Steered")) }
+        let sessions = try (0..<6).map { _ in try makeSession(store, profile: profile, scope: "runP:steered") }
+        let results = await withTaskGroup(of: [ToolResultHandling].self) { g in
+            for (i, s) in sessions.enumerated() {
+                g.addTask {
+                    await engine.process(body: messagesBody(turns: [("toolu_par\(i)", "https://e.com", "Example")]), session: s, exchangeId: Int64(i), requestClass: "main").entries.map(\.handling)
+                }
+            }
+            var all: [[ToolResultHandling]] = []
+            for await r in g { all.append(r) }
+            return all
+        }
+        #expect(results.allSatisfy { $0 == [.decidedRewritten] })
+        #expect(counter.count == 1)
+        let reused = try (0..<6).compactMap { try store.decision(toolUseId: "toolu_par\($0)") }.filter { $0.reason == "frozen treatment reused" }
+        #expect(reused.count == 5)
+    }
+}
