@@ -97,36 +97,44 @@ struct MenuBarPanel: View {
     }
 }
 
-/// The app icon's diorama box as a menu bar template image; the dot fills while a routed
-/// session is running.
+/// The diorama as an open box seen at a slight angle, every edge the same width, as a menu
+/// bar template image. The dot inside fills while a routed session is running.
 enum MenuBarIcon {
     static func image(active: Bool) -> NSImage {
         let img = NSImage(size: NSSize(width: 18, height: 16), flipped: false) { _ in
             NSColor.black.setStroke()
             NSColor.black.setFill()
-            let outer = NSRect(x: 1.5, y: 1.5, width: 15, height: 13)
-            let inner = NSRect(x: 5.5, y: 5, width: 7, height: 6)
-            let frame = NSBezierPath(roundedRect: outer, xRadius: 2.5, yRadius: 2.5)
-            frame.lineWidth = 1.5
-            frame.stroke()
-            let back = NSBezierPath(roundedRect: inner, xRadius: 0.5, yRadius: 0.5)
-            back.lineWidth = 1
-            back.stroke()
-            let edges = NSBezierPath()
-            edges.lineWidth = 1
-            edges.lineCapStyle = .round
-            // Start just inside the rounded corners.
-            let c = 0.8
-            for (a, b) in [(NSPoint(x: outer.minX + c, y: outer.minY + c), NSPoint(x: inner.minX, y: inner.minY)),
-                           (NSPoint(x: outer.maxX - c, y: outer.minY + c), NSPoint(x: inner.maxX, y: inner.minY)),
-                           (NSPoint(x: outer.minX + c, y: outer.maxY - c), NSPoint(x: inner.minX, y: inner.maxY)),
-                           (NSPoint(x: outer.maxX - c, y: outer.maxY - c), NSPoint(x: inner.maxX, y: inner.maxY))] {
-                edges.move(to: a)
-                edges.line(to: b)
+            let lineWidth = 1.2
+            let front = NSRect(x: 1.5, y: 1.5, width: 11.5, height: 10.5)
+            let depth = NSPoint(x: 3.5, y: 3)
+            let backCorner = NSPoint(x: front.minX + depth.x, y: front.minY + depth.y)
+            let box = NSBezierPath()
+            box.lineWidth = lineWidth
+            box.lineJoinStyle = .round
+            box.lineCapStyle = .round
+            box.appendRect(front)
+            // Top and right faces.
+            box.move(to: NSPoint(x: front.minX, y: front.maxY))
+            box.line(to: NSPoint(x: front.minX + depth.x, y: front.maxY + depth.y))
+            box.line(to: NSPoint(x: front.maxX + depth.x, y: front.maxY + depth.y))
+            box.line(to: NSPoint(x: front.maxX + depth.x, y: front.minY + depth.y))
+            box.line(to: NSPoint(x: front.maxX, y: front.minY))
+            box.move(to: NSPoint(x: front.maxX, y: front.maxY))
+            box.line(to: NSPoint(x: front.maxX + depth.x, y: front.maxY + depth.y))
+            // Inside, seen through the open front: the floor's left edge and the back wall.
+            box.move(to: NSPoint(x: front.minX, y: front.minY))
+            box.line(to: backCorner)
+            box.line(to: NSPoint(x: backCorner.x, y: front.maxY))
+            box.move(to: backCorner)
+            box.line(to: NSPoint(x: front.maxX, y: backCorner.y))
+            box.stroke()
+            let dot = NSBezierPath(ovalIn: NSRect(x: 7.3, y: 5.7, width: 3.4, height: 3.4))
+            if active {
+                dot.fill()
+            } else {
+                dot.lineWidth = lineWidth
+                dot.stroke()
             }
-            edges.stroke()
-            let dot = NSBezierPath(ovalIn: NSRect(x: 7.25, y: 5.75, width: 3.5, height: 3.5))
-            if active { dot.fill() } else { dot.lineWidth = 1; dot.stroke() }
             return true
         }
         img.isTemplate = true
