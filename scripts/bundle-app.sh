@@ -73,5 +73,6 @@ file "$APP/Contents/MacOS/Diorama" | grep -q "Mach-O" && ! cmp -s "$APP/Contents
 
 echo "▸ Packaging"
 ( cd "$DIST" && rm -f "Diorama-$VERSION.zip" && ditto -c -k --keepParent Diorama.app "Diorama-$VERSION.zip" )
-shasum -a 256 "$DIST/Diorama-$VERSION.zip" | tee "$DIST/Diorama-$VERSION.zip.sha256"
+# File name only, so `shasum -c` works in the folder the user downloads to.
+( cd "$DIST" && shasum -a 256 "Diorama-$VERSION.zip" | tee "Diorama-$VERSION.zip.sha256" )
 echo "✓ $APP"

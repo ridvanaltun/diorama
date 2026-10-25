@@ -107,7 +107,7 @@ jobs:
           xcrun stapler staple dist/Diorama.app
           rm -f "dist/Diorama-$VERSION.zip"
           (cd dist && ditto -c -k --keepParent Diorama.app "Diorama-$VERSION.zip")
-          shasum -a 256 "dist/Diorama-$VERSION.zip" > "dist/Diorama-$VERSION.zip.sha256"
+          (cd dist && shasum -a 256 "Diorama-$VERSION.zip" > "Diorama-$VERSION.zip.sha256")
 
       - name: Release notes and Homebrew cask
         env:
