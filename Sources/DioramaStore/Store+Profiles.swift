@@ -24,7 +24,14 @@ extension Store {
             if r.match.stage == .page, !r.match.tools.allSatisfy({ Glob.matches($0, "WebFetch") }) {
                 problems.append("rule '\(r.name)': the page stage applies only to WebFetch (tools must match WebFetch)")
             }
-            if r.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { problems.append("rule '\(r.name)' has empty instructions") }
+            if let spec = r.redact {
+                if spec.presets.isEmpty && spec.patterns.isEmpty { problems.append("rule '\(r.name)' redacts nothing (no presets or patterns)") }
+                for p in spec.patterns where (try? NSRegularExpression(pattern: p)) == nil {
+                    problems.append("rule '\(r.name)': invalid redaction pattern '\(p)'")
+                }
+            } else if r.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                problems.append("rule '\(r.name)' has empty instructions")
+            }
             for (field, pattern) in r.match.input where (try? Regex(pattern)) == nil {
                 problems.append("rule '\(r.name)': invalid regex for input field '\(field)'")
             }

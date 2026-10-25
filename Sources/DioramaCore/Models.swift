@@ -87,11 +87,16 @@ public struct Rule: Codable, Sendable, Hashable, Identifiable {
     public var model: String?
     public var effort: String?
     public var context: ContextMode
+    /// Set for a redaction rule: masks matches locally, without the rewrite agent (instructions unused).
+    public var redact: RedactSpec?
+
+    public var isRedaction: Bool { redact != nil }
 
     public init(
         id: String = UUID().uuidString.lowercased(), name: String, enabled: Bool = true, match: RuleMatch,
-        instructions: String, model: String? = nil, effort: String? = nil, context: ContextMode = .none
+        instructions: String, model: String? = nil, effort: String? = nil, context: ContextMode = .none, redact: RedactSpec? = nil
     ) {
+        self.redact = redact
         self.id = id
         self.name = name
         self.enabled = enabled
@@ -108,10 +113,47 @@ public struct Rule: Codable, Sendable, Hashable, Identifiable {
         name = try c.decode(String.self, forKey: .name)
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
         match = try c.decode(RuleMatch.self, forKey: .match)
-        instructions = try c.decode(String.self, forKey: .instructions)
+        instructions = try c.decodeIfPresent(String.self, forKey: .instructions) ?? ""
         model = try c.decodeIfPresent(String.self, forKey: .model)
         effort = try c.decodeIfPresent(String.self, forKey: .effort)
         context = try c.decodeIfPresent(ContextMode.self, forKey: .context) ?? .none
+        redact = try c.decodeIfPresent(RedactSpec.self, forKey: .redact)
+    }
+}
+
+/// What a redaction rule masks: built-in pattern sets and/or custom regexes.
+public struct RedactSpec: Codable, Sendable, Hashable {
+    public enum Preset: String, Codable, Sendable, CaseIterable {
+        /// API keys and tokens (Anthropic, OpenAI, AWS, GitHub, Slack, Stripe, Google), JWTs, bearer tokens, private keys.
+        case secrets
+        case emails
+        case ipAddresses
+    }
+
+    public var presets: [Preset]
+    /// Extra regexes; each match is replaced.
+    public var patterns: [String]
+
+    public init(presets: [Preset] = [.secrets], patterns: [String] = []) {
+        self.presets = presets
+        self.patterns = patterns
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        presets = try c.decodeIfPresent([Preset].self, forKey: .presets) ?? []
+        patterns = try c.decodeIfPresent([String].self, forKey: .patterns) ?? []
+    }
+
+    public var summary: String {
+        let names = presets.map { p -> String in
+            switch p {
+            case .secrets: "secrets"
+            case .emails: "email addresses"
+            case .ipAddresses: "IP addresses"
+            }
+        } + (patterns.isEmpty ? [] : [patterns.count == 1 ? "1 custom pattern" : "\(patterns.count) custom patterns"])
+        return names.isEmpty ? "nothing" : names.joined(separator: ", ")
     }
 }
 

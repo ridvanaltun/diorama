@@ -111,6 +111,23 @@ A profile is JSON (`diorama profiles export <name>` shows one). Example:
 
 Templates: `diorama profiles templates`, then `diorama profiles create --template N`.
 
+### Redaction rules (no AI)
+
+A rule with `redact` instead of instructions masks matches locally before Claude sees the result. It's deterministic, costs nothing and makes no API call. In the editor, set **Action → Redact**.
+
+```json
+{"name": "Redact secrets", "match": {"tools": ["*"], "includeErrors": true},
+ "redact": {"presets": ["secrets", "emails", "ipAddresses"], "patterns": ["ACME-\\d{4,}"]}}
+```
+
+- **Presets:** `secrets` covers Anthropic, OpenAI, AWS, GitHub, Slack, Stripe and Google keys, JWTs, bearer tokens and private-key blocks. It matches known formats only, so ordinary text stays as it is. `emails` and `ipAddresses` are opt-in. `patterns` are your own regexes.
+- **Output:** each match becomes `[REDACTED:kind]`, and the decision's reason says what was masked, for example "redacted 2 matches (anthropic-key ×1, private-key ×1)".
+- **Order:** redaction runs before AI rewrites, so the rewrite agent never sees the secrets either.
+- **It always applies:** it still applies when the budget is used up or an AI rewrite fails.
+- **Template:** "Privacy: redact secrets" (`diorama profiles templates`). The playground previews redaction for free.
+
+This is a convenience, not a guarantee. Formats it doesn't know aren't masked.
+
 ### Testing rules before you use them
 
 The rule playground tries rules on content without starting a session, and records nothing.

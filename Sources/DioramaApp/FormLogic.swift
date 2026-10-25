@@ -102,7 +102,12 @@ enum FormLogic {
     static func ruleProblems(_ rule: Rule) -> [String] {
         var out: [String] = []
         if rule.match.tools.isEmpty { out.append("No tools: the rule never matches.") }
-        if rule.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { out.append("No instructions for the rewrite agent.") }
+        if let spec = rule.redact {
+            if spec.presets.isEmpty && spec.patterns.isEmpty { out.append("Nothing to redact: pick a preset or add a pattern.") }
+            for p in spec.patterns where (try? NSRegularExpression(pattern: p)) == nil { out.append("Redaction pattern “\(p)” is an invalid regex.") }
+        } else if rule.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            out.append("No instructions for the rewrite agent.")
+        }
         if let c = rule.match.content, (try? Regex(c)) == nil { out.append("Content regex is invalid.") }
         for (field, pattern) in rule.match.input.sorted(by: { $0.key < $1.key }) where (try? Regex(pattern)) == nil {
             out.append("Input pattern for “\(field)” is an invalid regex.")

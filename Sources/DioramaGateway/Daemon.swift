@@ -408,11 +408,13 @@ public final class DioramaDaemon: @unchecked Sendable {
             var item = WhatIfItem(
                 toolUseId: d.toolUseId, toolName: src.toolName, toolInput: d.toolInput, originalText: check.originalText, before: d.outcome,
                 beforeReason: d.reason, beforeText: src.beforeText, matchedRules: check.checks.filter(\.matches).map(\.name), change: .sameUnchanged)
-            if check.model == nil {
+            // Rules that only redact are applied by the check itself (local, free).
+            let local = check.model == nil ? check.rewrite : nil
+            if check.model == nil, local?.replacementText == nil {
                 item.change = wasRewritten ? .noLongerRewritten : .sameUnchanged
-            } else if !req.rewrite {
+            } else if check.model != nil, !req.rewrite {
                 item.change = .wouldRewrite
-            } else if let r = rewritten[i] {
+            } else if let r = local ?? rewritten[i] {
                 item.costUSD = r.costUSD
                 cost += r.costUSD ?? 0
                 item.afterExplanation = r.explanation

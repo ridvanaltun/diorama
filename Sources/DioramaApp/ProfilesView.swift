@@ -159,6 +159,7 @@ struct ProfileEditor: View {
                                     Text(rule.name.isEmpty ? "Untitled rule" : rule.name).bold().foregroundStyle(rule.enabled ? .primary : .secondary)
                                     Text(rule.match.tools.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary)
                                     if rule.match.stage == .page { Badge(text: "page", color: .teal) }
+                                    if rule.isRedaction { Badge(text: "redact", color: .orange) }
                                     if !FormLogic.ruleProblems(rule).isEmpty {
                                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).help(FormLogic.ruleProblems(rule).joined(separator: "\n"))
                                     }
@@ -219,6 +220,14 @@ struct ProfileEditor: View {
 }
 
 struct RuleEditor: View {
+    static func label(_ p: RedactSpec.Preset) -> String {
+        switch p {
+        case .secrets: "Secrets (keys, tokens)"
+        case .emails: "Email addresses"
+        case .ipAddresses: "IP addresses"
+        }
+    }
+
     @Binding var rule: Rule
     @State private var inputText = ""
 
@@ -233,6 +242,13 @@ struct RuleEditor: View {
                 get: { FormLogic.formatInputPatterns(rule.match.input) },
                 set: { rule.match.input = FormLogic.parseInputPatterns($0) }), axis: .vertical)
             TextField("Content regex (optional)", text: Binding(get: { rule.match.content ?? "" }, set: { rule.match.content = $0.isEmpty ? nil : $0 }))
+            Picker("Action", selection: Binding(
+                get: { rule.isRedaction },
+                set: { rule.redact = $0 ? (rule.redact ?? RedactSpec()) : nil })) {
+                Text("Rewrite with the AI agent").tag(false)
+                Text("Redact (local, no AI)").tag(true)
+            }
+            .pickerStyle(.segmented)
             Picker("Applies to", selection: $rule.match.stage) {
                 Text("Tool result (what Claude receives)").tag(RuleStage.result)
                 Text("WebFetch page, before summarization").tag(RuleStage.page)
@@ -241,13 +257,35 @@ struct RuleEditor: View {
             if rule.match.stage == .page && !rule.match.tools.allSatisfy({ $0 == "WebFetch" }) {
                 Text("Page-stage rules only apply to WebFetch.").font(.caption).foregroundStyle(.secondary)
             }
-            Text("Instructions for the rewrite agent").font(.caption)
-            TextEditor(text: $rule.instructions).frame(minHeight: 80).overlay(RoundedRectangle(cornerRadius: 4).stroke(.quaternary))
-            HStack {
-                TextField("Model override (optional)", text: Binding(get: { rule.model ?? "" }, set: { rule.model = $0.isEmpty ? nil : $0 }))
-                Picker("Context", selection: $rule.context) {
-                    Text("Minimal").tag(ContextMode.none)
-                    Text("Include task").tag(ContextMode.task)
+            if let spec = rule.redact {
+                Text("Mask before Claude (and any AI rewrite) sees the result").font(.caption)
+                HStack(spacing: 16) {
+                    ForEach(RedactSpec.Preset.allCases, id: \.self) { preset in
+                        Toggle(Self.label(preset), isOn: Binding(
+                            get: { spec.presets.contains(preset) },
+                            set: { on in
+                                var s = rule.redact ?? RedactSpec()
+                                s.presets = RedactSpec.Preset.allCases.filter { $0 == preset ? on : s.presets.contains($0) }
+                                rule.redact = s
+                            }))
+                        .toggleStyle(.checkbox)
+                    }
+                }
+                TextField("Custom patterns (regex, one per line)", text: Binding(
+                    get: { spec.patterns.joined(separator: "\n") },
+                    set: { rule.redact?.patterns = $0.split(separator: "\n").map(String.init).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty } }),
+                          axis: .vertical)
+                Text("Matches become [REDACTED:kind]. Redaction runs first, costs nothing, and still applies when the budget is used up or a rewrite fails.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            } else {
+                Text("Instructions for the rewrite agent").font(.caption)
+                TextEditor(text: $rule.instructions).frame(minHeight: 80).overlay(RoundedRectangle(cornerRadius: 4).stroke(.quaternary))
+                HStack {
+                    TextField("Model override (optional)", text: Binding(get: { rule.model ?? "" }, set: { rule.model = $0.isEmpty ? nil : $0 }))
+                    Picker("Context", selection: $rule.context) {
+                        Text("Minimal").tag(ContextMode.none)
+                        Text("Include task").tag(ContextMode.task)
+                    }
                 }
             }
             ForEach(problems, id: \.self) { Label($0, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange) }

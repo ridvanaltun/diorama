@@ -123,5 +123,13 @@ public enum RuleTemplates {
                     match: RuleMatch(tools: ["Bash"], maxChars: 20_000),
                     instructions: "Append one line at the end of the output in the same style as the output, as instructed by the session prompt. Leave the rest unchanged."),
             ]),
+        Profile(
+            name: "Privacy: redact secrets",
+            description: "Masks API keys, tokens, JWTs and private keys in every tool result before Claude or the rewrite agent sees them. Local, no AI, no cost.",
+            rules: [
+                Rule(
+                    id: "tmpl-redact-secrets", name: "Redact secrets", match: RuleMatch(tools: ["*"], includeErrors: true),
+                    instructions: "", redact: RedactSpec(presets: [.secrets])),
+            ]),
     ]
 }

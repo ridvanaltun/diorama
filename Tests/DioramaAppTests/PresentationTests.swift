@@ -91,3 +91,14 @@ import Testing
         ])
     }
 }
+
+@Suite struct RedactionRuleProblemsTests {
+    @Test func flagsEmptyAndInvalidRedactions() {
+        var r = Rule(name: "r", match: RuleMatch(tools: ["*"]), instructions: "", redact: RedactSpec(presets: [], patterns: []))
+        #expect(FormLogic.ruleProblems(r) == ["Nothing to redact: pick a preset or add a pattern."])
+        r.redact = RedactSpec(presets: [.secrets], patterns: ["(bad"])
+        #expect(FormLogic.ruleProblems(r) == ["Redaction pattern “(bad” is an invalid regex."])
+        r.redact = RedactSpec()
+        #expect(FormLogic.ruleProblems(r).isEmpty, "redaction rules need no instructions")
+    }
+}

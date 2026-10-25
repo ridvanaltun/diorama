@@ -286,7 +286,7 @@ public final class DecisionEngine: Sendable {
         if let missing = t.missingReason { return record(.unchanged, missing) }
         guard let toolName = t.toolName else { return record(.unchanged, "unknown tool") }
         guard !t.segments.isEmpty else { return record(.unchanged, "tool result has no text content") }
-        let segments = t.segments
+        var segments = t.segments
         let text = segments.joined(separator: "\n\n")
         let ctx = MatchContext(toolName: toolName, toolInput: t.matchInput, text: text, requestClass: requestClass, isError: t.isError, stage: t.stage)
         let app = applicableRules(session: session, ctx: ctx)
@@ -294,10 +294,37 @@ public final class DecisionEngine: Sendable {
             let hasRules = !(session.profileVersion?.profile.rules.isEmpty ?? true) || session.prompt != nil
             return record(.unchanged, hasRules ? "no rule matched" : "no rules configured")
         }
-        let instructions = app.rules.map { RuleInstruction(name: $0.name, text: $0.instructions) }
-        let instructionTexts = instructions.map { "[\($0.name)] \($0.text)" }
+        let rewriteRules = app.rules.filter { !$0.isRedaction }
+        let instructions = rewriteRules.map { RuleInstruction(name: $0.name, text: $0.instructions) }
+        let instructionTexts = app.rules.map { r in
+            r.redact.map { "[\(r.name)] Redact \($0.summary) (local, no AI)" } ?? "[\(r.name)] \(r.instructions)"
+        }
+
+        // Redaction first: local and free, and the rewrite agent only ever sees the redacted text.
+        var redaction: Redactor.Result?
+        let redactSpecs = app.rules.compactMap(\.redact)
+        if !redactSpecs.isEmpty {
+            let r = Redactor.apply(redactSpecs, to: segments)
+            if r.total > 0 {
+                redaction = r
+                segments = r.texts
+            }
+        }
+        /// Records the redacted content alone (no rules left for the agent, or it couldn't run). A redaction
+        /// is never dropped because a rewrite failed: Claude gets the redacted text either way.
+        func recordRedacted(_ note: String?) -> DecisionRecord {
+            guard let r = redaction else {
+                return record(.unchanged, note ?? "nothing to redact", refs: app.refs, instructions: instructionTexts)
+            }
+            guard let bytes = try? t.buildReplacement(segments), let blob = try? store.blobs.put(bytes) else {
+                return record(.failed, "could not build the redacted content — original forwarded", refs: app.refs, instructions: instructionTexts)
+            }
+            return record(.rewritten, r.summary + (note.map { "; \($0)" } ?? ""), replacement: blob, refs: app.refs, instructions: instructionTexts)
+        }
+        if rewriteRules.isEmpty { return recordRedacted(nil) }
         if text.count > app.defaults.maxInputChars {
-            return record(.unchanged, "content too large to rewrite (\(text.count) > \(app.defaults.maxInputChars) characters)", refs: app.refs, instructions: instructionTexts)
+            let why = "content too large to rewrite (\(text.count) > \(app.defaults.maxInputChars) characters)"
+            return redaction != nil ? recordRedacted(why) : record(.unchanged, why, refs: app.refs, instructions: instructionTexts)
         }
 
         // Budget guard: interactive sessions stop calling the rewrite agent once a daily cap is used up.
@@ -311,7 +338,8 @@ public final class DecisionEngine: Sendable {
                                message: "Rewrites paused: \(why). Matching tool results are forwarded unchanged until tomorrow, or until you raise the budget.",
                                refId: t.decisionId)
             }
-            return record(.unchanged, "not rewritten: \(why)", refs: app.refs, instructions: instructionTexts)
+            return redaction != nil ? recordRedacted("not rewritten further: \(why)")
+                : record(.unchanged, "not rewritten: \(why)", refs: app.refs, instructions: instructionTexts)
         }
 
         // Frozen experiment treatment: identical inputs reuse the stored rewrite (decision D11).
@@ -322,9 +350,9 @@ public final class DecisionEngine: Sendable {
         }
 
         func rewriteNow() async -> DecisionRecord {
-            let model = app.rules.last(where: { $0.model != nil })?.model ?? app.defaults.model
-            let effort = app.rules.last(where: { $0.effort != nil })?.effort ?? app.defaults.effort
-            let wantsTask = app.rules.contains { $0.context == .task }
+            let model = rewriteRules.last(where: { $0.model != nil })?.model ?? app.defaults.model
+            let effort = rewriteRules.last(where: { $0.effort != nil })?.effort ?? app.defaults.effort
+            let wantsTask = rewriteRules.contains { $0.context == .task }
             var request = RewriteRequest(
                 toolName: t.stage == .page ? "\(toolName) (raw page, before extraction)" : toolName, toolInput: t.toolInputJSON ?? "{}",
                 segments: segments, instructions: instructions, taskContext: wantsTask ? t.taskText : nil, model: model, effort: effort,
@@ -368,8 +396,11 @@ public final class DecisionEngine: Sendable {
                         break
                     }
                     if let key = treatmentKey { try? store.storeTreatment(key: key, replacementBlob: blob, attemptId: attemptId) }
-                    return record(.rewritten, response.output?.explanation ?? "rewritten", replacement: blob, refs: app.refs, instructions: instructionTexts, treatmentKey: treatmentKey)
+                    let explanation = response.output?.explanation ?? "rewritten"
+                    return record(.rewritten, redaction.map { "\($0.summary); \(explanation)" } ?? explanation, replacement: blob, refs: app.refs,
+                                  instructions: instructionTexts, treatmentKey: treatmentKey)
                 case .unchanged:
+                    if redaction != nil { return recordRedacted("the rewrite agent made no further changes") }
                     return record(.unchanged, "rewrite agent left the content unchanged: \(response.output?.explanation ?? "")", refs: app.refs, instructions: instructionTexts)
                 case .invalid:
                     lastError = error ?? "invalid rewrite output"
@@ -381,6 +412,10 @@ public final class DecisionEngine: Sendable {
                     lastError = error ?? status.rawValue
                 }
                 break
+            }
+            if redaction != nil {
+                try? store.addFlag(sessionId: session.id, "rewrite-failures")
+                return recordRedacted("the rewrite failed (\(lastError)), so only the redaction was applied")
             }
             let policy = session.onFailure ?? app.defaults.onFailure
             try? store.addFlag(sessionId: session.id, "rewrite-failures")

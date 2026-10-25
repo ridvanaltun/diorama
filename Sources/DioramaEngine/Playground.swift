@@ -18,11 +18,28 @@ extension DecisionEngine {
             return RuleCheck(ruleId: r.id, name: r.name.isEmpty ? "Untitled rule" : r.name, matches: why == nil, reason: why ?? "matches")
         }
         let matched = rules.filter { RuleMatcher.matches($0, ctx) }
-        let model = matched.isEmpty ? nil : (matched.last(where: { $0.model != nil })?.model ?? defaults.model)
+        let rewriteRules = matched.filter { !$0.isRedaction }
+        let model = rewriteRules.isEmpty ? nil : (rewriteRules.last(where: { $0.model != nil })?.model ?? defaults.model)
         var result = PlaygroundResult(toolName: toolName, toolInput: toolInputJSON, stage: stage, originalText: text, checks: checks, model: model)
+
+        // Redaction is local and free, so the check shows it right away; the agent then sees the redacted text.
+        var segments = segments
+        var redaction: Redactor.Result?
+        let specs = matched.compactMap(\.redact)
+        if !specs.isEmpty {
+            let r = Redactor.apply(specs, to: segments)
+            if r.total > 0 {
+                redaction = r
+                segments = r.texts
+                result.rewrite = PlaygroundRewrite(status: .succeeded, replacementText: segments.joined(separator: "\n\n"), explanation: r.summary,
+                                                   edits: [], error: nil, model: "local redaction", costUSD: 0, latencyMs: 0)
+            } else if rewriteRules.isEmpty {
+                result.note = "The redaction rules found nothing to mask here."
+            }
+        }
         guard rewrite else { return result }
         guard let model else {
-            result.note = "No rule matches this content, so a session would forward it unchanged."
+            if matched.isEmpty { result.note = "No rule matches this content, so a session would forward it unchanged." }
             return result
         }
         guard !segments.isEmpty, !text.isEmpty else {
@@ -63,9 +80,20 @@ extension DecisionEngine {
             }
             // No attempt record is written, so the budget ledger carries this spending.
             store.recordSpend(kind: spendKind, profileId: profileId, costUSD: cost ?? 0)
+            if let r = redaction, status != .succeeded {
+                // The redaction stands even when the agent changes nothing more (or fails).
+                replacement = segments.joined(separator: "\n\n")
+                error = status == .unchanged ? nil : error
+                status = .succeeded
+                result.rewrite = PlaygroundRewrite(
+                    status: status, replacementText: replacement, explanation: r.summary + "; the rewrite agent made no further changes" + (error.map { " (\($0))" } ?? ""),
+                    edits: [], error: nil, model: response.modelServed ?? model, costUSD: cost, latencyMs: latency)
+                break
+            }
+            let explanation = response.output?.explanation
             result.rewrite = PlaygroundRewrite(
-                status: status, replacementText: replacement, explanation: response.output?.explanation, edits: response.output?.edits ?? [],
-                error: error, model: response.modelServed ?? model, costUSD: cost, latencyMs: latency)
+                status: status, replacementText: replacement, explanation: redaction.map { r in explanation.map { "\(r.summary); \($0)" } ?? r.summary } ?? explanation,
+                edits: response.output?.edits ?? [], error: error, model: response.modelServed ?? model, costUSD: cost, latencyMs: latency)
             break
         }
         return result
