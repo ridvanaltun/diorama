@@ -80,3 +80,18 @@ import Testing
         await #expect(throws: ClientError.self) { try await env.client.addRuleTest("web", decisionId: "toolu_missing") }
     }
 }
+
+@Suite struct LauncherAPITests {
+    @Test func savesLaunchersAndKeepsThemAcrossSettingsSaves() async throws {
+        let env = try await TestEnv.start()
+        defer { Task { await env.stop() } }
+        let l = Launcher(name: "Docs", folder: "/tmp/app", profile: "web")
+        #expect(try await env.client.saveLaunchers([l]) == [l])
+        var draft = try await env.client.settings()
+        draft.launchers = []
+        #expect(try await env.client.saveSettings(draft).launchers == [l], "an older settings draft doesn't drop launchers")
+        await #expect(throws: ClientError.self) { try await env.client.saveLaunchers([Launcher(name: "x", folder: "relative")]) }
+        await #expect(throws: ClientError.self) { try await env.client.saveLaunchers([l, Launcher(name: "docs", folder: "/b")]) }
+        #expect(try await env.client.saveLaunchers([]).isEmpty)
+    }
+}

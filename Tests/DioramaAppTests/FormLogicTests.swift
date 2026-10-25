@@ -82,3 +82,28 @@ import Testing
         #expect(FormLogic.exportFileName("a/b: c") == "a-b- c.diorama-profile.json")
     }
 }
+
+@Suite struct LauncherTests {
+    @Test func savesAFormAndBuildsItsCommand() {
+        var f = FormLogic.SessionForm(folder: "/tmp/my app")
+        f.profile = "Docs steer"
+        f.prompt = "Say v1 is deprecated"
+        f.promptTools = "WebFetch, WebSearch"
+        f.lockdown = .network
+        f.claudeArgs = "--model sonnet"
+        let l = FormLogic.launcher(f, name: "Docs on app")
+        #expect(l.runArguments == ["run", "--name", "Docs on app", "--profile", "Docs steer", "--prompt", "Say v1 is deprecated",
+                                   "--prompt-tools", "WebFetch,WebSearch", "--lockdown", "network", "--", "--model", "sonnet"])
+        #expect(FormLogic.launchCommand(l, cli: "/A/diorama") ==
+                "cd '/tmp/my app' && '/A/diorama' run '--name' 'Docs on app' '--profile' 'Docs steer' '--prompt' 'Say v1 is deprecated' '--prompt-tools' 'WebFetch,WebSearch' '--lockdown' 'network' -- --model sonnet")
+        let plain = FormLogic.launcher(FormLogic.SessionForm(folder: "/p"), name: "plain")
+        #expect(plain.runArguments == ["run", "--name", "plain"])
+    }
+
+    @Test func upsertReplacesTheSameNameAndKeepsItsId() {
+        let a = Launcher(id: "a", name: "One", folder: "/a")
+        let list = FormLogic.upsert(Launcher(id: "new", name: "one", folder: "/b"), into: [a])
+        #expect(list.count == 1 && list[0].id == "a" && list[0].folder == "/b")
+        #expect(FormLogic.upsert(Launcher(name: "Two", folder: "/c"), into: [a]).count == 2)
+    }
+}

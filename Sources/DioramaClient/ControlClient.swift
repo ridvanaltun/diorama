@@ -104,6 +104,10 @@ public struct ControlClient: Sendable {
     public func runProfileTests(_ ref: String? = nil, profile: Profile? = nil) async throws -> [ProfileTestResult] {
         try await request("POST", "profile-tests", body: ProfileTestRequest(profileRef: ref, profile: profile))
     }
+    public func launchers() async throws -> [Launcher] { try await request("GET", "launchers") }
+    /// Replaces the saved launchers.
+    @discardableResult
+    public func saveLaunchers(_ list: [Launcher]) async throws -> [Launcher] { try await request("PUT", "launchers", body: list) }
     /// Watched profile folders and what syncing their files did.
     public func profileFolders() async throws -> [ProfileFolderStatus] { try await request("GET", "profile-folders") }
     /// Starts (or stops) syncing profile files from a folder; returns the folders after syncing.

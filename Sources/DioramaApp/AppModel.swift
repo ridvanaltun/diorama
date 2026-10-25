@@ -170,6 +170,16 @@ final class AppModel {
         spend = try? await client.spend()
     }
 
+    /// Starts a launcher's session in Terminal.
+    func launch(_ l: Launcher) {
+        do { try openInTerminal(FormLogic.launchCommand(l, cli: cliPath)) } catch { report(error) }
+    }
+
+    func saveLaunchers(_ list: [Launcher]) async {
+        _ = await perform { try await $0.saveLaunchers(list) }
+        await refreshSettings()
+    }
+
     func refreshReviews() async {
         guard let client else { return }
         pendingReviews = (try? await client.pendingReviews()) ?? []

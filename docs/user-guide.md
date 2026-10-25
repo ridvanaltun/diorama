@@ -35,6 +35,8 @@ diorama run --profile web -- --model sonnet   # anything after -- goes to Claude
 
 `diorama run` starts Claude Code in your terminal with two variables set for that process only: `ANTHROPIC_BASE_URL`, pointing at your session's gateway URL, and `CLAUDE_CODE_GATEWAY_HINT_HEADERS=1`, which labels each request as main, subagent, auxiliary and so on. It passes the same values through `--settings`, so they win over an `env` block in your own `~/.claude/settings.json`. No file is changed. If the daemon dies mid-session, `diorama run` restarts it on the same port.
 
+**Launchers:** in **New Session**, set up a session (folder, profile, prompt, lockdown, Claude arguments) and choose **Save as Launcher…**. It then appears under **New Session…** in the menu bar: one click opens Terminal and starts that session. Saving a launcher with an existing name replaces it. **Settings → Launchers** lists them with **Launch** and delete buttons. From a terminal, `diorama launch` lists them and `diorama launch "Name"` starts one in the current terminal, in the launcher's folder.
+
 **Folder defaults:** give a project folder a default profile, and `diorama run` there, or in any folder inside it, uses that profile when you don't pass `--profile` or `--prompt`. It prints which default it used. Pass `--no-folder-default` to skip it. The nearest folder wins, and symlinked paths count as the same folder.
 
 ```bash

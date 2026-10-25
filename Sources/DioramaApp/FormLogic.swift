@@ -34,6 +34,34 @@ enum FormLogic {
         return parts.joined(separator: " ")
     }
 
+    /// A launcher saving this form (the launcher's name also names its sessions).
+    static func launcher(_ f: SessionForm, name: String, id: String? = nil) -> Launcher {
+        let prompt = f.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        var l = Launcher(name: name, folder: f.folder, profile: f.profile.isEmpty ? nil : f.profile, prompt: prompt.isEmpty ? nil : f.prompt,
+                         promptTools: parseList(f.promptTools), taskContext: f.taskContext, pageStage: f.pageStage, lockdown: f.lockdown, claudeArgs: f.claudeArgs)
+        if let id { l.id = id }
+        return l
+    }
+
+    /// The shell command that starts a launcher's session in its folder.
+    static func launchCommand(_ l: Launcher, cli: String) -> String {
+        let args = l.runArguments
+        let split = args.firstIndex(of: "--") ?? args.endIndex
+        // Claude Code's extra arguments stay unquoted, as typed (like the New Session form).
+        let quoted = args[..<split].map { $0 == "run" ? $0 : shellQuote($0) } + (split < args.endIndex ? ["--", l.claudeArgs] : [])
+        return (["cd", shellQuote(l.folder), "&&", shellQuote(cli)] + quoted).joined(separator: " ")
+    }
+
+    /// Adds `l`, replacing a launcher with the same name (case-insensitive).
+    static func upsert(_ l: Launcher, into list: [Launcher]) -> [Launcher] {
+        guard let i = list.firstIndex(where: { $0.name.caseInsensitiveCompare(l.name) == .orderedSame }) else { return list + [l] }
+        var out = list
+        var replaced = l
+        replaced.id = list[i].id
+        out[i] = replaced
+        return out
+    }
+
     /// Hook mode's configuration from the same form (hook mode has no page stage, name or lockdown).
     static func hookConfig(_ f: SessionForm) -> HookConfig {
         let prompt = f.prompt.trimmingCharacters(in: .whitespacesAndNewlines)

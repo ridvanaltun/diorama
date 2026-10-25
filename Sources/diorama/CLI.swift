@@ -12,7 +12,7 @@ struct Diorama: AsyncParsableCommand {
         discussion: "Diorama routes Claude Code sessions you start with `diorama run` through a local gateway that can rewrite tool results according to your rules, records everything, and runs A/B experiments.",
         version: DioramaVersion.current,
         subcommands: [
-            Run.self, Hook.self, MCP.self, Spend.self, Search.self, PauseAll.self, ResumeAll.self, Reviews.self, ExportData.self, Folders.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
+            Run.self, Hook.self, MCP.self, Spend.self, Search.self, PauseAll.self, ResumeAll.self, Reviews.self, ExportData.self, Folders.self, Launch.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
         ])
 }
 
@@ -1205,6 +1205,41 @@ struct Search: AsyncParsableCommand {
             let snippet = h.snippet.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "⟦", with: "\u{1B}[1m").replacingOccurrences(of: "⟧", with: "\u{1B}[0m")
             print("    \(snippet)\n")
         }
+    }
+}
+
+struct Launch: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "Start a saved launcher's session in this terminal (without a name, list them).",
+        discussion: """
+            Launchers are saved from the app's New Session sheet (Save as Launcher…) and also appear in the menu bar.
+              diorama launch                 # list
+              diorama launch "Docs steer on app"
+            """)
+    @OptionGroup var global: GlobalOptions
+    @Argument(help: "Launcher name.") var name: String?
+    @Flag var json = false
+
+    func run() async throws {
+        let list = try await global.client().launchers()
+        guard let name else {
+            if json { return try printJSON(list) }
+            guard !list.isEmpty else { return print("No launchers. Save one from the app's New Session sheet (Save as Launcher…).") }
+            for l in list { print("\(l.name)  —  \(l.folder)" + (l.profile.map { ", profile \($0)" } ?? "") + (l.prompt != nil ? ", session prompt" : "")) }
+            return
+        }
+        guard let l = list.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else {
+            throw ValidationError("no launcher named '\(name)'" + (list.isEmpty ? "" : "; launchers: " + list.map(\.name).joined(separator: ", ")))
+        }
+        guard FileManager.default.fileExists(atPath: l.folder) else { throw ValidationError("\(l.folder) doesn't exist (any more)") }
+        // `diorama run` in the launcher's folder, attached to this terminal.
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: selfPath())
+        p.arguments = l.runArguments
+        p.currentDirectoryURL = URL(fileURLWithPath: l.folder)
+        try p.run()
+        p.waitUntilExit()
+        if p.terminationStatus != 0 { throw ExitCode(p.terminationStatus) }
     }
 }
 

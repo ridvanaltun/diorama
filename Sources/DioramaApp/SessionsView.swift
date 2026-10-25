@@ -1142,6 +1142,8 @@ struct NewSessionSheet: View {
     @State private var installedHook: String?
     @State private var justInstalled = false
     @State private var makeFolderDefault = false
+    @State private var savingLauncher = false
+    @State private var launcherName = ""
 
     /// The folder's default profile (its own or a parent's), which `diorama run` uses when no profile is picked.
     var folderDefault: FolderDefault? { model.settings.folderDefault(for: folder) }
@@ -1252,6 +1254,25 @@ struct NewSessionSheet: View {
                     }
                 }
                 Spacer()
+                if mode == .terminal {
+                    Button("Save as Launcher…") {
+                        launcherName = name.isEmpty ? (folder as NSString).lastPathComponent : name
+                        savingLauncher = true
+                    }
+                    .help("Save this setup to start it from the menu bar or with `diorama launch`")
+                    .alert("Save as launcher", isPresented: $savingLauncher) {
+                        TextField("Name", text: $launcherName)
+                        Button("Save") {
+                            let n = launcherName.trimmingCharacters(in: .whitespaces)
+                            guard !n.isEmpty else { return }
+                            let l = FormLogic.launcher(form, name: n)
+                            Task { await model.saveLaunchers(FormLogic.upsert(l, into: model.settings.launchers)) }
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Starts this folder, profile and prompt in Terminal from the menu bar's Quick Launch. A launcher with the same name is replaced.")
+                    }
+                }
                 Button(justInstalled ? "Done" : "Cancel") { dismiss() }
                 if mode == .terminal {
                     Button("Open in Terminal") {

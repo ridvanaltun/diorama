@@ -1152,6 +1152,8 @@ public struct DioramaSettings: Codable, Sendable, Hashable {
     public var folderProfiles: [String: String] = [:]
     /// Folders whose profile JSON files are kept in sync as profiles (one way: file → Diorama).
     public var profileFolders: [String] = []
+    /// Saved session setups, started from the menu bar or `diorama launch`.
+    public var launchers: [Launcher] = []
 
     public static let defaultOllamaURL = "http://127.0.0.1:11434"
 
@@ -1176,6 +1178,7 @@ public struct DioramaSettings: Codable, Sendable, Hashable {
         steeringPaused = try c.decodeIfPresent(Bool.self, forKey: .steeringPaused) ?? false
         folderProfiles = try c.decodeIfPresent([String: String].self, forKey: .folderProfiles) ?? [:]
         profileFolders = try c.decodeIfPresent([String].self, forKey: .profileFolders) ?? []
+        launchers = try c.decodeIfPresent([Launcher].self, forKey: .launchers) ?? []
     }
 
     /// The default for `path`: its own entry or the nearest parent folder's.
@@ -1588,5 +1591,51 @@ public struct ProfileFolderStatus: Codable, Sendable, Hashable, Identifiable {
         self.path = path
         self.exists = exists
         self.files = files
+    }
+}
+
+/// A saved session setup: where to start Claude Code and with which steering.
+public struct Launcher: Codable, Sendable, Hashable, Identifiable {
+    public var id: String
+    /// Shown in the menu; also the session's name.
+    public var name: String
+    public var folder: String
+    public var profile: String?
+    public var prompt: String?
+    public var promptTools: [String]
+    public var taskContext: Bool
+    public var pageStage: Bool
+    public var lockdown: LockdownPreset
+    /// Extra arguments for Claude Code (split on spaces).
+    public var claudeArgs: String
+
+    public init(id: String = "launch-" + UUID().uuidString.prefix(8).lowercased(), name: String, folder: String, profile: String? = nil, prompt: String? = nil,
+                promptTools: [String] = SessionPrompt.defaultTools, taskContext: Bool = false, pageStage: Bool = false, lockdown: LockdownPreset = .none,
+                claudeArgs: String = "") {
+        self.id = id
+        self.name = name
+        self.folder = folder
+        self.profile = profile
+        self.prompt = prompt
+        self.promptTools = promptTools
+        self.taskContext = taskContext
+        self.pageStage = pageStage
+        self.lockdown = lockdown
+        self.claudeArgs = claudeArgs
+    }
+
+    /// Arguments for `diorama run` (run from `folder`).
+    public var runArguments: [String] {
+        var a = ["run", "--name", name]
+        if let p = profile, !p.isEmpty { a += ["--profile", p] }
+        if let p = prompt, !p.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            a += ["--prompt", p]
+            a += pageStage ? ["--prompt-stage", "page"] : ["--prompt-tools", promptTools.joined(separator: ",")]
+            if taskContext { a += ["--prompt-context", "task"] }
+        }
+        if lockdown != .none { a += ["--lockdown", lockdown.rawValue] }
+        let extra = claudeArgs.split(whereSeparator: \.isWhitespace).map(String.init)
+        if !extra.isEmpty { a += ["--"] + extra }
+        return a
     }
 }

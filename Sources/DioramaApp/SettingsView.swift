@@ -60,6 +60,7 @@ struct SettingsView: View {
             SpendHistorySection()
             FolderDefaultsSection()
             ProfileFoldersSection()
+            LaunchersSection()
             Section("Steering") {
                 Toggle("Pause steering everywhere", isOn: Binding(
                     get: { model.settings.steeringPaused },
@@ -309,5 +310,37 @@ struct ProfileFoldersSection: View {
     func set(_ path: String, _ watched: Bool) async {
         if let s = await model.perform({ try await $0.setProfileFolder(path, watched: watched) }) { status = s }
         await model.refreshProfiles()
+    }
+}
+
+/// Saved session setups (Quick Launch in the menu bar, `diorama launch`).
+struct LaunchersSection: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Section {
+            if model.settings.launchers.isEmpty {
+                Text("None yet. In New Session, set up a session and choose Save as Launcher… to start it from the menu bar with one click.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            ForEach(model.settings.launchers) { l in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(l.name).fontWeight(.medium)
+                        Text(Fmt.shortPath(l.folder) + " · " + (l.profile ?? (l.prompt != nil ? "session prompt" : "no rules"))).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Launch") { model.launch(l) }
+                    Button(role: .destructive) {
+                        Task { await model.saveLaunchers(model.settings.launchers.filter { $0.id != l.id }) }
+                    } label: { Image(systemName: "trash") }
+                    .buttonStyle(.borderless)
+                }
+            }
+        } header: {
+            Text("Launchers")
+        } footer: {
+            Text("Also from the terminal: `diorama launch` lists them, `diorama launch \"Name\"` starts one in the current terminal.").font(.caption).foregroundStyle(.secondary)
+        }
     }
 }

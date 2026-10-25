@@ -67,6 +67,16 @@ struct MenuBarPanel: View {
                 MenuRow(action: { open { model.section = .sessions; model.wantsNewSession = true } }) {
                     Label("New Session…", systemImage: "plus")
                 }
+                ForEach(model.settings.launchers.prefix(8)) { l in
+                    MenuRow(action: { model.launch(l); dismiss() }) {
+                        HStack {
+                            Label(l.name, systemImage: "play.circle")
+                            Spacer(minLength: 8)
+                            Text(l.profile ?? (l.prompt != nil ? "prompt" : "record only")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    }
+                    .help("Start Claude Code in \(Fmt.shortPath(l.folder)) in Terminal")
+                }
                 MenuRow(action: { open {} }) {
                     Label("Open Diorama", systemImage: "macwindow")
                 }
@@ -98,6 +108,8 @@ struct MenuBarPanel: View {
                 .padding(.horizontal, 12).padding(.bottom, 10)
         }
         .frame(width: 300)
+        // Launchers and pause state can change from the CLI or MCP.
+        .task { if model.snapshotDir == nil { await model.refreshSettings() } }
         .task { await model.connectIfNeeded() }
     }
 

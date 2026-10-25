@@ -79,6 +79,7 @@ struct ControlAPI: Sendable {
             s.steeringPaused = store.settings().steeringPaused
             s.folderProfiles = store.settings().folderProfiles
             s.profileFolders = store.settings().profileFolders
+            s.launchers = store.settings().launchers
             guard s.retentionDays >= 1, s.retentionDays <= 3650 else { throw Failure(status: 400, message: "retentionDays must be 1–3650") }
             if let b = s.dailyBudgetUSD, !(b >= 0) { throw Failure(status: 400, message: "dailyBudgetUSD must be zero or more") }
             try store.saveSettings(s)
@@ -206,6 +207,22 @@ struct ControlAPI: Sendable {
             if let p = r.profile { return try ok(ProfileTests.run(p)) }
             guard let ref = r.profileRef, let v = try store.resolveProfile(ref) else { throw notFound("profile") }
             return try ok(ProfileTests.run(v.profile))
+        }
+        if Self.match(method, route, "GET", "launchers") != nil {
+            return try ok(store.settings().launchers)
+        }
+        if Self.match(method, route, "PUT", "launchers") != nil {
+            let list = try decode([Launcher].self, req)
+            for l in list {
+                guard !l.name.trimmingCharacters(in: .whitespaces).isEmpty else { throw Failure(status: 400, message: "a launcher needs a name") }
+                guard l.folder.hasPrefix("/") else { throw Failure(status: 400, message: "launcher “\(l.name)”: give an absolute folder") }
+            }
+            guard Set(list.map { $0.name.lowercased() }).count == list.count else { throw Failure(status: 400, message: "launcher names must be unique") }
+            var s = store.settings()
+            s.launchers = list
+            try store.saveSettings(s)
+            daemon.sessions.settingsChanged()
+            return try ok(list)
         }
         if Self.match(method, route, "GET", "profile-folders") != nil {
             return try ok(store.profileFolderStatus(store.settings().profileFolders))
