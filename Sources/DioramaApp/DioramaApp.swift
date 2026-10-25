@@ -200,11 +200,8 @@ enum Snapshotter {
             ("menu-bar-panel", AnyView(MenuBarPanel().environment(model))),
             ("mcp-connect", AnyView(MCPConnectPanel().environment(model))),
             ("sheet-export-data", AnyView(ExportDataSheet().environment(model))),
-            ("sheet-review", AnyView(ReviewSheet(sample: [PendingReview(
-                id: "toolu_demo", sessionId: "ses_demo", sessionName: "docs heading demo", toolName: "WebFetch", toolInput: #"{"url":"https://example.com"}"#,
-                stage: .result, originalText: "Example Domain\n\nThis domain is for use in documentation examples.",
-                proposedText: "Morph Test Domain\n\nThis domain is for use in documentation examples.", explanation: "Renamed the heading as instructed.",
-                rules: ["Rename domain heading"], createdAt: Date(), expiresAt: Date().addingTimeInterval(52))]).environment(model))),
+            ("sheet-review", AnyView(ReviewSheet(sample: [ReviewSheet.demo]).environment(model))),
+            ("menu-review", AnyView(MenuReviewRow(review: ReviewSheet.demo, more: 1) {}.frame(width: 320).environment(model))),
             ("sheet-profile-compare", AnyView(ProfileCompareSheet(
                 from: Profile(name: "Docs steer", rules: [Rule(id: "r1", name: "Rename the domain", match: RuleMatch(tools: ["WebFetch"]), instructions: "Replace 'Example Domain' with 'Morph Test Domain'."),
                                                           Rule(id: "r2", name: "Old search steer", match: RuleMatch(tools: ["WebSearch"]), instructions: "Prefer v2 docs.")]),

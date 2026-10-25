@@ -61,10 +61,8 @@ struct MenuBarPanel: View {
             }
             Divider()
             VStack(spacing: 0) {
-                if !model.pendingReviews.isEmpty {
-                    MenuRow(action: { open { model.showReviews = true } }) {
-                        Label("\(Fmt.plural(model.pendingReviews.count, "rewrite")) waiting for review…", systemImage: "hand.raised.fill").foregroundStyle(.orange)
-                    }
+                if let first = model.pendingReviews.first {
+                    MenuReviewRow(review: first, more: model.pendingReviews.count - 1) { open { model.showReviews = true } }
                 }
                 MenuRow(action: { open { model.section = .sessions; model.wantsNewSession = true } }) {
                     Label("New Session…", systemImage: "plus")
@@ -197,5 +195,30 @@ struct MenuRow<Content: View>: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+    }
+}
+
+/// The oldest waiting review, answerable from the menu bar without opening the window.
+struct MenuReviewRow: View {
+    @Environment(AppModel.self) private var model
+    let review: PendingReview
+    let more: Int
+    let openAll: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("Rewrite waiting for review" + (more > 0 ? " (+\(more) more)" : ""), systemImage: "hand.raised.fill")
+                .font(.callout.bold()).foregroundStyle(.orange)
+            Text("\(Fmt.toolName(review.toolName)) in “\(review.sessionName)”: \(review.explanation)").font(.caption).lineLimit(2)
+            HStack {
+                Button("Details…", action: openAll).controlSize(.small)
+                Spacer()
+                Button("Reject") { Task { await model.resolveReview(review, approve: false) } }.controlSize(.small)
+                Button("Approve") { Task { await model.resolveReview(review, approve: true) } }.controlSize(.small).buttonStyle(.borderedProminent).tint(.orange)
+            }
+        }
+        .padding(8)
+        .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 6).padding(.vertical, 4)
     }
 }

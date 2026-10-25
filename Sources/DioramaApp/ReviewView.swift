@@ -12,6 +12,15 @@ struct ReviewSheet: View {
 
     var reviews: [PendingReview] { sample ?? model.pendingReviews }
 
+    /// For snapshots.
+    static var demo: PendingReview {
+        PendingReview(
+            id: "toolu_demo", sessionId: "ses_demo", sessionName: "docs heading demo", toolName: "WebFetch", toolInput: #"{"url":"https://example.com"}"#,
+            stage: .result, originalText: "Example Domain\n\nThis domain is for use in documentation examples.",
+            proposedText: "Morph Test Domain\n\nThis domain is for use in documentation examples.", explanation: "Renamed the heading as instructed.",
+            rules: ["Rename domain heading"], createdAt: Date(), expiresAt: Date().addingTimeInterval(52))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
@@ -27,7 +36,7 @@ struct ReviewSheet: View {
                         ContentUnavailableView("Nothing to review", systemImage: "checkmark.circle", description: Text("New rewrites from profiles with review mode on appear here."))
                             .padding(.top, 40)
                     }
-                    ForEach(reviews) { ReviewCard(review: $0) }
+                    ForEach(reviews) { r in ReviewCard(review: r, isFirst: r.id == reviews.first?.id) }
                 }
                 .padding(20)
             }
@@ -49,6 +58,8 @@ struct ReviewSheet: View {
 private struct ReviewCard: View {
     @Environment(AppModel.self) private var model
     let review: PendingReview
+    /// The oldest review answers the keyboard shortcuts (⌘↩ approve, ⌘⌫ reject).
+    var isFirst = false
     @State private var busy = false
 
     var body: some View {
@@ -74,8 +85,11 @@ private struct ReviewCard: View {
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
             HStack {
                 Spacer()
+                if isFirst { Text("⌘⌫ reject · ⌘↩ approve").font(.caption).foregroundStyle(.tertiary) }
                 Button("Reject") { act(false) }.disabled(busy)
+                    .keyboardShortcut(isFirst ? KeyboardShortcut(.delete, modifiers: .command) : nil)
                 Button("Approve") { act(true) }.buttonStyle(.borderedProminent).disabled(busy)
+                    .keyboardShortcut(isFirst ? KeyboardShortcut(.return, modifiers: .command) : nil)
             }
         }
         .padding(12)

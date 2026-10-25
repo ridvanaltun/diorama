@@ -193,7 +193,7 @@ diorama session whatif ses_123 --file draft.json --rewrite --max 10
 
 Turn on **Review rewrites before Claude sees them** in a profile's defaults (`"defaults": {"review": true, "reviewTimeoutSeconds": 60}`) to hold every AI rewrite until you answer. Claude waits meanwhile. Diorama opens **Review rewrites** with a word diff of what Claude would see, and shows a banner, a menu bar row and, while it's in the background, a notification.
 
-- **Approve** sends the rewrite. **Reject** sends the original, with any redaction still applied.
+- **Approve** sends the rewrite. **Reject** sends the original, with any redaction still applied. In the sheet, ⌘↩ approves the oldest rewrite and ⌘⌫ rejects it. The menu bar also shows the oldest one with **Approve** and **Reject**, so you can answer without opening the window.
 - If you don't answer within the wait time (15–120 s, default 60), Claude gets the original. In hook mode a review also ends 150 s after the tool result arrived, before Claude Code's 180 s hook limit.
 - `diorama review` lists what's waiting, and `diorama review approve|reject <id>` answers. The MCP tool `list_pending_reviews` can only list: AI clients can't approve rewrites.
 - Not used for experiment trials (nobody is there to answer) or input rules (Claude Code already asks you about those).
