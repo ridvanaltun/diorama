@@ -33,7 +33,9 @@ http.createServer((req, res) => {
 }).listen(8789, '127.0.0.1');
 JS
 
-cleanup() { pkill -f "mock-upstream.mjs" || true; pkill -f "fake-rewrite.mjs" || true; pkill -f "dioramad --home $DEMO" || true; }
+# The app relaunches a missing daemon, so stop the app before the daemon.
+APP_PID=""
+cleanup() { { [[ -n "$APP_PID" ]] && kill "$APP_PID" 2> /dev/null; } || true; pkill -f "mock-upstream.mjs" || true; pkill -f "fake-rewrite.mjs" || true; pkill -f "dioramad --home $DEMO" || true; }
 trap cleanup EXIT
 (cd "$DEMO" && PORT=8788 node "$ROOT/spikes/gateway-poc/mock-upstream.mjs" > mock.log 2>&1 &)
 (cd "$DEMO" && node fake-rewrite.mjs > fake.log 2>&1 &)
@@ -58,8 +60,9 @@ JSON
 "$D" experiment run "$DEMO/exp.json" --yes > /dev/null
 
 rm -rf "$DEMO/shots"
-(DIORAMA_SNAPSHOT_DIR="$DEMO/shots" "$APP/Contents/MacOS/Diorama" > /dev/null 2>&1 &)
-for i in {1..60}; do sleep 1; [[ -f "$DEMO/shots/settings.png" ]] && break; done
+DIORAMA_SNAPSHOT_DIR="$DEMO/shots" "$APP/Contents/MacOS/Diorama" > /dev/null 2>&1 &
+APP_PID=$!
+for i in {1..90}; do sleep 1; [[ -f "$DEMO/shots/sheet-new-experiment.png" ]] && break; done
 sleep 1
 for n in sessions experiments profiles settings; do
   W=$(sips -g pixelWidth "$DEMO/shots/$n.png" | awk '/pixelWidth/ {print $2}')
