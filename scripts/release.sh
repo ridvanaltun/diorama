@@ -34,6 +34,12 @@ grep -q '^## Unreleased' CHANGELOG.md || { echo "✗ CHANGELOG.md has no '## Unr
 awk '/^## Unreleased/{f=1;next} /^## /{f=0} f && /[^[:space:]]/{c++} END{exit c>0?0:1}' CHANGELOG.md \
   || { echo "✗ the '## Unreleased' section in CHANGELOG.md is empty"; exit 1; }
 
+# GitHub lists an invalid workflow file by its path instead of its name: refuse to tag then.
+if command -v gh > /dev/null; then
+  gh workflow list --json name --jq '.[].name' 2> /dev/null | grep -qx "Release" \
+    || { echo "✗ GitHub doesn't recognize the Release workflow (invalid .github/workflows/release.yml?)"; exit 1; }
+fi
+
 echo "▸ Releasing $TAG"
 sed -i '' "s/public static let current = \".*\"/public static let current = \"$VERSION\"/" Sources/DioramaCore/Models.swift
 TODAY="$(date +%Y-%m-%d)"
