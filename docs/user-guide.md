@@ -35,6 +35,16 @@ diorama run --profile web -- --model sonnet   # anything after -- goes to Claude
 
 `diorama run` starts Claude Code in your terminal with two variables set for that process only: `ANTHROPIC_BASE_URL`, pointing at your session's gateway URL, and `CLAUDE_CODE_GATEWAY_HINT_HEADERS=1`, which labels each request as main, subagent, auxiliary and so on. It passes the same values through `--settings`, so they win over an `env` block in your own `~/.claude/settings.json`. No file is changed. If the daemon dies mid-session, `diorama run` restarts it on the same port.
 
+**Folder defaults:** give a project folder a default profile, and `diorama run` there, or in any folder inside it, uses that profile when you don't pass `--profile` or `--prompt`. It prints which default it used. Pass `--no-folder-default` to skip it. The nearest folder wins, and symlinked paths count as the same folder.
+
+```bash
+diorama folders set ~/code/app "Docs steer"
+diorama folders              # list
+diorama folders unset ~/code/app
+```
+
+In the app, picking a profile in **New Session** offers **Make this the folder's default profile**, and **Settings → Folder defaults** lists the defaults with buttons to remove them. Hook installs keep their own configuration.
+
 **Surfaces:** `diorama run` covers the terminal CLI. The VS Code extension also works if you set the printed variables in `claudeCode.environmentVariables`. The Claude desktop app's Code tab sets its own `ANTHROPIC_BASE_URL` for every session and can't be routed through the gateway. Use hook mode for it, described next.
 
 ## Claude desktop and IDEs (hook mode)

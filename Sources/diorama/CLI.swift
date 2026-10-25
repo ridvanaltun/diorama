@@ -12,7 +12,7 @@ struct Diorama: AsyncParsableCommand {
         discussion: "Diorama routes Claude Code sessions you start with `diorama run` through a local gateway that can rewrite tool results according to your rules, records everything, and runs A/B experiments.",
         version: DioramaVersion.current,
         subcommands: [
-            Run.self, Hook.self, MCP.self, Spend.self, Search.self, PauseAll.self, ResumeAll.self, Reviews.self, ExportData.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
+            Run.self, Hook.self, MCP.self, Spend.self, Search.self, PauseAll.self, ResumeAll.self, Reviews.self, ExportData.self, Folders.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
         ])
 }
 
@@ -106,6 +106,7 @@ struct Run: AsyncParsableCommand {
     @Option(help: "Where the session prompt applies: result (tool results) or page (WebFetch raw page, before summarization).") var promptStage: RuleStage = .result
     @Option(help: "Block shell network tools that bypass rewrites: none or network.") var lockdown: LockdownPreset = .none
     @Option(help: "Path to the claude executable.") var claude: String?
+    @Flag(help: "Don't use the folder's default profile (see `diorama folders`).") var noFolderDefault = false
     @Argument(parsing: .postTerminator, help: "Arguments passed to Claude Code.") var claudeArguments: [String] = []
 
     func run() async throws {
@@ -124,6 +125,16 @@ struct Run: AsyncParsableCommand {
             throw ValidationError("could not find `claude`; install Claude Code or pass --claude PATH")
         }
         let cwd = FileManager.default.currentDirectoryPath
+        var profile = profile
+        // No profile or prompt given: use the folder's default, if one is set.
+        if profile == nil, sessionPrompt == nil, !noFolderDefault, let d = settings.folderDefault(for: cwd), let p = d.profile {
+            if try await client.profiles().contains(where: { $0.name == p || $0.id == p }) {
+                profile = p
+                eprint("◆ Using \(p), the default profile for \(d.path) (--no-folder-default to skip)")
+            } else {
+                eprint("diorama: note: \(d.path)'s default profile '\(p)' no longer exists; running without a profile. Fix it with `diorama folders set`.")
+            }
+        }
         let launch = try await client.createSession(SessionSpec(
             name: name ?? (cwd as NSString).lastPathComponent, cwd: cwd, profile: profile, prompt: sessionPrompt, lockdown: lockdown))
         let s = launch.session
@@ -992,6 +1003,56 @@ struct Search: AsyncParsableCommand {
             print("\(dateText(h.createdAt))  \(h.sessionName) (\(h.sessionId)) — \(what)  [\(h.ref)]")
             let snippet = h.snippet.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "⟦", with: "\u{1B}[1m").replacingOccurrences(of: "⟧", with: "\u{1B}[0m")
             print("    \(snippet)\n")
+        }
+    }
+}
+
+struct Folders: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "Give project folders a default profile, used by `diorama run` there (and in folders below).",
+        discussion: """
+              diorama folders                              # list
+              diorama folders set ~/code/app "Docs steer"
+              diorama folders set . "Docs steer"
+              diorama folders unset ~/code/app
+            `diorama run --profile X` or `--prompt` still wins; `--no-folder-default` skips it.
+            """,
+        subcommands: [List.self, Set.self, Unset.self], defaultSubcommand: List.self)
+
+    static func absolute(_ path: String) -> String {
+        let p = (path as NSString).expandingTildeInPath
+        return p.hasPrefix("/") ? p : (FileManager.default.currentDirectoryPath as NSString).appendingPathComponent(p)
+    }
+
+    struct List: AsyncParsableCommand {
+        @OptionGroup var global: GlobalOptions
+        @Flag var json = false
+        func run() async throws {
+            let all = try await global.client().folderDefaults()
+            if json { return try printJSON(all) }
+            guard !all.isEmpty else { return print("No folder defaults. Set one with `diorama folders set <folder> <profile>`.") }
+            for f in all { print("\(f.path)  →  \(f.profile ?? "")") }
+        }
+    }
+
+    struct Set: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Set a folder's default profile.")
+        @OptionGroup var global: GlobalOptions
+        @Argument var folder: String
+        @Argument var profile: String
+        func run() async throws {
+            let f = try await global.client().setFolderDefault(Folders.absolute(folder), profile: profile)
+            print("✓ Sessions started with `diorama run` in \(f.path) now use \(profile).")
+        }
+    }
+
+    struct Unset: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Remove a folder's default profile.")
+        @OptionGroup var global: GlobalOptions
+        @Argument var folder: String
+        func run() async throws {
+            let f = try await global.client().setFolderDefault(Folders.absolute(folder), profile: nil)
+            print("✓ \(f.path) has no default profile.")
         }
     }
 }

@@ -77,6 +77,7 @@ struct ControlAPI: Sendable {
             var s = try decode(DioramaSettings.self, req)
             // Pausing has its own endpoints; a settings save (possibly from an older draft) never changes it.
             s.steeringPaused = store.settings().steeringPaused
+            s.folderProfiles = store.settings().folderProfiles
             guard s.retentionDays >= 1, s.retentionDays <= 3650 else { throw Failure(status: 400, message: "retentionDays must be 1–3650") }
             if let b = s.dailyBudgetUSD, !(b >= 0) { throw Failure(status: 400, message: "dailyBudgetUSD must be zero or more") }
             try store.saveSettings(s)
@@ -166,6 +167,25 @@ struct ControlAPI: Sendable {
             }
             let rows = try store.exportDecisions(filter)
             return try ok(DecisionExport(format: format, rows: rows.count, content: DataExport.render(rows, format: format, includeTexts: filter.includeTexts)))
+        }
+        if Self.match(method, route, "GET", "folders") != nil {
+            if let path = req.query["path"], !path.isEmpty { return try ok(store.settings().folderDefault(for: path).map { [$0] } ?? []) }
+            return try ok(store.settings().folderProfiles.map { FolderDefault(path: $0.key, profile: $0.value) }.sorted { $0.path < $1.path })
+        }
+        if Self.match(method, route, "PUT", "folders") != nil {
+            let f = try decode(FolderDefault.self, req)
+            let path = FolderDefault.normalize(f.path)
+            guard path.hasPrefix("/"), path != "/" else { throw Failure(status: 400, message: "give an absolute project folder") }
+            var s = store.settings()
+            if let p = f.profile, !p.isEmpty {
+                guard try store.resolveProfile(p) != nil else { throw notFound("profile") }
+                s.folderProfiles[path] = p
+            } else {
+                s.folderProfiles[path] = nil
+            }
+            try store.saveSettings(s)
+            daemon.sessions.settingsChanged()
+            return try ok(FolderDefault(path: path, profile: s.folderProfiles[path]))
         }
         if Self.match(method, route, "GET", "spend/history") != nil {
             let days = min(max(Int(req.query["days"] ?? "") ?? 30, 1), 366)

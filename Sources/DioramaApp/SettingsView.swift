@@ -58,6 +58,7 @@ struct SettingsView: View {
                 if let m = maintenance { Text(m).font(.caption).foregroundStyle(.secondary) }
             }
             SpendHistorySection()
+            FolderDefaultsSection()
             Section("Steering") {
                 Toggle("Pause steering everywhere", isOn: Binding(
                     get: { model.settings.steeringPaused },
@@ -216,5 +217,40 @@ struct NotificationSettingsSection: View {
             Text("Notifications")
         }
         .task { denied = await Notifier.shared.authorization() == .denied }
+    }
+}
+
+/// Project folders with a default profile (used by `diorama run` there).
+struct FolderDefaultsSection: View {
+    @Environment(AppModel.self) private var model
+
+    var entries: [FolderDefault] { model.settings.folderProfiles.map { FolderDefault(path: $0.key, profile: $0.value) }.sorted { $0.path < $1.path } }
+
+    var body: some View {
+        Section {
+            if entries.isEmpty {
+                Text("None yet. Pick a profile in New Session and turn on “Make this the folder's default profile”, or run `diorama folders set <folder> <profile>`.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            ForEach(entries) { (f: FolderDefault) in
+                let exists = model.profiles.contains { $0.name == f.profile || $0.id == f.profile }
+                HStack {
+                    Image(systemName: "folder").foregroundStyle(.secondary)
+                    Text(Fmt.shortPath(f.path)).lineLimit(1).truncationMode(.middle).help(f.path)
+                    Spacer()
+                    Text(f.profile ?? "").foregroundStyle(exists ? Color.secondary : Color.orange)
+                        .help(exists ? "" : "This profile no longer exists")
+                    Button(role: .destructive) {
+                        Task { _ = await model.perform { try await $0.setFolderDefault(f.path, profile: nil) }; await model.refreshSettings() }
+                    } label: { Image(systemName: "trash") }
+                    .buttonStyle(.borderless)
+                }
+            }
+        } header: {
+            Text("Folder defaults")
+        } footer: {
+            Text("`diorama run` in one of these folders, or a folder inside it, uses its profile unless you pass --profile, --prompt or --no-folder-default.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
     }
 }

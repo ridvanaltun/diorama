@@ -96,6 +96,15 @@ public struct ControlClient: Sendable {
     public func playground(_ r: PlaygroundRequest) async throws -> PlaygroundResult { try await request("POST", "playground", body: r) }
     public func whatIf(_ r: WhatIfRequest) async throws -> WhatIfResult { try await request("POST", "whatif", body: r) }
     public func spend() async throws -> SpendSummary { try await request("GET", "spend") }
+    /// Project folders with a default profile.
+    public func folderDefaults() async throws -> [FolderDefault] { try await request("GET", "folders") }
+    /// The default that applies to `path` (its own or the nearest parent's), if any.
+    public func folderDefault(for path: String) async throws -> FolderDefault? { (try await request("GET", "folders", query: ["path": path]) as [FolderDefault]).first }
+    /// Sets (or with nil, removes) a folder's default profile.
+    @discardableResult
+    public func setFolderDefault(_ path: String, profile: String?) async throws -> FolderDefault {
+        try await request("PUT", "folders", body: FolderDefault(path: path, profile: profile))
+    }
     /// Spending per day for the last `days` days (1–366).
     public func spendHistory(days: Int = 30) async throws -> SpendHistory { try await request("GET", "spend/history", query: ["days": String(days)]) }
     public func search(_ query: String, rewrittenOnly: Bool = false, sessionId: String? = nil, limit: Int = 50) async throws -> [SearchHit] {

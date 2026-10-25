@@ -980,6 +980,10 @@ struct NewSessionSheet: View {
     /// The Diorama hook currently installed in `folder` (hook mode), re-read after changes.
     @State private var installedHook: String?
     @State private var justInstalled = false
+    @State private var makeFolderDefault = false
+
+    /// The folder's default profile (its own or a parent's), which `diorama run` uses when no profile is picked.
+    var folderDefault: FolderDefault? { model.settings.folderDefault(for: folder) }
 
     init(mode: Mode = .terminal) { _mode = State(initialValue: mode) }
 
@@ -1024,8 +1028,14 @@ struct NewSessionSheet: View {
                 }
                 Section {
                     Picker("Profile", selection: $profile) {
-                        Text("None").tag("")
+                        Text(mode == .terminal && folderDefault?.profile != nil ? "Folder default (\(folderDefault?.profile ?? ""))" : "None").tag("")
                         ForEach(model.profiles) { p in Text("\(p.name) (v\(p.currentVersionNumber))").tag(p.name) }
+                    }
+                    if mode == .terminal, profile.isEmpty, let d = folderDefault, d.profile != nil, prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text("Set as the default for \(Fmt.shortPath(d.path)); `diorama run` uses it here.").font(.caption).foregroundStyle(.secondary)
+                    }
+                    if mode == .terminal, !profile.isEmpty, folderDefault?.profile != profile {
+                        Toggle("Make this the folder's default profile", isOn: $makeFolderDefault)
                     }
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Session prompt")
@@ -1085,6 +1095,10 @@ struct NewSessionSheet: View {
                 if mode == .terminal {
                     Button("Open in Terminal") {
                         do {
+                            if makeFolderDefault, !profile.isEmpty {
+                                let (path, p) = (folder, profile)
+                                Task { _ = await model.perform { try await $0.setFolderDefault(path, profile: p) }; await model.refreshSettings() }
+                            }
                             try openInTerminal(command)
                             dismiss()
                         } catch { model.report(error) }

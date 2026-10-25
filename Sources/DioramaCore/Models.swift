@@ -1070,6 +1070,8 @@ public struct DioramaSettings: Codable, Sendable, Hashable {
     public var dailyBudgetUSD: Double?
     /// Pauses steering everywhere: AI rewrites and input rules stop in every session; redaction keeps working.
     public var steeringPaused: Bool
+    /// Default profile (name or id) per project folder: sessions started in the folder or below use it.
+    public var folderProfiles: [String: String] = [:]
 
     public static let defaultOllamaURL = "http://127.0.0.1:11434"
 
@@ -1092,6 +1094,41 @@ public struct DioramaSettings: Codable, Sendable, Hashable {
         ollamaURL = try c.decodeIfPresent(String.self, forKey: .ollamaURL) ?? DioramaSettings.defaultOllamaURL
         dailyBudgetUSD = try c.decodeIfPresent(Double.self, forKey: .dailyBudgetUSD)
         steeringPaused = try c.decodeIfPresent(Bool.self, forKey: .steeringPaused) ?? false
+        folderProfiles = try c.decodeIfPresent([String: String].self, forKey: .folderProfiles) ?? [:]
+    }
+
+    /// The default for `path`: its own entry or the nearest parent folder's.
+    public func folderDefault(for path: String) -> FolderDefault? {
+        var p = FolderDefault.normalize(path)
+        while true {
+            if let profile = folderProfiles[p] { return FolderDefault(path: p, profile: profile) }
+            guard p != "/" else { return nil }
+            p = (p as NSString).deletingLastPathComponent
+            if p.isEmpty { return nil }
+        }
+    }
+}
+
+/// A project folder's default profile (`profile` nil removes it).
+public struct FolderDefault: Codable, Sendable, Hashable, Identifiable {
+    public var path: String
+    public var profile: String?
+    public var id: String { path }
+
+    public init(path: String, profile: String?) {
+        self.path = path
+        self.profile = profile
+    }
+
+    /// Absolute, tilde-expanded, without a trailing slash or `..` parts, and with symlinks resolved
+    /// when the folder exists (so `/var/…` and `/private/var/…`, or a symlinked checkout, are one folder).
+    public static func normalize(_ path: String) -> String {
+        var p = ((path as NSString).expandingTildeInPath as NSString).standardizingPath
+        if let real = realpath(p, nil) {
+            p = String(cString: real)
+            free(real)
+        }
+        return p.count > 1 && p.hasSuffix("/") ? String(p.dropLast()) : p
     }
 }
 
