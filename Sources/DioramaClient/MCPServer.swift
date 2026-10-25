@@ -182,11 +182,12 @@ enum MCPTools {
         .init(
             name: "list_sessions", description: "Recent Diorama sessions with their profile, mode (gateway or hook) and counts of tool results, rewrites and failures.",
             schema: schema(["kind": ["type": "string", "enum": ["interactive", "trial"], "description": "Only this kind (default: all)."],
+                            "tag": string("Only sessions with this tag (optional)."),
                             "limit": ["type": "integer", "minimum": 1, "maximum": 200, "description": "Default 20."]]),
             readOnly: true
         ) { s, a in
             let kind = (a["kind"] as? String).flatMap(SessionKind.init(rawValue:))
-            let rows = try await s.daemon().sessions(kind: kind, limit: (a["limit"] as? Int) ?? 20)
+            let rows = try await s.daemon().sessions(kind: kind, tag: (a["tag"] as? String).flatMap { $0.isEmpty ? nil : $0 }, limit: (a["limit"] as? Int) ?? 20)
             guard !rows.isEmpty else { return "No sessions yet." }
             return rows.map { r in
                 let mode = r.isHook ? "hook" : "gateway"
@@ -203,6 +204,8 @@ enum MCPTools {
             var out = ["Session \(info.id) “\(info.name)” — \(info.status.rawValue), \(info.isHook ? "hook mode (tool results only)" : "gateway"), cwd \(info.cwd)"]
             if let p = info.profileName { out.append("Profile: \(p) v\(info.profileVersionNumber ?? 0)") }
             if let p = info.prompt { out.append("Session prompt (\(p.tools.joined(separator: ","))): \(p.text)") }
+            if let tags = info.tags, !tags.isEmpty { out.append("Tags: \(tags.joined(separator: ", "))") }
+            if let notes = info.notes, !notes.isEmpty { out.append("Notes:\n\(notes)") }
             if !info.isHook { out.append("Requests: \(info.stats.exchanges)") }
             out.append("Tool results: \(info.stats.toolResults), rewritten \(info.stats.rewrites), failed \(info.stats.failures), rewrite cost $\(String(format: "%.4f", info.stats.rewriteCostUSD))")
             let notices = t.events.filter { $0.kind == .anomaly || $0.kind == .rewriteFailed }
@@ -467,6 +470,18 @@ enum MCPTools {
             }
             _ = try await s.daemon().setSteeringPaused(paused)
             return "Steering \(paused ? "paused" : "resumed") everywhere."
+        },
+        .init(
+            name: "annotate_session",
+            description: "Rename a session, or replace its notes or tags (the user's own labels, e.g. 'baseline'). Omitted fields stay as they are; tags replace the whole list.",
+            schema: schema(["session_id": string("Session id."), "name": string("New name (optional)."), "notes": string("New notes (optional; empty clears)."),
+                            "tags": ["type": "array", "items": ["type": "string"], "description": "The full new list of tags (optional)."]], required: ["session_id"]),
+            readOnly: false
+        ) { s, a in
+            let ann = SessionAnnotations(name: a["name"] as? String, notes: a["notes"] as? String, tags: a["tags"] as? [String])
+            guard ann.name != nil || ann.notes != nil || ann.tags != nil else { throw MCPServer.ToolError("give at least one of name, notes or tags") }
+            let info = try await s.daemon().annotate(try arg(a, "session_id"), ann)
+            return "Saved “\(info.name)” (\(info.id))" + ((info.tags ?? []).isEmpty ? "." : ", tags: \((info.tags ?? []).joined(separator: ", ")).")
         },
         .init(
             name: "end_session", description: "Mark a session as ended (it stops appearing as running; its records stay).",

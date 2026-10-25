@@ -96,7 +96,9 @@ struct SessionReport {
         md += "- Steering: \(steering())\n"
         if s.lockdown != .none { md += "- Lockdown: \(s.lockdown.rawValue)\n" }
         if !s.flags.isEmpty { md += "- Flags: \(s.flags.joined(separator: ", "))\n" }
+        if let tags = s.tags, !tags.isEmpty { md += "- Tags: \(tags.joined(separator: ", "))\n" }
         md += "- Generated: \(Self.time(generatedAt)) by Diorama \(DioramaVersion.current) (rewrite prompt \(DioramaVersion.rewritePromptVersion))\n\n"
+        if let notes = s.notes, !notes.isEmpty { md += "## Notes\n\n\(notes)\n\n" }
         md += "## Summary\n\n"
         if !s.isHook { md += "- Model requests: \(requests)\n" }
         md += "- Tool results decided: \(s.stats.toolResults) — \(s.stats.rewrites) rewritten, \(s.stats.failures) failed, \(unchanged.count) left unchanged\n"
@@ -179,7 +181,9 @@ struct SessionReport {
             <span class="muted">Started</span><span>\(e(Self.time(s.createdAt)))\(s.endedAt.map { ", ended " + e(Self.time($0)) } ?? "")</span>
             <span class="muted">Steering</span><span>\(e(steering(code: false)))</span>
             \(s.flags.isEmpty ? "" : "<span class=\"muted\">Flags</span><span>\(e(s.flags.joined(separator: ", ")))</span>")
+            \((s.tags ?? []).isEmpty ? "" : "<span class=\"muted\">Tags</span><span>\(e((s.tags ?? []).joined(separator: ", ")))</span>")
             </div>
+            \((s.notes ?? "").isEmpty ? "" : "<h2>Notes</h2><p style=\"white-space:pre-wrap\">\(e(s.notes ?? ""))</p>")
             <div class="tiles">
             \(s.isHook ? "" : "<div class=\"tile\"><b>\(requests)</b><span class=\"muted\">requests</span></div>")
             <div class="tile"><b>\(s.stats.toolResults)</b><span class="muted">tool results</span></div>

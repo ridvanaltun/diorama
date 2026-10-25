@@ -55,6 +55,9 @@ mkdir -p "$DEMO/desktop-project" && echo "# desktop demo" > "$DEMO/desktop-proje
 (cd "$DEMO/desktop-project" && "$D" hook install --profile "Docs heading steer" > /dev/null)
 (cd "$DEMO/desktop-project" && ANTHROPIC_BASE_URL=http://127.0.0.1:8788 CLAUDE_CODE_ENTRYPOINT=claude-desktop "$DEMO/bin/claude" -p "Fetch example.com and example.org" --allowedTools WebFetch > /dev/null 2>&1)
 (cd "$DEMO/project" && "$D" run --name "docs heading demo" --profile "Docs heading steer" --claude "$DEMO/bin/claude" -- -p "Fetch example.com and example.org" --allowedTools WebFetch > /dev/null 2>&1)
+SID=$("$D" sessions --kind interactive --limit 1 --json | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["id"])')
+"$D" session tag "$SID" --add demo --add docs-v2 > /dev/null
+"$D" session note "$SID" "Heading steer on example.com and example.org; Claude reported the renamed heading." > /dev/null
 cat > "$DEMO/exp.json" <<JSON
 {"name":"Heading steer pilot","task":"Fetch example.com and example.org and report their headings.","projectPath":"$DEMO/project",
  "claude":{"allowedTools":["WebFetch"],"maxTurns":6,"timeoutSeconds":120},

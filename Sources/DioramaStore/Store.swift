@@ -91,6 +91,11 @@ public final class Store: @unchecked Sendable {
         """
         ALTER TABLE sessions ADD COLUMN paused INTEGER NOT NULL DEFAULT 0;
         """,
+        // v7: the user's notes and tags on sessions
+        """
+        ALTER TABLE sessions ADD COLUMN notes TEXT NOT NULL DEFAULT '';
+        ALTER TABLE sessions ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';
+        """,
     ]
 
     public static var schemaVersion: Int { migrations.count }

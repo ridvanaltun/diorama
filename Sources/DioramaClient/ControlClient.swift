@@ -113,11 +113,16 @@ public struct ControlClient: Sendable {
     public func updateProfile(_ id: String, _ p: Profile) async throws -> ProfileDetail { try await request("PUT", "profiles/\(id.urlPathEscaped)", body: p) }
     public func archiveProfile(_ id: String) async throws { let _: [String: String] = try await request("DELETE", "profiles/\(id.urlPathEscaped)") }
 
-    public func sessions(kind: SessionKind? = nil, limit: Int = 200) async throws -> [SessionInfo] {
+    public func sessions(kind: SessionKind? = nil, tag: String? = nil, limit: Int = 200) async throws -> [SessionInfo] {
         var q = ["limit": String(limit)]
         if let kind { q["kind"] = kind.rawValue }
+        if let tag { q["tag"] = tag }
         return try await request("GET", "sessions", query: q)
     }
+    /// Renames a session or sets its notes or tags (nil fields stay as they are).
+    public func annotate(_ id: String, _ a: SessionAnnotations) async throws -> SessionInfo { try await request("PUT", "sessions/\(id)/annotations", body: a) }
+    /// Tags in use, most used first.
+    public func sessionTags() async throws -> [String] { try await request("GET", "session-tags") }
     public func createSession(_ spec: SessionSpec) async throws -> SessionLaunch { try await request("POST", "sessions", body: spec) }
     public func session(_ id: String) async throws -> SessionInfo { try await request("GET", "sessions/\(id)") }
     public func endSession(_ id: String) async throws -> SessionInfo { try await request("POST", "sessions/\(id)/end") }

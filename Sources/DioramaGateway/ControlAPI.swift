@@ -130,7 +130,16 @@ struct ControlAPI: Sendable {
         }
         if Self.match(method, route, "GET", "sessions") != nil {
             let kind = req.query["kind"].flatMap(SessionKind.init(rawValue:))
-            return try ok(try store.sessions(kind: kind, limit: Int(req.query["limit"] ?? "") ?? 200).map(store.info))
+            let tag = req.query["tag"].flatMap { $0.isEmpty ? nil : $0 }
+            return try ok(try store.sessions(kind: kind, tag: tag, limit: Int(req.query["limit"] ?? "") ?? 200).map(store.info))
+        }
+        if Self.match(method, route, "GET", "session-tags") != nil {
+            return try ok(try store.sessionTags())
+        }
+        if let c = Self.match(method, route, "PUT", "sessions/:id/annotations") {
+            guard try store.session(id: c[0]) != nil else { throw notFound("session") }
+            do { try store.annotate(sessionId: c[0], try decode(SessionAnnotations.self, req)) } catch let e as StoreError { throw Failure(status: 400, message: e.description) }
+            return try ok(try store.info(try store.session(id: c[0])!))
         }
         if Self.match(method, route, "POST", "sessions") != nil {
             return try ok(try daemon.createSession(try decode(SessionSpec.self, req)), status: 201)

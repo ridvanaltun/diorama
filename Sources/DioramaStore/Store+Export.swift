@@ -15,7 +15,7 @@ extension Store {
         params.append(.int(Int64(limit)))
         let rows = try db.query(
             """
-            SELECT d.*, s.name AS session_name, s.kind AS session_kind, s.via AS via, s.trial_id AS trial_id,
+            SELECT d.*, s.name AS session_name, s.tags AS session_tags, s.kind AS session_kind, s.via AS via, s.trial_id AS trial_id,
                    p.name AS profile_name, v.number AS profile_number,
                    (SELECT COUNT(*) FROM rewrite_attempts a WHERE a.tool_use_id = d.tool_use_id) AS attempt_count,
                    (SELECT COALESCE(SUM(a.cost_usd), 0) FROM rewrite_attempts a WHERE a.tool_use_id = d.tool_use_id) AS cost
@@ -27,11 +27,12 @@ extension Store {
             """, params)
         return rows.map { r in
             let d = decisionRecord(r)
+            let tags = decode([String].self, r.string("session_tags")) ?? []
             // Stored as content JSON; export the readable text (as the decision detail shows it).
             let original = (try? blobs.getString(d.originalBlob)).map { ContentText.displayText(fromContentJSON: $0) }
             let replacement = d.replacementBlob.flatMap { try? blobs.getString($0) }.map { ContentText.displayText(fromContentJSON: $0) }
             let stage = d.toolUseId.hasPrefix("page:") ? "page" : d.toolUseId.hasPrefix("input:") ? "input" : "result"
-            return DecisionExportRow(
+            var row = DecisionExportRow(
                 decisionId: d.toolUseId, createdAt: d.createdAt, sessionId: d.sessionId, sessionName: r.string("session_name") ?? "",
                 sessionKind: r.string("session_kind") ?? "", via: r.string("via") ?? "gateway", trialId: r.string("trial_id"),
                 profile: r.string("profile_name"), profileVersion: r.int("profile_number").map { Int($0) }, tool: d.toolName, stage: stage,
@@ -39,6 +40,8 @@ extension Store {
                 attempts: Int(r.int("attempt_count") ?? 0), costUSD: r.double("cost") ?? 0, originalChars: original?.count ?? 0,
                 replacementChars: replacement?.count,
                 originalText: filter.includeTexts ? original : nil, replacementText: filter.includeTexts ? replacement : nil)
+            row.sessionTags = tags
+            return row
         }
     }
 }

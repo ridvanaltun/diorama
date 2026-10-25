@@ -409,14 +409,19 @@ public struct SessionInfo: Codable, Sendable, Hashable, Identifiable {
     /// Steering paused for this session (nil from older daemons).
     public var paused: Bool?
     public var isPaused: Bool { paused == true }
+    /// The user's own notes and tags (nil from older daemons).
+    public var notes: String?
+    public var tags: [String]?
 
     public init(
         id: String, name: String, cwd: String, kind: SessionKind, status: SessionStatus, createdAt: Date, endedAt: Date?,
         profileId: String?, profileName: String?, profileVersionId: String?, profileVersionNumber: Int?,
         prompt: SessionPrompt?, lockdown: LockdownPreset, trialId: String?, claudeSessionIds: [String], flags: [String],
-        stats: SessionStats, via: SessionVia? = nil, paused: Bool? = nil
+        stats: SessionStats, via: SessionVia? = nil, paused: Bool? = nil, notes: String? = nil, tags: [String]? = nil
     ) {
         self.paused = paused
+        self.notes = notes
+        self.tags = tags
         self.via = via
         self.id = id
         self.name = name
@@ -1330,3 +1335,26 @@ public struct PendingReview: Codable, Sendable, Hashable, Identifiable {
 }
 
 public enum ReviewVerdict: String, Codable, Sendable { case approved, rejected, timedOut }
+
+/// The user's edits to a session's name, notes and tags. Nil fields are left as they are.
+public struct SessionAnnotations: Codable, Sendable, Hashable {
+    public var name: String?
+    public var notes: String?
+    public var tags: [String]?
+
+    public static let maxTags = 20, maxTagLength = 40, maxNotesLength = 20_000
+
+    public init(name: String? = nil, notes: String? = nil, tags: [String]? = nil) {
+        self.name = name
+        self.notes = notes
+        self.tags = tags
+    }
+
+    /// Trimmed, without empty or duplicate tags (case-insensitive), in the order given.
+    public static func normalizedTags(_ tags: [String]) -> [String] {
+        var seen = Set<String>()
+        return tags.map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(maxTagLength)) }
+            .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+            .prefix(maxTags).map { $0 }
+    }
+}

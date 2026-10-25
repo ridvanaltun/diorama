@@ -43,7 +43,7 @@ import Testing
                                     isError: false, outcome: "unchanged", reason: "no rule matched", rules: [], attempts: 0, costUSD: 0, originalChars: 3,
                                     replacementChars: nil, originalText: "abc")
         let csv = DataExport.render([row], format: .csv, includeTexts: true)
-        #expect(csv.hasSuffix(#"t,1970-01-01T00:00:00.000Z,s,n,interactive,gateway,,,,Bash,result,"{""command"":""ls""}",false,unchanged,no rule matched,,0,0.000000,3,,abc,"# + "\r\n"))
+        #expect(csv.hasSuffix(#"t,1970-01-01T00:00:00.000Z,s,n,interactive,gateway,,,,,Bash,result,"{""command"":""ls""}",false,unchanged,no rule matched,,0,0.000000,3,,abc,"# + "\r\n"))
         #expect(DataExport.render([], format: .jsonl, includeTexts: false) == "")
     }
 }

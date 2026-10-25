@@ -9,6 +9,7 @@ public struct DecisionExportRow: Codable, Sendable, Hashable {
     public var sessionKind: String
     public var via: String
     public var trialId: String?
+    public var sessionTags: [String] = []
     public var profile: String?
     public var profileVersion: Int?
     public var tool: String?
@@ -93,7 +94,7 @@ public struct DecisionExport: Codable, Sendable {
 public enum DataExport {
     public enum Format: String, Codable, Sendable, CaseIterable { case csv, jsonl }
 
-    static let columns = ["decision_id", "created_at", "session_id", "session_name", "session_kind", "via", "trial_id", "profile", "profile_version",
+    static let columns = ["decision_id", "created_at", "session_id", "session_name", "session_kind", "via", "trial_id", "session_tags", "profile", "profile_version",
                           "tool", "stage", "tool_input", "is_error", "outcome", "reason", "rules", "attempts", "cost_usd", "original_chars",
                           "replacement_chars"]
 
@@ -108,7 +109,7 @@ public enum DataExport {
             let header = columns + (includeTexts ? ["original_text", "replacement_text"] : [])
             var out = [header.joined(separator: ",")]
             for r in rows {
-                var cells: [String?] = [r.decisionId, iso.format(r.createdAt), r.sessionId, r.sessionName, r.sessionKind, r.via, r.trialId, r.profile,
+                var cells: [String?] = [r.decisionId, iso.format(r.createdAt), r.sessionId, r.sessionName, r.sessionKind, r.via, r.trialId, r.sessionTags.joined(separator: "; "), r.profile,
                                         r.profileVersion.map(String.init), r.tool, r.stage, r.toolInput, r.isError ? "true" : "false", r.outcome, r.reason,
                                         r.rules.joined(separator: "; "), String(r.attempts), String(format: "%.6f", r.costUSD), String(r.originalChars),
                                         r.replacementChars.map(String.init)]

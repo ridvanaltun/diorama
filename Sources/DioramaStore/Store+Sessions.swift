@@ -25,6 +25,8 @@ public struct SessionRecord: Sendable, Hashable {
     public var transcriptPath: String?
     /// Steering paused for this session: AI rewrites and input rules stop; redaction keeps working.
     public var paused = false
+    public var notes = ""
+    public var tags: [String] = []
 }
 
 extension Store {
@@ -75,7 +77,7 @@ extension Store {
             claudeSessionIds: decode([String].self, r.string("claude_session_ids")) ?? [],
             flags: decode([String].self, r.string("flags")) ?? [],
             via: SessionVia(rawValue: r.string("via") ?? "") ?? .gateway, transcriptPath: r.string("transcript_path"),
-            paused: (r.int("paused") ?? 0) != 0)
+            paused: (r.int("paused") ?? 0) != 0, notes: r.string("notes") ?? "", tags: decode([String].self, r.string("tags")) ?? [])
     }
 
     public func session(id: String) throws -> SessionRecord? {
@@ -86,11 +88,13 @@ extension Store {
         try db.query("SELECT * FROM sessions WHERE token_hash = ?", [.text(tokenHash)]).first.map(sessionRecord)
     }
 
-    public func sessions(kind: SessionKind? = nil, limit: Int = 200) throws -> [SessionRecord] {
-        if let kind {
-            return try db.query("SELECT * FROM sessions WHERE kind = ? ORDER BY created_at DESC LIMIT ?", [.text(kind.rawValue), .int(Int64(limit))]).map(sessionRecord)
-        }
-        return try db.query("SELECT * FROM sessions ORDER BY created_at DESC LIMIT ?", [.int(Int64(limit))]).map(sessionRecord)
+    public func sessions(kind: SessionKind? = nil, tag: String? = nil, limit: Int = 200) throws -> [SessionRecord] {
+        var clauses = ["1 = 1"]
+        var params: [SQLValue] = []
+        if let kind { clauses.append("kind = ?"); params.append(.text(kind.rawValue)) }
+        if let tag { clauses.append("EXISTS (SELECT 1 FROM json_each(sessions.tags) j WHERE lower(j.value) = lower(?))"); params.append(.text(tag)) }
+        params.append(.int(Int64(limit)))
+        return try db.query("SELECT * FROM sessions WHERE \(clauses.joined(separator: " AND ")) ORDER BY created_at DESC LIMIT ?", params).map(sessionRecord)
     }
 
     public func endSession(id: String) throws {
@@ -104,6 +108,28 @@ extension Store {
         if db.changes > 0 {
             addEvent(sessionId: sessionId, kind: .warning, message: paused ? "Steering paused: tool results reach Claude unchanged (redaction still applies)" : "Steering resumed", refId: sessionId)
         }
+    }
+
+    public func annotate(sessionId: String, _ a: SessionAnnotations) throws {
+        if let name = a.name {
+            let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !n.isEmpty else { throw StoreError("the session name is empty") }
+            try db.run("UPDATE sessions SET name = ? WHERE id = ?", [.text(String(n.prefix(200))), .text(sessionId)])
+        }
+        if let notes = a.notes {
+            guard notes.count <= SessionAnnotations.maxNotesLength else { throw StoreError("notes are limited to \(SessionAnnotations.maxNotesLength) characters") }
+            try db.run("UPDATE sessions SET notes = ? WHERE id = ?", [.text(notes), .text(sessionId)])
+        }
+        if let tags = a.tags {
+            try db.run("UPDATE sessions SET tags = ? WHERE id = ?", [.text(json(SessionAnnotations.normalizedTags(tags))), .text(sessionId)])
+        }
+    }
+
+    /// Every tag in use, most used first.
+    public func sessionTags() throws -> [String] {
+        // Tags differing only in case are one tag.
+        let rows = try db.query("SELECT MIN(j.value) AS tag, COUNT(*) AS n FROM sessions s, json_each(s.tags) j GROUP BY lower(j.value) ORDER BY n DESC, lower(j.value)")
+        return rows.compactMap { $0.string("tag") }
     }
 
     public func isPaused(sessionId: String) -> Bool {
@@ -154,7 +180,8 @@ extension Store {
             id: r.id, name: r.name, cwd: r.cwd, kind: r.kind, status: r.status, createdAt: r.createdAt, endedAt: r.endedAt,
             profileId: r.profileId, profileName: r.profileVersion?.profile.name, profileVersionId: r.profileVersion?.id,
             profileVersionNumber: r.profileVersion?.number, prompt: r.prompt, lockdown: r.lockdown, trialId: r.trialId,
-            claudeSessionIds: r.claudeSessionIds, flags: r.flags, stats: try stats(sessionId: r.id), via: r.via, paused: r.paused)
+            claudeSessionIds: r.claudeSessionIds, flags: r.flags, stats: try stats(sessionId: r.id), via: r.via, paused: r.paused,
+            notes: r.notes, tags: r.tags)
     }
 
     /// Marks sessions left `active` by a previous daemon whose Claude process is gone.

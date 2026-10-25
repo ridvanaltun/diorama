@@ -235,22 +235,24 @@ struct Sessions: AsyncParsableCommand {
     static let configuration = CommandConfiguration(abstract: "List Diorama sessions.")
     @OptionGroup var global: GlobalOptions
     @Option(help: "Filter by kind: interactive or trial.") var kind: SessionKind?
+    @Option(help: "Only sessions with this tag.") var tag: String?
     @Option(help: "Maximum number of sessions.") var limit = 50
     @Flag(help: "Print JSON.") var json = false
 
     func run() async throws {
-        let list = try await global.client().sessions(kind: kind, limit: limit)
+        let list = try await global.client().sessions(kind: kind, tag: tag, limit: limit)
         if json { return try printJSON(list) }
         if list.isEmpty { return print("No sessions yet. Start one with `diorama run`.") }
-        table(["ID", "NAME", "STATUS", "PROFILE", "REQS", "RESULTS", "REWRITES", "FAILS", "STARTED"], list.map { s in
+        table(["ID", "NAME", "STATUS", "PROFILE", "REQS", "RESULTS", "REWRITES", "FAILS", "STARTED", "TAGS"], list.map { s in
             [s.id, short(s.name, 28), s.status.rawValue, s.profileName.map { "\($0) v\(s.profileVersionNumber ?? 0)" } ?? (s.prompt != nil ? "(prompt)" : "—"),
-             String(s.stats.exchanges), String(s.stats.toolResults), String(s.stats.rewrites), String(s.stats.failures), dateText(s.createdAt)]
+             String(s.stats.exchanges), String(s.stats.toolResults), String(s.stats.rewrites), String(s.stats.failures), dateText(s.createdAt),
+             short((s.tags ?? []).joined(separator: ","), 30)]
         })
     }
 }
 
 struct Session: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Inspect a session.", subcommands: [Show.self, Decision.self, Watch.self, End.self, Pause.self, Resume.self, WhatIf.self, ToExperiment.self, Report.self])
+    static let configuration = CommandConfiguration(abstract: "Inspect a session.", subcommands: [Show.self, Decision.self, Watch.self, End.self, Pause.self, Resume.self, WhatIf.self, ToExperiment.self, Report.self, Note.self, Tag.self, Rename.self])
 
     struct Show: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Show a session's timeline.")
@@ -351,6 +353,54 @@ struct Session: AsyncParsableCommand {
             for try await e in c.eventStream(session: id) {
                 print("\(e.createdAt.formatted(date: .omitted, time: .standard)) \(e.sessionId ?? "-") \(e.kind.rawValue): \(e.message)")
             }
+        }
+    }
+
+    struct Note: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Show or set a session's notes.",
+            discussion: "diorama session note ses_abc \"Baseline: steering off, docs v2\"   (an empty string clears the notes; --file reads them from a file)")
+        @OptionGroup var global: GlobalOptions
+        @Argument var id: String
+        @Argument(help: "New notes (omit to print the current ones).") var text: String?
+        @Option(help: "Read the notes from a file.") var file: String?
+        func run() async throws {
+            let client = try await global.client()
+            var notes = text
+            if let file { notes = try String(contentsOfFile: (file as NSString).expandingTildeInPath, encoding: .utf8) }
+            guard let notes else { return print(try await client.session(id).notes ?? "") }
+            let s = try await client.annotate(id, SessionAnnotations(notes: notes))
+            print(notes.isEmpty ? "✓ Cleared the notes of “\(s.name)”." : "✓ Saved notes for “\(s.name)”.")
+        }
+    }
+
+    struct Tag: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Add or remove a session's tags (with neither, print them).",
+            discussion: "diorama session tag ses_abc --add baseline --add docs-v2 --remove draft      ·  list by tag: diorama sessions --tag baseline")
+        @OptionGroup var global: GlobalOptions
+        @Argument var id: String
+        @Option(help: "Tag to add (repeatable).") var add: [String] = []
+        @Option(help: "Tag to remove (repeatable).") var remove: [String] = []
+        func run() async throws {
+            let client = try await global.client()
+            let current = try await client.session(id).tags ?? []
+            guard !add.isEmpty || !remove.isEmpty else { return print(current.isEmpty ? "No tags." : current.joined(separator: ", ")) }
+            let drop = Set(remove.map { $0.lowercased() })
+            let s = try await client.annotate(id, SessionAnnotations(tags: current.filter { !drop.contains($0.lowercased()) } + add))
+            let tags = s.tags ?? []
+            print(tags.isEmpty ? "✓ “\(s.name)” has no tags." : "✓ “\(s.name)”: \(tags.joined(separator: ", "))")
+        }
+    }
+
+    struct Rename: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Rename a session.")
+        @OptionGroup var global: GlobalOptions
+        @Argument var id: String
+        @Argument var name: String
+        func run() async throws {
+            let s = try await global.client().annotate(id, SessionAnnotations(name: name))
+            print("✓ Renamed to “\(s.name)”.")
         }
     }
 

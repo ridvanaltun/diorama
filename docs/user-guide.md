@@ -256,6 +256,19 @@ Local models never send content off your Mac and cost nothing, but they follow t
 - **CLI:** `diorama session show <id>`, `diorama session decision <tool_use_id>`, and `diorama session watch [<id>]` for live events.
 - **Raw capture:** full request and response bodies are kept for `retentionDays` (14 by default) and are available through the control API (`GET /api/v1/exchanges/<id>/raw`). Credentials are never stored.
 
+### Notes and tags
+
+Label sessions so you can find them later. In the session header, type in **Add tag** and press Return, or hover over a tag and click × to remove it. **Add Notes** opens a notes editor, and double-clicking the session name renames it. Tags appear in the session list, and the **Tag** menu above the list filters by one. Tags differing only in case are treated as the same tag. Notes and tags are included in session reports, in data exports (`session_tags`) and in MCP `get_session`.
+
+```bash
+diorama session tag ses_abc --add baseline --add docs-v2 --remove draft
+diorama session note ses_abc "Baseline: steering off"
+diorama session rename ses_abc "Docs v2 baseline"
+diorama sessions --tag baseline
+```
+
+The MCP tool `annotate_session` sets a session's name, notes or tags, and `list_sessions` takes a `tag` filter.
+
 ### Session reports
 
 **Export** in a session's header saves the session's audit trail as **Markdown** or **self-contained HTML**, or opens the HTML in your browser. The report has:

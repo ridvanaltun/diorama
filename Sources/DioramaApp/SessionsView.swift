@@ -10,9 +10,21 @@ struct SessionsView: View {
     @State private var showNew = false
     @State private var showExport = false
     @State private var kindFilter: SessionKind? = .interactive
+    @State private var tagFilter: String?
     @State private var query = ""
 
-    var filtered: [SessionInfo] { model.sessions.filter { kindFilter == nil || $0.kind == kindFilter } }
+    var allTags: [String] {
+        // Tags differing only in case are one tag (the filter ignores case too).
+        var counts: [String: (name: String, n: Int)] = [:]
+        for s in model.sessions { for t in s.tags ?? [] { counts[t.lowercased(), default: (t, 0)].n += 1 } }
+        return counts.values.sorted { $0.n != $1.n ? $0.n > $1.n : $0.name.lowercased() < $1.name.lowercased() }.map(\.name)
+    }
+
+    var filtered: [SessionInfo] {
+        model.sessions.filter { s in
+            (kindFilter == nil || s.kind == kindFilter) && (tagFilter.map { t in (s.tags ?? []).contains { $0.caseInsensitiveCompare(t) == .orderedSame } } ?? true)
+        }
+    }
 
     var body: some View {
         Group {
@@ -34,12 +46,24 @@ struct SessionsView: View {
                             Text("All").tag(SessionKind?.none)
                         }
                         .pickerStyle(.segmented).labelsHidden().padding(8)
+                        if !allTags.isEmpty || tagFilter != nil {
+                            HStack {
+                                Picker("Tag", selection: $tagFilter) {
+                                    Text("All tags").tag(String?.none)
+                                    ForEach(allTags, id: \.self) { Text($0).tag(String?.some($0)) }
+                                }
+                                .fixedSize()
+                                Spacer()
+                            }
+                            .padding(.horizontal, 8).padding(.bottom, 6)
+                        }
                         List(filtered, selection: $selection) { s in
                             SessionRow(session: s).tag(s.id)
                         }
                         .overlay {
                             if filtered.isEmpty {
-                                ContentUnavailableView("Nothing here", systemImage: "line.3.horizontal.decrease.circle", description: Text("No sessions of this kind yet."))
+                                ContentUnavailableView("Nothing here", systemImage: "line.3.horizontal.decrease.circle",
+                                       description: Text(tagFilter.map { "No sessions of this kind tagged “\($0)”." } ?? "No sessions of this kind yet."))
                             }
                         }
                         }
@@ -282,6 +306,7 @@ struct SessionRow: View {
                 if session.stats.rewrites > 0 { Badge(text: Fmt.plural(session.stats.rewrites, "rewrite"), color: .purple) }
                 if session.stats.failures > 0 { Badge(text: Fmt.plural(session.stats.failures, "failure"), color: .red) }
                 if session.stats.anomalies > 0 { Badge(text: Fmt.plural(session.stats.anomalies, "anomaly", "anomalies"), color: .orange) }
+                ForEach((session.tags ?? []).prefix(3), id: \.self) { TagChip(text: $0) }
                 Text(session.isHook ? Fmt.plural(session.stats.toolResults, "result") : Fmt.plural(session.stats.exchanges, "request")).font(.caption2).foregroundStyle(.tertiary)
             }
         }
@@ -379,11 +404,26 @@ struct SessionHeader: View {
     let session: SessionInfo
     @State private var showWhatIf = false
     @State private var draft: ExperimentDraft?
+    @State private var renaming: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                Text(session.name).font(.title2.bold()).lineLimit(1)
+                if let name = renaming {
+                    TextField("Name", text: Binding(get: { name }, set: { renaming = $0 }))
+                        .font(.title2.bold()).textFieldStyle(.plain).frame(maxWidth: 320)
+                        .onSubmit {
+                            let n = name.trimmingCharacters(in: .whitespaces)
+                            renaming = nil
+                            guard !n.isEmpty, n != session.name else { return }
+                            Task { _ = await model.perform { try await $0.annotate(session.id, SessionAnnotations(name: n)) }; await model.refreshSessions() }
+                        }
+                        .onExitCommand { renaming = nil }
+                } else {
+                    Text(session.name).font(.title2.bold()).lineLimit(1)
+                        .onTapGesture(count: 2) { renaming = session.name }
+                        .help("Double-click to rename")
+                }
                 Badge(text: session.status == .active ? "running" : "ended", color: session.status == .active ? .green : .secondary)
                 if session.kind == .trial { Badge(text: "trial", color: .blue) }
                 if session.isPaused { Badge(text: "paused", color: .orange).help("Steering is paused: tool results reach Claude unchanged (redaction still applies)") }
@@ -437,6 +477,7 @@ struct SessionHeader: View {
                 if session.lockdown != .none { Label("Network lockdown", systemImage: "lock") }
             }
             .font(.caption).foregroundStyle(.secondary)
+            AnnotationsBar(session: session)
             if let p = session.prompt {
                 Label {
                     Text(p.text).lineLimit(2)
