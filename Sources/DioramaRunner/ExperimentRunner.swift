@@ -377,9 +377,38 @@ public final class ExperimentRunner: @unchecked Sendable {
         return Comparison.compare(run: run, definition: exp.definition, trials: try store.trials(runId: runId))
     }
 
+    /// Several runs of one experiment as one comparison (all completed runs by default).
+    public func pooledComparison(experimentId: String, runIds: [String]? = nil) throws -> RunComparison {
+        guard let exp = try store.experiment(id: experimentId) else { throw RunnerError("unknown experiment \(experimentId)") }
+        let runs = try (runIds.map { ids in try ids.map { id -> RunSummary in
+            guard let r = try store.run(id: id), r.experimentId == exp.id else { throw RunnerError("run \(id) is not part of experiment \(exp.id)") }
+            return r
+        } } ?? exp.runs.filter { $0.status == .completed }).sorted { $0.createdAt < $1.createdAt }
+        guard !runs.isEmpty else { throw RunnerError("experiment \(exp.id) has no completed runs to pool") }
+        let trials = try runs.flatMap { try store.trials(runId: $0.id) }
+        let pooled = RunSummary(
+            id: "pooled", experimentId: exp.id, status: runs.allSatisfy { $0.status == .completed } ? .completed : .running, createdAt: runs[0].createdAt,
+            startedAt: runs.compactMap(\.startedAt).min(), finishedAt: runs.compactMap(\.finishedAt).max(), seed: 0,
+            trialsTotal: runs.reduce(0) { $0 + $1.trialsTotal }, trialsDone: runs.reduce(0) { $0 + $1.trialsDone }, estimate: nil)
+        var c = Comparison.compare(run: pooled, definition: exp.definition, trials: trials)
+        c.pooledRunIds = runs.map(\.id)
+        if runs.count > 1 {
+            c.caveats.insert("Pooled \(runs.count) runs (\(DateFormatting.string(runs[0].createdAt)) to \(DateFormatting.string(runs[runs.count - 1].createdAt))). Pages, Claude Code and rewrites can differ between runs (each run froze its own treatments), so pooled trials are not perfectly identical.", at: 0)
+        }
+        return c
+    }
+
     public func report(runId: String, format: String) throws -> String {
         guard let run = try store.run(id: runId), let exp = try store.experiment(id: run.experimentId) else { throw RunnerError("unknown run \(runId)") }
-        let c = try comparison(runId: runId)
+        return try render(experiment: exp, comparison: try comparison(runId: runId), format: format)
+    }
+
+    public func pooledReport(experimentId: String, runIds: [String]?, format: String) throws -> String {
+        guard let exp = try store.experiment(id: experimentId) else { throw RunnerError("unknown experiment \(experimentId)") }
+        return try render(experiment: exp, comparison: try pooledComparison(experimentId: experimentId, runIds: runIds), format: format)
+    }
+
+    func render(experiment exp: ExperimentInfo, comparison c: RunComparison, format: String) throws -> String {
         switch format {
         case "md", "markdown": return Report.markdown(experiment: exp, comparison: c)
         case "json":

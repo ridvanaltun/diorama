@@ -246,8 +246,46 @@ public enum Comparison {
             caveats.append("LLM-judge verdicts are a model's interpretation of each answer and can be wrong; they are listed with the heuristics, not the facts.")
         }
         caveats.append("Observed differences are associations between variants under these conditions, not proof of cause. Heuristic signals are pattern matches and can be wrong.")
+        let differences = Self.differences(variants)
+        if differences.contains(where: { !$0.metrics.isEmpty }) {
+            caveats.append("Differences vs the control are 95% intervals for one metric at a time (Newcombe for shares, Welch for means). With many metrics, a few can exclude zero by chance alone.")
+        }
         if run.status != .completed { caveats.insert("This run is \(run.status.rawValue); the comparison is partial.", at: 0) }
-        return RunComparison(run: run, variants: variants, trials: trials, caveats: caveats, generatedAt: Date())
+        return RunComparison(run: run, variants: variants, trials: trials, caveats: caveats, generatedAt: Date(), differences: differences)
+    }
+
+    /// Each steered variant against the control: facts first, then heuristic signals.
+    public static func differences(_ variants: [VariantComparison]) -> [VariantDifference] {
+        guard let control = variants.first(where: \.isControl) else { return [] }
+        return variants.filter { !$0.isControl }.map { v in
+            var m: [MetricDifference] = []
+            func mean(_ metric: String, _ label: String, _ a: NumericStat, _ b: NumericStat) {
+                guard let d = Stats.meanDifference(a, b) else { return }
+                m.append(MetricDifference(metric: metric, label: label, kind: .mean, isHeuristic: false, control: a.mean, variant: b.mean, estimate: d.estimate, interval95: d.interval95))
+            }
+            func share(_ metric: String, _ label: String, _ a: ProportionStat?, _ b: ProportionStat?, heuristic: Bool) {
+                guard let a, let b, let d = Stats.proportionDifference(a, b) else { return }
+                m.append(MetricDifference(metric: metric, label: label, kind: .proportion, isHeuristic: heuristic, control: a.rate, variant: b.rate, estimate: d.estimate, interval95: d.interval95))
+            }
+            share("errorRate", "Error rate", control.errorRate, v.errorRate, heuristic: false)
+            mean("turns", "Turns", control.turns, v.turns)
+            mean("durationMs", "Duration", control.durationMs, v.durationMs)
+            mean("totalTokens", "Tokens", control.totalTokens, v.totalTokens)
+            mean("claudeCostUSD", "Claude Code cost ($)", control.claudeCostUSD, v.claudeCostUSD)
+            for tool in Set(control.toolCalls.keys).union(v.toolCalls.keys).sorted() {
+                let zero = NumericStat(n: 0, mean: 0, min: 0, max: 0, stdDev: 0)
+                // A tool a variant never called counts as 0 calls in each of its trials.
+                func calls(_ c: VariantComparison) -> NumericStat {
+                    c.toolCalls[tool] ?? (c.validTrials > 0 ? NumericStat(n: c.validTrials, mean: 0, min: 0, max: 0, stdDev: 0) : zero)
+                }
+                mean("toolCalls.\(tool)", "\(tool) calls", calls(control), calls(v))
+            }
+            share("echoedRewrittenContent", "Echoed rewritten content", control.echoedRewrittenContent, v.echoedRewrittenContent, heuristic: true)
+            share("flaggedSuspicion", "Flagged suspicion", control.flaggedSuspicion, v.flaggedSuspicion, heuristic: true)
+            share("attemptedVerification", "Tried to verify", control.attemptedVerification, v.attemptedVerification, heuristic: true)
+            share("judgeAdopted", "LLM judge: adopted", control.judgeAdopted, v.judgeAdopted, heuristic: true)
+            return VariantDifference(variantKey: v.variantKey, controlKey: control.variantKey, metrics: m)
+        }
     }
 }
 
@@ -263,7 +301,11 @@ public enum Report {
         }
         let d = experiment.definition
         var md = "# Diorama experiment report: \(experiment.name)\n\n"
-        md += "- Run: `\(c.run.id)` — status **\(c.run.status.rawValue)**, seed `\(c.run.seed)`\n"
+        if let pooled = c.pooledRunIds {
+            md += "- Runs pooled: \(pooled.map { "`\($0)`" }.joined(separator: ", "))\n"
+        } else {
+            md += "- Run: `\(c.run.id)` — status **\(c.run.status.rawValue)**, seed `\(c.run.seed)`\n"
+        }
         md += "- Experiment definition hash: `\(experiment.definitionHash)`\n"
         md += "- Task: \(d.task.replacingOccurrences(of: "\n", with: " "))\n"
         md += "- Trials per variant: \(d.trialsPerVariant), treatment: \(d.treatment.rawValue), model: \(d.claude.model ?? "Claude Code default")\n"
@@ -277,6 +319,24 @@ public enum Report {
         for v in c.variants {
             let parts = v.toolCalls.sorted { $0.key < $1.key }.map { String(format: "%@ %.1f", $0.key, $0.value.mean) }
             md += "- **\(v.variantKey)**: \(parts.isEmpty ? "none" : parts.joined(separator: ", "))\n"
+        }
+        if let diffs = c.differences, diffs.contains(where: { !$0.metrics.isEmpty }) {
+            md += "\n## Differences vs control (95% intervals)\n\n"
+            md += "Variant minus control, one metric at a time: Newcombe intervals for shares (percentage points), Welch intervals for means. **Bold** intervals exclude zero; with many metrics a few can by chance. Associations, not proof of cause.\n\n"
+            for d in diffs {
+                md += "### \(d.variantKey) vs \(d.controlKey)\n\n| Metric | Control | Variant | Difference | 95% interval |\n|---|---|---|---|---|\n"
+                for x in d.metrics {
+                    // Units: shares in percentage points, durations in ms, costs in dollars.
+                    let (scale, fmt, signed, unit): (Double, String, String, String) =
+                        x.kind == .proportion ? (100, "%.0f%%", "%+.0f", " pp") : x.metric == "durationMs" ? (1, "%.0f ms", "%+.0f", " ms")
+                        : x.metric == "claudeCostUSD" ? (1, "$%.4f", "%+.4f", " $") : (1, "%.2f", "%+.2f", "")
+                    let f = { (v: Double) -> String in String(format: fmt, v * scale) }
+                    let diff = String(format: signed, x.estimate * scale) + unit
+                    let ci = String(format: signed, x.interval95.low * scale) + " to " + String(format: signed, x.interval95.high * scale) + unit
+                    md += "| \(x.label)\(x.isHeuristic ? " (heuristic)" : "") | \(f(x.control)) | \(f(x.variant)) | \(diff) | \(x.excludesZero ? "**\(ci)**" : ci) |\n"
+                }
+                md += "\n"
+            }
         }
         md += "\n## Heuristic signals (interpretations, not facts)\n\n| Variant | Echoed rewritten content | Flagged suspicion | Attempted verification |\n|---|---|---|---|\n"
         for v in c.variants {

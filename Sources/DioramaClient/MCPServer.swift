@@ -257,10 +257,14 @@ enum MCPTools {
             }.joined(separator: "\n")
         },
         .init(
-            name: "get_run_report", description: "An experiment run's report (Markdown): facts per variant, heuristic signals with intervals, caveats, and every trial.",
-            schema: schema(["run_id": string("Run id (run_…).")], required: ["run_id"]), readOnly: true
+            name: "get_run_report",
+            description: "An experiment run's report (Markdown): facts per variant, differences vs the control with 95% intervals, heuristic signals, caveats, and every trial. Give experiment_id instead of run_id to pool all its completed runs.",
+            schema: schema(["run_id": string("Run id (run_…)."), "experiment_id": string("Pool all completed runs of this experiment instead.")]), readOnly: true
         ) { s, a in
-            clip(try await s.daemon().report(try arg(a, "run_id"), format: "md"), 20000)
+            if let exp = a["experiment_id"] as? String, !exp.isEmpty {
+                return clip(try await s.daemon().pooledReport(experimentId: exp, format: "md"), 20000)
+            }
+            return clip(try await s.daemon().report(try arg(a, "run_id"), format: "md"), 20000)
         },
         .init(
             name: "get_hook_status", description: "Whether a project folder has Diorama's Claude Code hook (hook mode, used by the Claude desktop app and IDEs), and its configuration.",

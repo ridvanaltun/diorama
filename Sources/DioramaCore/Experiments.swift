@@ -493,6 +493,52 @@ public struct VariantComparison: Codable, Sendable, Hashable {
     }
 }
 
+/// One metric's difference between a variant and the control (variant − control), with its 95% interval.
+public struct MetricDifference: Codable, Sendable, Hashable {
+    public enum Kind: String, Codable, Sendable {
+        /// A share of trials (difference in percentage points, Newcombe interval).
+        case proportion
+        /// A per-trial mean (Welch interval).
+        case mean
+    }
+
+    public var metric: String
+    public var label: String
+    public var kind: Kind
+    /// Heuristic signals are interpretations; facts are measured.
+    public var isHeuristic: Bool
+    public var control: Double
+    public var variant: Double
+    public var estimate: Double
+    public var interval95: Interval
+
+    /// The interval doesn't include zero: a difference this run is unlikely to show by chance alone (not proof of cause).
+    public var excludesZero: Bool { interval95.low > 0 || interval95.high < 0 }
+
+    public init(metric: String, label: String, kind: Kind, isHeuristic: Bool, control: Double, variant: Double, estimate: Double, interval95: Interval) {
+        self.metric = metric
+        self.label = label
+        self.kind = kind
+        self.isHeuristic = isHeuristic
+        self.control = control
+        self.variant = variant
+        self.estimate = estimate
+        self.interval95 = interval95
+    }
+}
+
+public struct VariantDifference: Codable, Sendable, Hashable {
+    public var variantKey: String
+    public var controlKey: String
+    public var metrics: [MetricDifference]
+
+    public init(variantKey: String, controlKey: String, metrics: [MetricDifference]) {
+        self.variantKey = variantKey
+        self.controlKey = controlKey
+        self.metrics = metrics
+    }
+}
+
 public struct RunComparison: Codable, Sendable, Hashable {
     public var run: RunSummary
     public var variants: [VariantComparison]
@@ -500,13 +546,20 @@ public struct RunComparison: Codable, Sendable, Hashable {
     /// Prominent caveats (small samples, invalid trials, …) the UI must show.
     public var caveats: [String]
     public var generatedAt: Date
+    /// Each steered variant against the control, metric by metric.
+    public var differences: [VariantDifference]?
+    /// Set when several runs were pooled into this comparison.
+    public var pooledRunIds: [String]?
 
-    public init(run: RunSummary, variants: [VariantComparison], trials: [TrialInfo], caveats: [String], generatedAt: Date) {
+    public init(run: RunSummary, variants: [VariantComparison], trials: [TrialInfo], caveats: [String], generatedAt: Date,
+                differences: [VariantDifference]? = nil, pooledRunIds: [String]? = nil) {
         self.run = run
         self.variants = variants
         self.trials = trials
         self.caveats = caveats
         self.generatedAt = generatedAt
+        self.differences = differences
+        self.pooledRunIds = pooledRunIds
     }
 }
 

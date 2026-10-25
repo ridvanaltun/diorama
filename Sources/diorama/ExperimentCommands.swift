@@ -125,12 +125,16 @@ struct Experiment: AsyncParsableCommand {
     }
 
     struct Compare: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Compare variants of a run (facts and heuristics shown separately).")
+        static let configuration = CommandConfiguration(
+            abstract: "Compare variants of a run (facts, differences vs control, and heuristics shown separately).",
+            discussion: "With --pooled, the argument is an experiment id and all its completed runs are combined.")
         @OptionGroup var global: GlobalOptions
-        @Argument var runId: String
+        @Argument(help: "Run id (or experiment id with --pooled).") var runId: String
+        @Flag(help: "Pool all completed runs of the experiment.") var pooled = false
         @Flag var json = false
         func run() async throws {
-            let c = try await global.client().comparison(runId)
+            let client = try await global.client()
+            let c = pooled ? try await client.pooledComparison(experimentId: runId) : try await client.comparison(runId)
             if json { return try printJSON(c) }
             try await Self.render(c)
         }
@@ -144,6 +148,20 @@ struct Experiment: AsyncParsableCommand {
                  v.claudeCostUSD.n > 0 ? String(format: "%.3f", v.claudeCostUSD.mean) : "—", String(format: "%.4f", v.rewriteCostUSD.mean),
                  String(format: "%.1f", v.rewritesApplied.mean), String(v.distinctFinalOutputs)]
             })
+            if let diffs = c.differences, diffs.contains(where: { !$0.metrics.isEmpty }) {
+                print("\nDIFFERENCES VS CONTROL (variant − control, 95% interval; * = excludes zero)")
+                for d in diffs {
+                    print("\(d.variantKey) vs \(d.controlKey)")
+                    table(["METRIC", "CONTROL", "VARIANT", "DIFFERENCE", "95% INTERVAL", ""], d.metrics.map { m in
+                        let pct = m.kind == .proportion
+                        func v(_ x: Double) -> String { pct ? String(format: "%.0f%%", x * 100) : String(format: "%.2f", x) }
+                        return [m.label + (m.isHeuristic ? " (heuristic)" : ""), v(m.control), v(m.variant),
+                                pct ? String(format: "%+.0f pp", m.estimate * 100) : String(format: "%+.2f", m.estimate),
+                                pct ? String(format: "%+.0f to %+.0f pp", m.interval95.low * 100, m.interval95.high * 100) : String(format: "%+.2f to %+.2f", m.interval95.low, m.interval95.high),
+                                m.excludesZero ? "*" : ""]
+                    })
+                }
+            }
             print("\nHEURISTIC SIGNALS (pattern matches — interpretations, not facts)")
             func p(_ s: ProportionStat) -> String { s.total == 0 ? "—" : String(format: "%d/%d [%.0f–%.0f%%]", s.count, s.total, s.interval95.low * 100, s.interval95.high * 100) }
             if c.variants.contains(where: { $0.judgeAdopted != nil }) {
@@ -157,13 +175,15 @@ struct Experiment: AsyncParsableCommand {
     }
 
     struct ReportCommand: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(commandName: "report", abstract: "Export a run as Markdown or a JSON bundle.")
+        static let configuration = CommandConfiguration(commandName: "report", abstract: "Export a run (or, with --pooled, all completed runs of an experiment) as Markdown or a JSON bundle.")
         @OptionGroup var global: GlobalOptions
-        @Argument var runId: String
+        @Argument(help: "Run id (or experiment id with --pooled).") var runId: String
+        @Flag(help: "Pool all completed runs of the experiment.") var pooled = false
         @Option(help: "md or json.") var format = "md"
         @Option(help: "Write to a file.") var output: String?
         func run() async throws {
-            let text = try await global.client().report(runId, format: format)
+            let client = try await global.client()
+            let text = pooled ? try await client.pooledReport(experimentId: runId, format: format) : try await client.report(runId, format: format)
             if let output {
                 try text.write(toFile: (output as NSString).expandingTildeInPath, atomically: true, encoding: .utf8)
                 print("Wrote \(output)")

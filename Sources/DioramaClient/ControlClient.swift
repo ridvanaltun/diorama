@@ -133,6 +133,16 @@ public struct ControlClient: Sendable {
     }
     public func cancelRun(_ id: String) async throws -> RunSummary { try await request("POST", "runs/\(id)/cancel") }
     public func comparison(_ runId: String) async throws -> RunComparison { try await request("GET", "runs/\(runId)/comparison") }
+    /// Several runs of one experiment pooled (all completed runs when `runIds` is nil).
+    public func pooledComparison(experimentId: String, runIds: [String]? = nil) async throws -> RunComparison {
+        try await request("GET", "experiments/\(experimentId)/comparison", query: runIds.map { ["runs": $0.joined(separator: ",")] } ?? [:])
+    }
+    public func pooledReport(experimentId: String, runIds: [String]? = nil, format: String) async throws -> String {
+        var q = ["format": format]
+        if let runIds { q["runs"] = runIds.joined(separator: ",") }
+        let r: [String: String] = try await request("GET", "experiments/\(experimentId)/report", query: q)
+        return r["content"] ?? ""
+    }
     public func report(_ runId: String, format: String) async throws -> String {
         let r: [String: String] = try await request("GET", "runs/\(runId)/report", query: ["format": format])
         return r["content"] ?? ""

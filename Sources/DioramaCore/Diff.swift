@@ -176,6 +176,42 @@ public enum Stats {
         return ProportionStat(count: count, total: total, rate: p, interval95: Interval(low: max(0, center - half), high: min(1, center + half)))
     }
 
+    /// Difference of two proportions (b − a) with Newcombe's hybrid score interval (method 10),
+    /// built from the two Wilson intervals; sound for small samples and rates near 0 or 1.
+    public static func proportionDifference(_ a: ProportionStat, _ b: ProportionStat) -> (estimate: Double, interval95: Interval)? {
+        guard a.total > 0, b.total > 0 else { return nil }
+        let d = b.rate - a.rate
+        let low = d - ((b.rate - b.interval95.low) * (b.rate - b.interval95.low) + (a.interval95.high - a.rate) * (a.interval95.high - a.rate)).squareRoot()
+        let high = d + ((b.interval95.high - b.rate) * (b.interval95.high - b.rate) + (a.rate - a.interval95.low) * (a.rate - a.interval95.low)).squareRoot()
+        return (d, Interval(low: max(-1, low), high: min(1, high)))
+    }
+
+    /// Difference of two means (b − a) with Welch's t interval (unequal variances). Needs n ≥ 2 on both sides.
+    public static func meanDifference(_ a: NumericStat, _ b: NumericStat) -> (estimate: Double, interval95: Interval)? {
+        guard a.n >= 2, b.n >= 2 else { return nil }
+        let d = b.mean - a.mean
+        let va = a.stdDev * a.stdDev / Double(a.n), vb = b.stdDev * b.stdDev / Double(b.n)
+        let se = (va + vb).squareRoot()
+        guard se > 0 else { return (d, Interval(low: d, high: d)) }
+        let df = (va + vb) * (va + vb) / (va * va / Double(a.n - 1) + vb * vb / Double(b.n - 1))
+        let half = tQuantile975(df) * se
+        return (d, Interval(low: d - half, high: d + half))
+    }
+
+    /// The 97.5th percentile of Student's t (two-sided 95%), interpolated from a table.
+    public static func tQuantile975(_ df: Double) -> Double {
+        let table: [(Double, Double)] = [
+            (1, 12.706), (2, 4.303), (3, 3.182), (4, 2.776), (5, 2.571), (6, 2.447), (7, 2.365), (8, 2.306), (9, 2.262), (10, 2.228),
+            (12, 2.179), (15, 2.131), (20, 2.086), (25, 2.060), (30, 2.042), (40, 2.021), (60, 2.000), (120, 1.980), (1_000_000, 1.960),
+        ]
+        guard df > 1 else { return table[0].1 }
+        for i in 1..<table.count where df <= table[i].0 {
+            let (x0, y0) = table[i - 1], (x1, y1) = table[i]
+            return y0 + (y1 - y0) * (df - x0) / (x1 - x0)
+        }
+        return 1.960
+    }
+
     public static func numeric(_ values: [Double]) -> NumericStat {
         guard !values.isEmpty else { return NumericStat(n: 0, mean: 0, min: 0, max: 0, stdDev: 0) }
         let mean = values.reduce(0, +) / Double(values.count)

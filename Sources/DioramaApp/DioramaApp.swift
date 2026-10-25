@@ -204,6 +204,9 @@ enum Snapshotter {
                 sheets.append(("sheet-experiment-from-session", AnyView(NewExperimentSheet(draft: draft, created: { _ in }).environment(model))))
             }
         }
+        if let run = model.experiments.first?.runs.first, let c = try? await model.client?.comparison(run.id), c.trials.filter({ $0.facts != nil }).count >= 2 {
+            sheets.append(("sheet-compare-trials", AnyView(TrialCompareSheet(trials: c.trials.filter { $0.facts != nil }).environment(model))))
+        }
         for (name, view) in sheets {
             let host = NSHostingView(rootView: view)
             let window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: 700, height: 780), styleMask: [.titled], backing: .buffered, defer: false)

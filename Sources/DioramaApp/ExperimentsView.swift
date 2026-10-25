@@ -14,6 +14,9 @@ struct ExperimentsView: View {
                 ForEach(model.experiments) { e in
                     Section {
                         Label("Definition & new run", systemImage: "doc.text.magnifyingglass").tag("exp:" + e.id)
+                        if e.runs.filter({ $0.status == .completed }).count >= 2 {
+                            Label("All runs (pooled)", systemImage: "square.stack.3d.up").tag("pool:" + e.id)
+                        }
                         ForEach(e.runs) { r in RunRow(run: r).tag("run:" + r.id) }
                     } header: {
                         HStack {
@@ -39,6 +42,8 @@ struct ExperimentsView: View {
             Group {
                 if let s = selection, s.hasPrefix("run:") {
                     RunView(runId: String(s.dropFirst(4))).id(s)
+                } else if let s = selection, s.hasPrefix("pool:") {
+                    RunView(source: .pooled(experimentId: String(s.dropFirst(5)))).id(s)
                 } else if let s = selection, s.hasPrefix("exp:"), let e = model.experiments.first(where: { $0.id == s.dropFirst(4) }) {
                     ExperimentSummaryView(experiment: e, onRunStarted: { selection = "run:" + $0 })
                 } else {
@@ -213,16 +218,26 @@ struct EstimateSheet: View {
 }
 
 struct RunView: View {
+    /// One run, or every completed run of an experiment pooled together.
+    enum Source: Hashable {
+        case run(String)
+        case pooled(experimentId: String)
+    }
+
     @Environment(AppModel.self) private var model
-    let runId: String
+    let source: Source
     @State private var comparison: RunComparison?
+    @State private var comparingTrials = false
+
+    init(runId: String) { source = .run(runId) }
+    init(source: Source) { self.source = source }
 
     var body: some View {
         ScrollView {
             if let c = comparison {
                 VStack(alignment: .leading, spacing: 18) {
                     header(c)
-                    if c.run.status == .running {
+                    if c.run.status == .running, c.pooledRunIds == nil {
                         ProgressView(value: Double(c.run.trialsDone), total: Double(max(c.run.trialsTotal, 1))) {
                             Text("\(c.run.trialsDone) of \(Fmt.plural(c.run.trialsTotal, "trial")) done").font(.caption)
                         }
@@ -232,6 +247,14 @@ struct RunView: View {
                         Label("Observed facts", systemImage: "checkmark.seal").font(.headline)
                         FactsTable(variants: c.variants)
                     }
+                    if let diffs = c.differences, diffs.contains(where: { !$0.metrics.isEmpty }) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Differences vs control", systemImage: "plusminus").font(.headline)
+                            Text("Variant minus control with a 95% interval, one metric at a time. Highlighted intervals exclude zero, which a chance difference rarely does, but with many metrics a few can. An association, not proof of cause.")
+                                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            ForEach(diffs, id: \.variantKey) { DifferencesTable(difference: $0) }
+                        }
+                    }
                     VStack(alignment: .leading, spacing: 8) {
                         Label("Heuristic signals", systemImage: "wand.and.stars").font(.headline)
                         Text("Pattern-matched interpretations, not facts. Bars show the share of trials; whiskers the 95% interval.")
@@ -239,31 +262,49 @@ struct RunView: View {
                         HeuristicsCharts(variants: c.variants)
                     }
                     VStack(alignment: .leading, spacing: 6) {
-                        Label("Trials", systemImage: "list.number").font(.headline)
+                        HStack {
+                            Label("Trials", systemImage: "list.number").font(.headline)
+                            Spacer()
+                            Button("Compare two trials…") { comparingTrials = true }
+                                .controlSize(.small)
+                                .disabled(c.trials.filter { $0.facts != nil }.count < 2)
+                        }
                         ForEach(c.trials) { t in TrialRow(trial: t) }
                     }
                 }
                 .padding(20)
+                .sheet(isPresented: $comparingTrials) { TrialCompareSheet(trials: c.trials.filter { $0.facts != nil }) }
             } else {
                 ProgressView().padding()
             }
         }
-        .task(id: model.eventTick) { comparison = await model.perform { try await $0.comparison(runId) } }
+        .task(id: model.eventTick) {
+            comparison = await model.perform { client in
+                switch source {
+                case .run(let id): try await client.comparison(id)
+                case .pooled(let exp): try await client.pooledComparison(experimentId: exp)
+                }
+            }
+        }
     }
 
     func header(_ c: RunComparison) -> some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
-                    Text("Run · \(Fmt.runTitle(c.run.createdAt))").font(.title2.bold())
-                    RunStatusIcon(status: c.run.status)
+                    if let pooled = c.pooledRunIds {
+                        Text("All runs · \(Fmt.plural(pooled.count, "run")) pooled").font(.title2.bold())
+                    } else {
+                        Text("Run · \(Fmt.runTitle(c.run.createdAt))").font(.title2.bold())
+                        RunStatusIcon(status: c.run.status)
+                    }
                 }
-                let duration = c.run.startedAt.flatMap { s in (c.run.finishedAt ?? Date()).timeIntervalSince(s) }
-                Text([Fmt.plural(c.run.trialsTotal, "trial"), duration.map { Fmt.duration($0 * 1000) }, "seed \(String(c.run.seed))"].compactMap { $0 }.joined(separator: " · "))
+                let duration = c.pooledRunIds == nil ? c.run.startedAt.flatMap { s in (c.run.finishedAt ?? Date()).timeIntervalSince(s) } : nil
+                Text([Fmt.plural(c.trials.count, "trial"), duration.map { Fmt.duration($0 * 1000) }, c.pooledRunIds == nil ? "seed \(String(c.run.seed))" : nil].compactMap { $0 }.joined(separator: " · "))
                     .font(.callout).foregroundStyle(.secondary)
             }
             Spacer()
-            if c.run.status == .running {
+            if case .run(let runId) = source, c.run.status == .running {
                 Button("Cancel run", role: .destructive) { Task { _ = await model.perform { try await $0.cancelRun(runId) } } }
             }
             Menu {
@@ -277,13 +318,157 @@ struct RunView: View {
     }
 
     func export(_ format: String) async {
-        guard let text = await model.perform({ try await $0.report(runId, format: format) }) else { return }
+        let (text, name): (String?, String)
+        switch source {
+        case .run(let id): (text, name) = (await model.perform { try await $0.report(id, format: format) }, id)
+        case .pooled(let exp): (text, name) = (await model.perform { try await $0.pooledReport(experimentId: exp, format: format) }, "\(exp)-pooled")
+        }
+        guard let text else { return }
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "diorama-\(runId).\(format)"
+        panel.nameFieldStringValue = "diorama-\(name).\(format)"
         panel.allowedContentTypes = [format == "md" ? UTType(filenameExtension: "md") ?? .plainText : .json]
         if panel.runModal() == .OK, let url = panel.url {
             do { try text.write(to: url, atomically: true, encoding: .utf8) } catch { model.report(error) }
         }
+    }
+}
+
+/// One steered variant against the control, metric by metric.
+struct DifferencesTable: View {
+    let difference: VariantDifference
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("\(difference.variantKey) vs \(difference.controlKey)").font(.callout.weight(.semibold))
+            Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
+                GridRow {
+                    ForEach(["Metric", "Control", "Variant", "Difference", "95% interval"], id: \.self) { Text($0).font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
+                }
+                Divider()
+                ForEach(difference.metrics, id: \.metric) { m in
+                    GridRow {
+                        HStack(spacing: 4) {
+                            Text(m.label)
+                            if m.isHeuristic { Badge(text: "heuristic", color: .secondary) }
+                        }
+                        Text(value(m, m.control))
+                        Text(value(m, m.variant))
+                        Text(delta(m, m.estimate)).fontWeight(m.excludesZero ? .semibold : .regular)
+                        IntervalBar(metric: m)
+                    }
+                    .font(.callout.monospacedDigit())
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
+    func value(_ m: MetricDifference, _ v: Double) -> String {
+        if m.kind == .proportion { return "\(Int((v * 100).rounded()))%" }
+        if m.metric == "claudeCostUSD" { return Fmt.money(v) }
+        if m.metric == "durationMs" { return Fmt.duration(v) }
+        return abs(v) >= 100 ? String(format: "%.0f", v) : String(format: "%.1f", v)
+    }
+
+    func delta(_ m: MetricDifference, _ v: Double) -> String {
+        if m.kind == .proportion { return String(format: "%+.0f pp", v * 100) }
+        if m.metric == "claudeCostUSD" { return (v < 0 ? "−" : "+") + Fmt.money(abs(v)) }
+        if m.metric == "durationMs" { return (v < 0 ? "−" : "+") + Fmt.duration(abs(v)) }
+        return String(format: abs(v) >= 100 ? "%+.0f" : "%+.1f", v)
+    }
+}
+
+/// The interval as text plus a small bar around zero, highlighted when it excludes zero.
+struct IntervalBar: View {
+    let metric: MetricDifference
+
+    var body: some View {
+        let lo = metric.interval95.low, hi = metric.interval95.high
+        let span = max(abs(lo), abs(hi), metric.kind == .proportion ? 0.05 : 1e-9)
+        HStack(spacing: 8) {
+            GeometryReader { geo in
+                let w = geo.size.width, mid = w / 2
+                let x0 = mid + CGFloat(lo / span) * mid, x1 = mid + CGFloat(hi / span) * mid
+                ZStack(alignment: .leading) {
+                    Rectangle().fill(Color.secondary.opacity(0.35)).frame(width: 1, height: 12).offset(x: mid)
+                    Capsule().fill(metric.excludesZero ? Color.purple.opacity(0.8) : Color.secondary.opacity(0.45))
+                        .frame(width: max(x1 - x0, 3), height: 5).offset(x: x0)
+                }
+                .frame(maxHeight: .infinity)
+            }
+            .frame(width: 90, height: 14)
+            Text(text).font(.caption.monospacedDigit()).foregroundStyle(metric.excludesZero ? .primary : .secondary)
+        }
+        .help(metric.excludesZero ? "The interval excludes zero" : "The interval includes zero: no clear difference")
+    }
+
+    var text: String {
+        let lo = metric.interval95.low, hi = metric.interval95.high
+        if metric.kind == .proportion { return String(format: "%+.0f to %+.0f pp", lo * 100, hi * 100) }
+        func signed(_ v: Double, _ f: (Double) -> String) -> String { (v < 0 ? "−" : "+") + f(abs(v)) }
+        if metric.metric == "durationMs" { return signed(lo) { Fmt.duration($0) } + " to " + signed(hi) { Fmt.duration($0) } }
+        if metric.metric == "claudeCostUSD" { return signed(lo) { Fmt.money($0) } + " to " + signed(hi) { Fmt.money($0) } }
+        return String(format: abs(hi) >= 100 || abs(lo) >= 100 ? "%+.0f to %+.0f" : "%+.2f to %+.2f", lo, hi)
+    }
+}
+
+/// Two trials side by side: final answers (diffed), counts and tool calls.
+struct TrialCompareSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let trials: [TrialInfo]
+    @State private var a: String
+    @State private var b: String
+
+    init(trials: [TrialInfo]) {
+        self.trials = trials
+        // Default: the first control trial against the first steered one.
+        let control = trials.first { $0.variantKey == "control" } ?? trials.first
+        let other = trials.first { $0.variantKey != control?.variantKey } ?? trials.dropFirst().first
+        _a = State(initialValue: control?.id ?? "")
+        _b = State(initialValue: other?.id ?? "")
+    }
+
+    func trial(_ id: String) -> TrialInfo? { trials.first { $0.id == id } }
+    func label(_ t: TrialInfo) -> String { "#\(t.order + 1) \(t.variantKey)" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Compare two trials").font(.title2.bold())
+            HStack {
+                Picker("A", selection: $a) { ForEach(trials) { Text(label($0)).tag($0.id) } }.frame(maxWidth: 260)
+                Image(systemName: "arrow.left.arrow.right").foregroundStyle(.secondary)
+                Picker("B", selection: $b) { ForEach(trials) { Text(label($0)).tag($0.id) } }.frame(maxWidth: 260)
+            }
+            if let ta = trial(a), let tb = trial(b), let fa = ta.facts, let fb = tb.facts {
+                Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
+                    GridRow { Text(""); Text(label(ta)).font(.caption.bold()); Text(label(tb)).font(.caption.bold()) }
+                    GridRow { Text("Turns").foregroundStyle(.secondary); Text("\(fa.numTurns ?? 0)"); Text("\(fb.numTurns ?? 0)") }
+                    GridRow { Text("Duration").foregroundStyle(.secondary); Text(Fmt.duration(fa.durationMs)); Text(Fmt.duration(fb.durationMs)) }
+                    GridRow { Text("Claude Code cost").foregroundStyle(.secondary); Text(Fmt.money(fa.claudeCostUSD)); Text(Fmt.money(fb.claudeCostUSD)) }
+                    GridRow { Text("Rewrites").foregroundStyle(.secondary); Text("\(fa.rewritesApplied)"); Text("\(fb.rewritesApplied)") }
+                    GridRow { Text("Tool calls").foregroundStyle(.secondary); Text(tools(fa.toolCalls)); Text(tools(fb.toolCalls)) }
+                    GridRow { Text("Judge").foregroundStyle(.secondary); Text(ta.signals?.judgeVerdict ?? "—"); Text(tb.signals?.judgeVerdict ?? "—") }
+                }
+                .font(.callout)
+                Text("Final answers (A → B)").font(.headline)
+                ScrollView {
+                    DiffText(original: fa.finalOutput, replacement: fb.finalOutput)
+                        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+            } else {
+                Text("Pick two finished trials.").foregroundStyle(.secondary)
+            }
+            HStack { Spacer(); Button("Close") { dismiss() }.keyboardShortcut(.defaultAction) }
+        }
+        .padding(20)
+        .frame(width: 760, height: 640)
+    }
+
+    func tools(_ calls: [String: Int]) -> String {
+        calls.isEmpty ? "none" : calls.sorted { $0.key < $1.key }.map { "\(Fmt.toolName($0.key)) ×\($0.value)" }.joined(separator: ", ")
     }
 }
 

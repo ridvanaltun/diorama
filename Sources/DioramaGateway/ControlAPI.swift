@@ -205,6 +205,15 @@ struct ControlAPI: Sendable {
             guard let e = try store.experiment(id: id) else { throw notFound("experiment") }
             return try ok(e)
         }
+        if let c = Self.match(method, route, "GET", "experiments/:id/comparison") {
+            let runs = req.query["runs"].map { $0.split(separator: ",").map(String.init) }
+            return try ok(try daemon.runner.pooledComparison(experimentId: c[0], runIds: runs))
+        }
+        if let c = Self.match(method, route, "GET", "experiments/:id/report") {
+            let runs = req.query["runs"].map { $0.split(separator: ",").map(String.init) }
+            let text = try daemon.runner.pooledReport(experimentId: c[0], runIds: runs, format: req.query["format"] ?? "md")
+            return try ok(["format": req.query["format"] ?? "md", "content": text])
+        }
         if let c = Self.match(method, route, "POST", "experiments/:id/runs") {
             let id = c[0]
             return try ok(try daemon.runner.prepareRun(experimentId: id), status: 201)

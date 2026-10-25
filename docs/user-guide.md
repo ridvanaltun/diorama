@@ -243,6 +243,19 @@ Key fields:
 
 `diorama experiment report <run> --format md|json` exports a report. The JSON bundle contains every trial's manifest.
 
+### Reading the results: differences vs the control
+
+Each run shows **Differences vs control**: for every steered variant and metric, the difference from the control (variant − control) with a 95% interval.
+
+- **Shares** (error rate, heuristic signals, judge verdicts) use Newcombe's score interval and are shown in percentage points.
+- **Per-trial means** (turns, duration, tokens, Claude Code cost, calls per tool) use Welch's t-interval, which doesn't assume equal variances.
+- An interval that **excludes zero** is highlighted. A chance difference rarely does that, but each metric is checked on its own, so with many metrics a few can by chance.
+- Heuristic metrics are marked as such. Like everything else, these are associations under the run's conditions, not proof of cause.
+
+**Pooling runs:** with two or more completed runs, the experiment's **All runs (pooled)** entry combines their trials into one comparison and report (`diorama experiment compare <experiment-id> --pooled`, `report --pooled`, or the MCP `get_run_report` with `experiment_id`). Runs on different days can differ (web pages, Claude Code versions, and each run's own frozen treatments), and the report says so.
+
+**Two trials side by side:** **Compare two trials…** shows turns, duration, cost, rewrites, tool calls and the judge verdict for both, plus a diff of their final answers.
+
 ## Settings
 
 `diorama settings show` displays the current values. Change one with `diorama settings set <key> <value>`, where the key is one of:
