@@ -96,6 +96,10 @@ public final class Store: @unchecked Sendable {
         ALTER TABLE sessions ADD COLUMN notes TEXT NOT NULL DEFAULT '';
         ALTER TABLE sessions ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';
         """,
+        // v8: shadow mode keeps the rewrite it didn't apply
+        """
+        ALTER TABLE decisions ADD COLUMN shadow_blob TEXT;
+        """,
     ]
 
     public static var schemaVersion: Int { migrations.count }

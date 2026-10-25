@@ -191,6 +191,10 @@ struct ProfileEditor: View {
                         Stepper("Max input: \(draft.defaults.maxInputChars) chars", value: $draft.defaults.maxInputChars, in: 1000...2_000_000, step: 10_000)
                         Stepper("Timeout: \(Int(draft.defaults.timeoutSeconds)) s", value: $draft.defaults.timeoutSeconds, in: 5...120, step: 5)
                         BudgetField(label: "Daily budget for this profile", value: $draft.defaults.dailyBudgetUSD)
+                        Toggle(isOn: $draft.defaults.shadow) {
+                            Text("Shadow mode: compute rewrites but don't apply them")
+                            Text("Claude always gets the original; each tool result records what the rewrite would have changed. A safe way to try rules in real sessions (rewrites still cost money). Not used in experiment trials.")
+                        }
                         Toggle(isOn: $draft.defaults.review) {
                             Text("Review rewrites before Claude sees them")
                             Text("Claude waits while you approve or reject each AI rewrite; unanswered ones send the original. Not used in experiment trials.")

@@ -197,6 +197,9 @@ public struct ProfileDefaults: Codable, Sendable, Hashable {
     public var review: Bool
     /// How long a rewrite waits for a review before the original is forwarded.
     public var reviewTimeoutSeconds: Double
+    /// Shadow mode: run AI rewrites but never apply them. Claude gets the original; each decision
+    /// records what would have changed. Not used in experiment trials.
+    public var shadow: Bool
 
     public static let defaultModel = "claude-haiku-5-5"
     public static let reviewTimeoutRange: ClosedRange<Double> = 15...120
@@ -204,8 +207,9 @@ public struct ProfileDefaults: Codable, Sendable, Hashable {
     public init(
         model: String = ProfileDefaults.defaultModel, effort: String? = nil, onFailure: FailurePolicy = .passOriginal,
         maxInputChars: Int = 200_000, timeoutSeconds: Double = 45, maxOutputTokens: Int = 16_000, dailyBudgetUSD: Double? = nil,
-        review: Bool = false, reviewTimeoutSeconds: Double = 60
+        review: Bool = false, reviewTimeoutSeconds: Double = 60, shadow: Bool = false
     ) {
+        self.shadow = shadow
         self.dailyBudgetUSD = dailyBudgetUSD
         self.review = review
         self.reviewTimeoutSeconds = reviewTimeoutSeconds
@@ -229,6 +233,7 @@ public struct ProfileDefaults: Codable, Sendable, Hashable {
         dailyBudgetUSD = try c.decodeIfPresent(Double.self, forKey: .dailyBudgetUSD)
         review = try c.decodeIfPresent(Bool.self, forKey: .review) ?? false
         reviewTimeoutSeconds = try c.decodeIfPresent(Double.self, forKey: .reviewTimeoutSeconds) ?? d.reviewTimeoutSeconds
+        shadow = try c.decodeIfPresent(Bool.self, forKey: .shadow) ?? false
     }
 }
 
@@ -993,11 +998,14 @@ public struct DecisionDetail: Codable, Sendable, Hashable {
     /// What Claude did in the first response after receiving this tool result.
     public var followUp: AssistantSummary?
     public var followUpExchangeId: Int64?
+    /// Shadow mode: what the rewrite would have sent (Claude got the original).
+    public var shadowText: String?
 
     public init(
         summary: DecisionSummary, toolInput: String?, isError: Bool, originalText: String, replacementText: String?,
-        instructions: [String], attempts: [RewriteAttemptInfo], followUp: AssistantSummary?, followUpExchangeId: Int64?
+        instructions: [String], attempts: [RewriteAttemptInfo], followUp: AssistantSummary?, followUpExchangeId: Int64?, shadowText: String? = nil
     ) {
+        self.shadowText = shadowText
         self.summary = summary
         self.toolInput = toolInput
         self.isError = isError

@@ -665,6 +665,9 @@ struct ToolResultRow: View {
                         if entry.toolUseId.hasPrefix("input:") { Badge(text: "input", color: .blue).help("The tool call's input, changed before it ran") }
                         if let target { Text(target).font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
                         Badge(text: entry.handling.label, color: entry.handling.color)
+                        if decision?.reason.contains("shadow mode, would rewrite") == true {
+                            Badge(text: "shadow", color: .indigo).help("Shadow mode: the rewrite was computed but not sent")
+                        }
                     }
                     if let reason = decision?.reason, entry.handling != .decidedUnchanged || !reason.hasPrefix("no rule") {
                         Text(reason).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -827,6 +830,13 @@ struct DecisionDetailView: View {
                         }
                     } else {
                         section("Content (forwarded unchanged)") { MonoBlock(text: d.originalText).frame(minHeight: 140, maxHeight: 320) }
+                    }
+                    if let s = d.shadowText {
+                        section("Shadow mode: what the rewrite would have changed") {
+                            Text("Claude got the content above. This rewrite was computed but not sent.").font(.caption).foregroundStyle(.secondary)
+                            DiffText(original: d.replacementText ?? d.originalText, replacement: s).padding(10)
+                                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                        }
                     }
                     if let f = d.followUp, !(f.text.isEmpty && f.toolUses.isEmpty) {
                         section("What Claude did next") {

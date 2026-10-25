@@ -21,6 +21,8 @@ public struct DecisionRecord: Sendable, Hashable {
     public var createdAt: Date
     public var replayCount: Int
     public var treatmentKey: String?
+    /// Shadow mode: the rewrite that was computed but not applied (content JSON bytes). Never sent.
+    public var shadowBlob: String?
 
     public init(
         toolUseId: String, sessionId: String, exchangeId: Int64, toolName: String?, toolInput: String?, isError: Bool,
@@ -78,6 +80,7 @@ extension Store {
             replacementBlob: r.string("replacement_blob"), rules: decode([RuleRef].self, r.string("rules")) ?? [],
             instructions: decode([String].self, r.string("instructions")) ?? [], createdAt: r.date("created_at") ?? Date(),
             replayCount: Int(r.int("replay_count") ?? 0), treatmentKey: r.string("treatment_key"))
+        .with { $0.shadowBlob = r.string("shadow_blob") }
     }
 
     public func decision(toolUseId: String) throws -> DecisionRecord? {
@@ -110,14 +113,14 @@ extension Store {
             try db.run(
                 """
                 INSERT INTO decisions(tool_use_id, session_id, exchange_id, tool_name, tool_input, is_error, original_hash,
-                  original_blob, outcome, reason, replacement_blob, rules, instructions, created_at, replay_count, treatment_key)
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                  original_blob, outcome, reason, replacement_blob, rules, instructions, created_at, replay_count, treatment_key, shadow_blob)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
                 """,
                 [
                     .text(d.toolUseId), .text(d.sessionId), .int(d.exchangeId), .optional(d.toolName), .optional(d.toolInput),
                     .int(d.isError ? 1 : 0), .text(d.originalHash), .text(d.originalBlob), .text(d.outcome.rawValue), .text(d.reason),
                     .optional(d.replacementBlob), .text(json(d.rules)), .text(json(d.instructions)), .date(d.createdAt),
-                    .optional(d.treatmentKey),
+                    .optional(d.treatmentKey), .optional(d.shadowBlob),
                 ])
             return d
         }
@@ -193,7 +196,8 @@ extension Store {
             summary: d.summary, toolInput: d.toolInput, isError: d.isError,
             originalText: ContentText.displayText(fromContentJSON: original),
             replacementText: replacement.map { ContentText.displayText(fromContentJSON: $0) }, instructions: d.instructions,
-            attempts: try attempts(toolUseId: toolUseId), followUp: followUp?.assistant, followUpExchangeId: followUp?.id)
+            attempts: try attempts(toolUseId: toolUseId), followUp: followUp?.assistant, followUpExchangeId: followUp?.id,
+            shadowText: d.shadowBlob.flatMap { try? blobs.getString($0) }.map { ContentText.displayText(fromContentJSON: $0) })
     }
 }
 
@@ -211,5 +215,13 @@ public enum ContentText {
             }.joined(separator: "\n\n")
         }
         return json
+    }
+}
+
+extension DecisionRecord {
+    func with(_ change: (inout DecisionRecord) -> Void) -> DecisionRecord {
+        var copy = self
+        change(&copy)
+        return copy
     }
 }

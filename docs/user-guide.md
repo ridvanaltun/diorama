@@ -189,6 +189,10 @@ diorama session whatif ses_123 --version pv_abc --rewrite      # a specific vers
 diorama session whatif ses_123 --file draft.json --rewrite --max 10
 ```
 
+### Shadow mode: try rules without applying them
+
+Turn on **Shadow mode** in a profile's defaults (`"defaults": {"shadow": true}`) to run its AI rewrites without sending them. Claude always gets the original (redaction rules still apply). Each tool result is recorded as unchanged with the reason "shadow mode, would rewrite: …", gets a **shadow** badge in the timeline, and its audit record shows **what the rewrite would have changed**. This lets you check a new profile against real sessions before you switch it on: turn shadow mode off and save, and new sessions apply it. Rewrites in shadow mode cost the same as real ones and count toward budgets. Experiment trials ignore shadow mode.
+
 ### Review mode: approve rewrites before Claude sees them
 
 Turn on **Review rewrites before Claude sees them** in a profile's defaults (`"defaults": {"review": true, "reviewTimeoutSeconds": 60}`) to hold every AI rewrite until you answer. Claude waits meanwhile. Diorama opens **Review rewrites** with a word diff of what Claude would see, and shows a banner, a menu bar row and, while it's in the background, a notification.

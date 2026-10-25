@@ -261,11 +261,13 @@ public final class DecisionEngine: Sendable {
         if let existing = try? store.decision(toolUseId: t.decisionId) { return existing }
         let originalBlob = (try? store.blobs.put(t.original)) ?? t.hash
         let label = "\(t.toolName ?? "tool") " + (t.stage == .page ? "page" : t.stage == .input ? "input" : "result")
-        func record(_ outcome: DecisionOutcome, _ reason: String, replacement: String? = nil, refs: [RuleRef] = [], instructions: [String] = [], treatmentKey: String? = nil) -> DecisionRecord {
-            let d = DecisionRecord(
+        func record(_ outcome: DecisionOutcome, _ reason: String, replacement: String? = nil, refs: [RuleRef] = [], instructions: [String] = [],
+                    treatmentKey: String? = nil, shadow: String? = nil) -> DecisionRecord {
+            var d = DecisionRecord(
                 toolUseId: t.decisionId, sessionId: session.id, exchangeId: exchangeId, toolName: t.toolName, toolInput: t.toolInputJSON,
                 isError: t.isError, originalHash: t.hash, originalBlob: originalBlob, outcome: outcome, reason: reason,
                 replacementBlob: replacement, rules: refs, instructions: instructions, treatmentKey: treatmentKey)
+            d.shadowBlob = shadow
             // Persisted before the request is forwarded (FR-19). If persistence fails we must not
             // rewrite, because the rewrite could not be replayed.
             guard let saved = try? store.insertDecision(d) else {
@@ -324,14 +326,14 @@ public final class DecisionEngine: Sendable {
         }
         /// Records the redacted content alone (no rules left for the agent, or it couldn't run). A redaction
         /// is never dropped because a rewrite failed: Claude gets the redacted text either way.
-        func recordRedacted(_ note: String?) -> DecisionRecord {
+        func recordRedacted(_ note: String?, shadow: String? = nil) -> DecisionRecord {
             guard let r = redaction else {
-                return record(.unchanged, note ?? "nothing to redact", refs: app.refs, instructions: instructionTexts)
+                return record(.unchanged, note ?? "nothing to redact", refs: app.refs, instructions: instructionTexts, shadow: shadow)
             }
             guard let bytes = try? t.buildReplacement(segments), let blob = try? store.blobs.put(bytes) else {
                 return record(.failed, "could not build the redacted content — original forwarded", refs: app.refs, instructions: instructionTexts)
             }
-            return record(.rewritten, r.summary + (note.map { "; \($0)" } ?? ""), replacement: blob, refs: app.refs, instructions: instructionTexts)
+            return record(.rewritten, r.summary + (note.map { "; \($0)" } ?? ""), replacement: blob, refs: app.refs, instructions: instructionTexts, shadow: shadow)
         }
         if rewriteRules.isEmpty { return recordRedacted(nil) }
         if text.count > app.defaults.maxInputChars {
@@ -452,8 +454,13 @@ public final class DecisionEngine: Sendable {
                         lastError = "could not store replacement content"
                         break
                     }
-                    if let key = treatmentKey { try? store.storeTreatment(key: key, replacementBlob: blob, attemptId: attemptId) }
                     let explanation = response.output?.explanation ?? "rewritten"
+                    // Shadow mode: keep the rewrite agent's work (the attempt and its edits) but send the original.
+                    if app.defaults.shadow, session.trialId == nil {
+                        let why = "shadow mode, would rewrite: \(explanation)"
+                        return redaction != nil ? recordRedacted(why, shadow: blob) : record(.unchanged, why, refs: app.refs, instructions: instructionTexts, shadow: blob)
+                    }
+                    if let key = treatmentKey { try? store.storeTreatment(key: key, replacementBlob: blob, attemptId: attemptId) }
                     // Review mode: Claude waits while the user approves or rejects the rewrite. Not for
                     // trials (nobody is there to answer) or tool inputs (Claude Code already asks).
                     if app.defaults.review, session.trialId == nil, t.stage != .input {
