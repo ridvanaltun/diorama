@@ -290,10 +290,20 @@ public final class DecisionEngine: Sendable {
         guard !t.segments.isEmpty else { return record(.unchanged, "tool result has no text content") }
         var segments = t.segments
         let text = segments.joined(separator: "\n\n")
-        let ctx = MatchContext(toolName: toolName, toolInput: t.matchInput, text: text, requestClass: requestClass, isError: t.isError, stage: t.stage)
+        let ctx = MatchContext(toolName: toolName, toolInput: t.matchInput, text: text, requestClass: requestClass, isError: t.isError, stage: t.stage,
+                               sampleId: t.decisionId)
         let app = applicableRules(session: session, ctx: ctx)
         if app.rules.isEmpty {
             let hasRules = !(session.profileVersion?.profile.rules.isEmpty ?? true) || session.prompt != nil
+            // Rules that match except for their sample: say so, so the audit shows sampling at work.
+            var unsampled = ctx
+            unsampled.sampleId = nil
+            let skipped = (session.profileVersion?.profile.rules ?? []).filter { r in
+                (r.match.sample ?? 1) < 1 && !RuleMatcher.matches(r, ctx) && RuleMatcher.matches(r, unsampled)
+            }
+            if !skipped.isEmpty {
+                return record(.unchanged, "not in the sample of " + skipped.map { "“\($0.name)” (\(RuleMatcher.percent($0.match.sample ?? 1)))" }.joined(separator: ", "))
+            }
             return record(.unchanged, hasRules ? "no rule matched" : "no rules configured")
         }
         var rewriteRules = app.rules.filter { !$0.isRedaction }

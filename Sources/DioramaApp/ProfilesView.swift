@@ -213,6 +213,7 @@ struct ProfileEditor: View {
                                     if rule.match.stage == .input { Badge(text: "input", color: .blue) }
                                     if rule.isRedaction { Badge(text: "redact", color: .orange) }
                                     if rule.match.classifier != nil { Badge(text: "classifier", color: .purple) }
+                                    if let s = rule.match.sample, s < 1 { Badge(text: Fmt.share(s), color: .indigo).help("Applies to \(Fmt.share(s)) of matching tool results") }
                                     if let use = stats?.rules.first(where: { $0.ruleId == rule.id }) { RuleUseChip(use: use, days: statsDays) }
                                     if !FormLogic.ruleProblems(rule).isEmpty {
                                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).help(FormLogic.ruleProblems(rule).joined(separator: "\n"))
@@ -311,6 +312,14 @@ struct RuleEditor: View {
                 get: { FormLogic.formatInputPatterns(rule.match.input) },
                 set: { rule.match.input = FormLogic.parseInputPatterns($0) }), axis: .vertical)
             TextField("Content regex (optional)", text: Binding(get: { rule.match.content ?? "" }, set: { rule.match.content = $0.isEmpty ? nil : $0 }))
+            HStack {
+                Toggle("Apply to a sample", isOn: Binding(get: { rule.match.sample != nil }, set: { rule.match.sample = $0 ? 0.5 : nil }))
+                if let share = rule.match.sample {
+                    Slider(value: Binding(get: { share }, set: { rule.match.sample = ($0 * 20).rounded() / 20 }), in: 0.05...1).frame(maxWidth: 200)
+                    Text(Fmt.share(share)).monospacedDigit().frame(width: 44, alignment: .trailing)
+                }
+            }
+            .help("Change only some of the matching tool results (chosen per result, the same every time), so you can compare changed and unchanged results in one session.")
             Picker("Action", selection: Binding(
                 get: { rule.isRedaction },
                 set: { rule.redact = $0 ? (rule.redact ?? RedactSpec()) : nil })) {

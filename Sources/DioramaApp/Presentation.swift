@@ -12,6 +12,12 @@ enum Fmt {
     }
 
     /// "$0.010–$0.050", or one value when both ends round the same ("<$0.001").
+    /// A sample share: 0.3 → "30%".
+    static func share(_ v: Double) -> String {
+        let p = v * 100
+        return p == p.rounded() ? "\(Int(p))%" : String(format: "%.1f%%", p)
+    }
+
     static func moneyRange(_ low: Double, _ high: Double) -> String {
         let (a, b) = (money(low), money(high))
         return a == b ? a : "\(a)–\(b)"

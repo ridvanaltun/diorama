@@ -21,7 +21,7 @@ extension DecisionEngine {
         let original = input.canonicalBytes
         let pretty = Self.prettyJSON(original) ?? String(decoding: original, as: UTF8.self)
         // Most calls match no input rule: record nothing for them (no decision, no timeline row).
-        let ctx = MatchContext(toolName: toolName, toolInput: input, text: pretty, requestClass: "main", isError: false, stage: .input)
+        let ctx = MatchContext(toolName: toolName, toolInput: input, text: pretty, requestClass: "main", isError: false, stage: .input, sampleId: id)
         guard !applicableRules(session: session, ctx: ctx).rules.isEmpty else { return (nil, nil) }
         let keys = Set(fields.keys)
         let target = DecisionTarget(

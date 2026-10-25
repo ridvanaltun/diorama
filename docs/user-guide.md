@@ -111,6 +111,10 @@ A profile is JSON (`diorama profiles export <name>` shows one). Example:
 
 Templates: `diorama profiles templates`, then `diorama profiles create --template N`.
 
+### Sampling: change only some results
+
+`"match": {"sample": 0.3}`, or **Apply to a sample** in the rule editor, makes a rule apply to only 30% of the tool results it matches. The rest pass through unchanged with the reason "not in the sample of “Rule” (30%)". This gives you changed and unchanged results side by side in one live session, for example to see whether Claude notices. Which results are in the sample is decided from each result's id, so a result is always in or always out: replays, the playground and what-if all agree with the session. Different rules sample independently. Sampling runs before a classifier, so results outside the sample cost nothing. Rule usage counts only results inside the sample.
+
 ### Content-aware rules (classifier)
 
 Regexes only see words. A **classifier** lets a cheap model decide whether a rule applies, from a yes/no question about the content:

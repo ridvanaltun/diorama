@@ -8,14 +8,20 @@ extension DecisionEngine {
     /// exactly as a session would, but records nothing.
     public func playground(
         rules: [Rule], defaults: ProfileDefaults, toolName: String, toolInputJSON: String?, segments: [String], isError: Bool = false,
-        stage: RuleStage, rewrite: Bool, spendKind: String = "playground", profileId: String? = nil
+        stage: RuleStage, rewrite: Bool, spendKind: String = "playground", profileId: String? = nil, sampleId: String? = nil
     ) async -> PlaygroundResult {
         let text = segments.joined(separator: "\n\n")
         let input = toolInputJSON.flatMap { try? JSONValue.parse($0) } ?? .object([:])
-        let ctx = MatchContext(toolName: toolName, toolInput: input, text: text, requestClass: "main", isError: isError, stage: stage)
-        let checks = rules.map { r -> RuleCheck in
+        let ctx = MatchContext(toolName: toolName, toolInput: input, text: text, requestClass: "main", isError: isError, stage: stage, sampleId: sampleId)
+        var checks = rules.map { r -> RuleCheck in
             let why = RuleMatcher.mismatch(r, ctx)
             return RuleCheck(ruleId: r.id, name: r.name.isEmpty ? "Untitled rule" : r.name, matches: why == nil, reason: why ?? "matches")
+        }
+        // Pasted text has no tool result id to sample by: say how sampling will work.
+        if sampleId == nil {
+            for (i, r) in rules.enumerated() where checks[i].matches {
+                if let share = r.match.sample, share < 1 { checks[i].reason = "matches; in a session it applies to \(RuleMatcher.percent(share)) of such tool results" }
+            }
         }
         let matched = rules.filter { RuleMatcher.matches($0, ctx) }
         var rewriteRules = matched.filter { !$0.isRedaction }

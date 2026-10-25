@@ -6,6 +6,7 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 ## Unreleased
 
 ### New
+- **Rule sampling.** `match.sample` (or **Apply to a sample** in the editor) applies a rule to a share of its matching tool results, chosen deterministically per result id, so changed and unchanged results can be compared within one session; skipped results say "not in the sample of …".
 - **Session notes and tags.** Tag sessions and write notes in the session header (double-click the name to rename); filter the list by tag. Included in reports, data exports and MCP. Also `diorama session tag|note|rename`, `diorama sessions --tag`, MCP `annotate_session`.
 - **Data export.** **Export Data…** (Sessions toolbar) and `diorama export` write every decided tool result as CSV or JSON Lines: session, profile version, tool and input, outcome, reason, rules, attempts, cost and sizes, optionally with the texts. Filter by time, profile, session, trials or rewritten only.
 - **Share profiles.** **Export…** in the profile editor saves a profile as JSON; **Import Profile…** (or dropping `.json` files on the profile list) adds them, renaming on a name clash. Same format as `diorama profiles export` / `create --file`.

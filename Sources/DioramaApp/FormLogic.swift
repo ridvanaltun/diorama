@@ -113,6 +113,7 @@ enum FormLogic {
             out.append("No instructions for the rewrite agent.")
         }
         if let c = rule.match.content, (try? Regex(c)) == nil { out.append("Content regex is invalid.") }
+        if let s = rule.match.sample, !(s > 0 && s <= 1) { out.append("The sample must be between 1% and 100%.") }
         for (field, pattern) in rule.match.input.sorted(by: { $0.key < $1.key }) where (try? Regex(pattern)) == nil {
             out.append("Input pattern for “\(field)” is an invalid regex.")
         }

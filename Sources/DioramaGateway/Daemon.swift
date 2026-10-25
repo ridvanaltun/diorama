@@ -353,7 +353,8 @@ public final class DioramaDaemon: @unchecked Sendable {
             let stage: RuleStage = req.stage ?? Self.stage(ofDecision: id)
             return await engine.playground(
                 rules: rules, defaults: defaults, toolName: (d.toolName ?? "tool").replacingOccurrences(of: " (page)", with: ""), toolInputJSON: d.toolInput,
-                segments: playgroundSegments(d, via: session?.via ?? .gateway), isError: d.isError, stage: stage, rewrite: req.rewrite, profileId: profileId)
+                segments: playgroundSegments(d, via: session?.via ?? .gateway), isError: d.isError, stage: stage, rewrite: req.rewrite, profileId: profileId,
+                sampleId: d.toolUseId)
         }
         guard let text = req.text, !text.isEmpty else { throw StoreError("give a past tool result (toolUseId) or text to test on") }
         return await engine.playground(
@@ -409,7 +410,8 @@ public final class DioramaDaemon: @unchecked Sendable {
         var checked: [(Source, PlaygroundResult)] = []
         for src in sources {
             let r = await engine.playground(rules: rules, defaults: defaults, toolName: src.toolName, toolInputJSON: src.decision.toolInput,
-                                            segments: src.segments, isError: src.decision.isError, stage: src.stage, rewrite: false)
+                                            segments: src.segments, isError: src.decision.isError, stage: src.stage, rewrite: false,
+                                            sampleId: src.decision.toolUseId)
             checked.append((src, r))
         }
         let matchedIndices = checked.indices.filter { checked[$0].1.model != nil }
@@ -445,7 +447,7 @@ public final class DioramaDaemon: @unchecked Sendable {
                     g.addTask {
                         let r = await self.engine.playground(rules: rules, defaults: defaults, toolName: src.toolName, toolInputJSON: src.decision.toolInput,
                                                              segments: src.segments, isError: src.decision.isError, stage: src.stage, rewrite: true,
-                                                             spendKind: "whatif", profileId: spendProfile)
+                                                             spendKind: "whatif", profileId: spendProfile, sampleId: src.decision.toolUseId)
                         return (i, r.rewrite)
                     }
                 }

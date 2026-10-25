@@ -40,6 +40,7 @@ extension Store {
                 problems.append("rule '\(r.name)': invalid regex for input field '\(field)'")
             }
             if let c = r.match.content, (try? Regex(c)) == nil { problems.append("rule '\(r.name)': invalid content regex") }
+            if let s = r.match.sample, !(s > 0 && s <= 1) { problems.append("rule '\(r.name)': sample must be more than 0 and at most 1 (a share of tool results)") }
         }
         return problems
     }

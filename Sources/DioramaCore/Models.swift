@@ -68,13 +68,17 @@ public struct RuleMatch: Codable, Sendable, Hashable {
     /// Content-aware matching: after the conditions above, a cheap model answers a yes/no question
     /// about the content, and the rule applies only on "yes".
     public var classifier: RuleClassifier?
+    /// Apply to only this share (0–1] of the tool results that match, chosen deterministically from
+    /// each result's id: the same result is always in or out of the sample. Nil = all of them.
+    public var sample: Double?
 
     public init(
         tools: [String], input: [String: String] = [:], content: String? = nil, minChars: Int? = nil,
         maxChars: Int? = nil, requestClasses: [String]? = nil, includeErrors: Bool = false, stage: RuleStage = .result,
-        classifier: RuleClassifier? = nil
+        classifier: RuleClassifier? = nil, sample: Double? = nil
     ) {
         self.classifier = classifier
+        self.sample = sample
         self.stage = stage
         self.tools = tools
         self.input = input
@@ -96,6 +100,7 @@ public struct RuleMatch: Codable, Sendable, Hashable {
         includeErrors = try c.decodeIfPresent(Bool.self, forKey: .includeErrors) ?? false
         stage = try c.decodeIfPresent(RuleStage.self, forKey: .stage) ?? .result
         classifier = try c.decodeIfPresent(RuleClassifier.self, forKey: .classifier)
+        sample = try c.decodeIfPresent(Double.self, forKey: .sample)
     }
 }
 

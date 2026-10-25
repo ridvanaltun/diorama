@@ -10,9 +10,12 @@ public struct MatchContext: Sendable {
     public var requestClass: String?
     public var isError: Bool
     public var stage: RuleStage
+    /// What sampled rules sample by (the decision id). Nil (the playground on pasted text) skips sampling.
+    public var sampleId: String?
 
-    public init(toolName: String, toolInput: JSONValue, text: String, requestClass: String?, isError: Bool, stage: RuleStage = .result) {
+    public init(toolName: String, toolInput: JSONValue, text: String, requestClass: String?, isError: Bool, stage: RuleStage = .result, sampleId: String? = nil) {
         self.stage = stage
+        self.sampleId = sampleId
         self.toolName = toolName
         self.toolInput = toolInput
         self.text = text
@@ -58,7 +61,21 @@ public enum RuleMatcher {
             guard let regex = try? Regex(pattern) else { return "the content regex isn't valid" }
             guard ctx.text.contains(regex) else { return "the content doesn't match /\(pattern)/" }
         }
+        if let share = m.sample, share < 1, let id = ctx.sampleId, samplePoint(ruleId: rule.id, id: id) >= share {
+            return "this tool result isn't in the rule's \(percent(share)) sample"
+        }
         return nil
+    }
+
+    /// Where `id` falls in [0, 1) for `ruleId`: stable, and independent between rules.
+    public static func samplePoint(ruleId: String, id: String) -> Double {
+        let hex = Hashing.sha256Hex(ruleId + "\u{1F}" + id).prefix(13)
+        return Double(UInt64(hex, radix: 16) ?? 0) / Double(1 << 52)
+    }
+
+    public static func percent(_ share: Double) -> String {
+        let p = share * 100
+        return p == p.rounded() ? "\(Int(p))%" : String(format: "%.1f%%", p)
     }
 
     /// Resolves a dot-separated path in a JSON value to a string (numbers/bools stringified).
