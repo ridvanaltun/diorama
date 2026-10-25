@@ -173,7 +173,7 @@ enum Snapshotter {
             try? await Task.sleep(for: .seconds(2.5))
             if let view = main?.contentView { capture(view, dir.appendingPathComponent("\(section.rawValue.lowercased()).png")) }
         }
-        let sheets: [(String, AnyView)] = [
+        var sheets: [(String, AnyView)] = [
             ("sheet-new-session", AnyView(NewSessionSheet().environment(model))),
             ("sheet-new-session-desktop", AnyView(NewSessionSheet(mode: .desktop).environment(model))),
             ("sheet-new-profile", AnyView(NewProfileSheet(selection: .constant(nil)).environment(model))),
@@ -182,6 +182,10 @@ enum Snapshotter {
             ("mcp-connect", AnyView(MCPConnectPanel().environment(model))),
             ("sheet-playground", AnyView(PlaygroundSheet(draft: Profile(name: "Docs steer", rules: [Rule(name: "Rename the domain", match: RuleMatch(tools: ["WebFetch"]), instructions: "Rename it")])).environment(model))),
         ]
+        // With data (the demo), also the what-if sheet for a session that rewrote something.
+        if let s = model.sessions.first(where: { $0.stats.rewrites > 0 && !$0.isHook && $0.kind == .interactive }) {
+            sheets.append(("sheet-whatif", AnyView(WhatIfSheet(session: s).environment(model))))
+        }
         for (name, view) in sheets {
             let host = NSHostingView(rootView: view)
             let window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: 700, height: 780), styleMask: [.titled], backing: .buffered, defer: false)

@@ -250,7 +250,7 @@ struct Sessions: AsyncParsableCommand {
 }
 
 struct Session: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Inspect a session.", subcommands: [Show.self, Decision.self, Watch.self, End.self])
+    static let configuration = CommandConfiguration(abstract: "Inspect a session.", subcommands: [Show.self, Decision.self, Watch.self, End.self, WhatIf.self])
 
     struct Show: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Show a session's timeline.")
@@ -342,6 +342,51 @@ struct Session: AsyncParsableCommand {
             print("Watching \(id ?? "all sessions") — Ctrl-C to stop")
             for try await e in c.eventStream(session: id) {
                 print("\(e.createdAt.formatted(date: .omitted, time: .standard)) \(e.sessionId ?? "-") \(e.kind.rawValue): \(e.message)")
+            }
+        }
+    }
+
+    struct WhatIf: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "whatif",
+            abstract: "Re-run a session's tool results through other rules and compare with what happened.",
+            discussion: """
+                Without --rewrite this only checks which rules match and estimates the cost (free). With --rewrite it \
+                calls the rewrite agent for each matching result (at most --max). Nothing is recorded.
+
+                Examples:
+                  diorama session whatif ses_123 --profile "Docs steer"            # the profile's current version
+                  diorama session whatif ses_123 --version pv_abc --rewrite
+                  diorama session whatif ses_123 --file draft.json --rewrite --max 10
+                """)
+        @OptionGroup var global: GlobalOptions
+        @Argument var id: String
+        @Option(help: "Saved profile (current version), by name or id.") var profile: String?
+        @Option(help: "A specific saved profile version (pv_…).") var version: String?
+        @Option(help: "A profile JSON file (e.g. an unsaved draft).") var file: String?
+        @Option(help: "A session prompt to add (applies to every tool).") var prompt: String?
+        @Flag(help: "Run the rewrite agent on matching results (costs money).") var rewrite = false
+        @Option(help: "At most this many rewrite calls (default 25, at most 60).") var max: Int?
+        @Flag var json = false
+
+        func run() async throws {
+            var req = WhatIfRequest(sessionId: id, profileRef: profile, profileVersionId: version, prompt: prompt.map { SessionPrompt(text: $0, tools: ["*"]) },
+                                    rewrite: rewrite, maxRewrites: max)
+            if let file { req.profile = try readJSONFile(file, as: Profile.self) }
+            let r = try await global.client().whatIf(req)
+            if json { return try printJSON(r) }
+            print("What if: \(r.rulesLabel) on “\(r.sessionName)” (\(r.items.count) tool results)")
+            for c in WhatIfChange.allCases where r.count(c) > 0 { print("  \(r.count(c)) \(c.label)") }
+            if r.rewrite {
+                print("  rewrite cost \(money(r.costUSD))")
+            } else if r.calls > 0 {
+                print("\nA full run makes \(r.calls) rewrite call(s), about \(money(r.estimateLowUSD))–\(money(r.estimateHighUSD)). Add --rewrite to run them.")
+            }
+            for i in r.items where ![.sameUnchanged, .sameRewrite].contains(i.change) {
+                print("\n\(i.toolName) \(i.toolUseId): \(i.change.label) (before: \(i.before.rawValue))")
+                if !i.matchedRules.isEmpty { print("  rules: \(i.matchedRules.joined(separator: ", "))") }
+                if let e = i.afterExplanation { print("  new: \(short(e, 160))") }
+                if let e = i.afterError { print("  error: \(e)") }
             }
         }
     }

@@ -216,6 +216,134 @@ public final class DioramaDaemon: @unchecked Sendable {
             segments: [text], stage: req.stage ?? .result, rewrite: req.rewrite)
     }
 
+    // MARK: What-if replay
+
+    func whatIf(_ req: WhatIfRequest) async throws -> WhatIfResult {
+        guard let session = try store.session(id: req.sessionId) else { throw StoreError("no session \(req.sessionId)") }
+        var profile = req.profile
+        var label = profile.map { "“\($0.name)” (draft)" }
+        if profile == nil, let vid = req.profileVersionId, !vid.isEmpty {
+            guard let v = try store.profileVersion(id: vid) else { throw StoreError("no profile version \(vid)") }
+            profile = v.profile
+            label = "“\(v.profile.name)” v\(v.number)"
+        } else if profile == nil, let ref = req.profileRef, !ref.isEmpty {
+            guard let v = try store.resolveProfile(ref) else { throw StoreError("unknown profile '\(ref)'") }
+            profile = v.profile
+            label = "“\(v.profile.name)” v\(v.number)"
+        }
+        if req.prompt != nil { label = (label.map { $0 + " + " } ?? "") + "session prompt" }
+        let rules = (profile?.rules ?? []) + (req.prompt.map { [$0.asRule(id: "session-prompt")] } ?? [])
+        guard !rules.isEmpty else { throw StoreError("give a profile, a profile version or a prompt to compare with") }
+        let defaults = profile?.defaults ?? ProfileDefaults(model: store.settings().defaultModel)
+        let limit = min(max(req.maxRewrites ?? 25, 0), 60)
+
+        struct Source: Sendable {
+            var decision: DecisionRecord
+            var toolName: String
+            var stage: RuleStage
+            var segments: [String]
+            var beforeText: String?
+        }
+        let sources: [Source] = try store.decisions(sessionId: session.id).sorted { $0.createdAt < $1.createdAt }.compactMap { d in
+            let segments = playgroundSegments(d, via: session.via)
+            guard !segments.joined().isEmpty else { return nil }
+            // The session's rewrite, read the same way as the original so the texts compare like for like.
+            let before: String? = d.replacementBlob.map { blob in
+                var copy = d
+                copy.originalBlob = blob
+                return playgroundSegments(copy, via: session.via).joined(separator: "\n\n")
+            }
+            return Source(decision: d, toolName: (d.toolName ?? "tool").replacingOccurrences(of: " (page)", with: ""),
+                          stage: d.toolUseId.hasPrefix("page:") ? .page : .result, segments: segments, beforeText: before)
+        }
+
+        // Free pass: which rules match each result.
+        var checked: [(Source, PlaygroundResult)] = []
+        for src in sources {
+            let r = await engine.playground(rules: rules, defaults: defaults, toolName: src.toolName, toolInputJSON: src.decision.toolInput,
+                                            segments: src.segments, isError: src.decision.isError, stage: src.stage, rewrite: false)
+            checked.append((src, r))
+        }
+        let matchedIndices = checked.indices.filter { checked[$0].1.model != nil }
+        let toRun = Array(matchedIndices.prefix(limit))
+        var (low, high) = (0.0, 0.0)
+        for i in toRun {
+            let (lo, hi) = Self.rewriteEstimate(chars: checked[i].1.originalText.count, model: checked[i].1.model ?? defaults.model, maxOutput: defaults.maxOutputTokens)
+            low += lo
+            high += hi
+        }
+
+        // Rewrites, at most four at a time, when asked for.
+        var rewritten: [Int: PlaygroundRewrite] = [:]
+        if req.rewrite, !toRun.isEmpty {
+            rewritten = await withTaskGroup(of: (Int, PlaygroundRewrite?).self) { group in
+                var results: [Int: PlaygroundRewrite] = [:]
+                var next = 0
+                func add(_ g: inout TaskGroup<(Int, PlaygroundRewrite?)>) {
+                    guard next < toRun.count else { return }
+                    let i = toRun[next]
+                    next += 1
+                    let src = checked[i].0
+                    g.addTask {
+                        let r = await self.engine.playground(rules: rules, defaults: defaults, toolName: src.toolName, toolInputJSON: src.decision.toolInput,
+                                                             segments: src.segments, isError: src.decision.isError, stage: src.stage, rewrite: true)
+                        return (i, r.rewrite)
+                    }
+                }
+                for _ in 0..<4 { add(&group) }
+                while let (i, r) = await group.next() {
+                    if let r { results[i] = r }
+                    add(&group)
+                }
+                return results
+            }
+        }
+
+        var items: [WhatIfItem] = []
+        var cost = 0.0
+        for (i, (src, check)) in checked.enumerated() {
+            let d = src.decision
+            let wasRewritten = d.outcome == .rewritten
+            var item = WhatIfItem(
+                toolUseId: d.toolUseId, toolName: src.toolName, toolInput: d.toolInput, originalText: check.originalText, before: d.outcome,
+                beforeReason: d.reason, beforeText: src.beforeText, matchedRules: check.checks.filter(\.matches).map(\.name), change: .sameUnchanged)
+            if check.model == nil {
+                item.change = wasRewritten ? .noLongerRewritten : .sameUnchanged
+            } else if !req.rewrite {
+                item.change = .wouldRewrite
+            } else if let r = rewritten[i] {
+                item.costUSD = r.costUSD
+                cost += r.costUSD ?? 0
+                item.afterExplanation = r.explanation
+                item.afterError = r.error
+                switch r.status {
+                case .succeeded:
+                    item.afterText = r.replacementText
+                    item.change = !wasRewritten ? .nowRewritten : (r.replacementText == src.beforeText ? .sameRewrite : .rewrittenDifferently)
+                case .unchanged:
+                    item.change = wasRewritten ? .noLongerRewritten : .sameUnchanged
+                default:
+                    item.change = .failed
+                }
+            } else {
+                item.change = .skipped
+            }
+            items.append(item)
+        }
+        return WhatIfResult(
+            sessionId: session.id, sessionName: session.name, rulesLabel: label ?? "session prompt", rewrite: req.rewrite, items: items,
+            calls: toRun.count, estimateLowUSD: low, estimateHighUSD: high, costUSD: cost)
+    }
+
+    /// A rough per-call cost range: the instructions plus the content in, a short edit list (low) up to a full replacement (high) out.
+    static func rewriteEstimate(chars: Int, model: String, maxOutput: Int) -> (Double, Double) {
+        guard let p = Pricing.price(for: model), !model.hasPrefix("ollama:") else { return (0, 0) }
+        let input = Double(chars / 4 + 1200)
+        let low = (input * p.input + 200 * p.output) / 1_000_000
+        let high = (input * p.input + Double(min(chars / 3 + 200, maxOutput)) * p.output) / 1_000_000
+        return (low, high)
+    }
+
     /// The readable text of a recorded original, split the way the engine split it.
     func playgroundSegments(_ d: DecisionRecord, via: SessionVia) -> [String] {
         let original = (try? store.blobs.get(d.originalBlob)) ?? []

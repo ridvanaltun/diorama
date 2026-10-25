@@ -264,6 +264,7 @@ struct TimelineView: View {
 
 struct SessionHeader: View {
     let session: SessionInfo
+    @State private var showWhatIf = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -276,8 +277,13 @@ struct SessionHeader: View {
                         .help("Connected through a Claude Code hook (Claude desktop, IDEs). Diorama sees tool results only: no model requests, token usage or Claude's replies.")
                 }
                 Spacer()
+                Button { showWhatIf = true } label: { Label("What if…", systemImage: "arrow.triangle.branch") }
+                    .controlSize(.small)
+                    .disabled(session.stats.toolResults == 0)
+                    .help("Re-run this session's tool results through other rules and compare")
                 CopyableID(id: session.id)
             }
+            .sheet(isPresented: $showWhatIf) { WhatIfSheet(session: session) }
             HStack(spacing: 12) {
                 Label(Fmt.shortPath(session.cwd), systemImage: "folder").lineLimit(1).truncationMode(.middle)
                 Label(session.profileName.map { "\($0) · v\(session.profileVersionNumber ?? 0)" } ?? "No profile", systemImage: "slider.horizontal.3")

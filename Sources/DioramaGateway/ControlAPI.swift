@@ -144,6 +144,9 @@ struct ControlAPI: Sendable {
                 session: try store.info(s), exchanges: try store.exchanges(sessionId: id, afterId: after),
                 decisions: try store.decisions(sessionId: id).map(\.summary), events: try store.events(sessionId: id)))
         }
+        if Self.match(method, route, "POST", "whatif") != nil {
+            return try ok(try await daemon.whatIf(try decode(WhatIfRequest.self, req)))
+        }
         if Self.match(method, route, "POST", "playground") != nil {
             return try ok(try await daemon.playground(try decode(PlaygroundRequest.self, req)))
         }

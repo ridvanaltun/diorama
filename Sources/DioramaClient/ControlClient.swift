@@ -93,6 +93,7 @@ public struct ControlClient: Sendable {
     public func templates() async throws -> [Profile] { try await request("GET", "templates") }
     public func hook(_ event: HookEvent) async throws -> HookReply { try await request("POST", "hook", body: event) }
     public func playground(_ r: PlaygroundRequest) async throws -> PlaygroundResult { try await request("POST", "playground", body: r) }
+    public func whatIf(_ r: WhatIfRequest) async throws -> WhatIfResult { try await request("POST", "whatif", body: r) }
     public func recentToolResults(limit: Int = 50) async throws -> [RecentToolResult] { try await request("GET", "decisions", query: ["limit": String(limit)]) }
     public func profiles() async throws -> [ProfileSummary] { try await request("GET", "profiles") }
     public func profile(_ id: String) async throws -> ProfileDetail { try await request("GET", "profiles/\(id.urlPathEscaped)") }

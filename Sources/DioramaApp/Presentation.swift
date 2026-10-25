@@ -11,6 +11,12 @@ enum Fmt {
         return String(format: "$%.2f", d)
     }
 
+    /// "$0.010–$0.050", or one value when both ends round the same ("<$0.001").
+    static func moneyRange(_ low: Double, _ high: Double) -> String {
+        let (a, b) = (money(low), money(high))
+        return a == b ? a : "\(a)–\(b)"
+    }
+
     static func plural(_ n: Int, _ word: String, _ pluralWord: String? = nil) -> String {
         "\(n) \(n == 1 ? word : (pluralWord ?? word + "s"))"
     }

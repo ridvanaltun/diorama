@@ -10,6 +10,8 @@ import Testing
         #expect(Fmt.money(0.0004) == "<$0.001")
         #expect(Fmt.money(0.0123) == "$0.012")
         #expect(Fmt.money(3.456) == "$3.46")
+        #expect(Fmt.moneyRange(0.0002, 0.0008) == "<$0.001")
+        #expect(Fmt.moneyRange(0.01, 0.05) == "$0.010–$0.050")
         #expect(Fmt.plural(1, "rule") == "1 rule")
         #expect(Fmt.plural(2, "rule") == "2 rules")
         #expect(Fmt.plural(3, "anomaly", "anomalies") == "3 anomalies")

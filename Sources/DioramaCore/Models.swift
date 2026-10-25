@@ -518,6 +518,127 @@ public struct PlaygroundResult: Codable, Sendable, Hashable {
     }
 }
 
+// MARK: - What-if replay
+
+/// Re-runs a session's recorded tool results (their originals) through other rules and compares
+/// the outcome with what the session actually did. Without `rewrite` it only checks which rules
+/// match and estimates the cost (free). Nothing is recorded.
+public struct WhatIfRequest: Codable, Sendable {
+    public var sessionId: String
+    /// Rules to compare, e.g. an unsaved draft. Takes precedence over the saved references.
+    public var profile: Profile?
+    /// A saved profile (current version), by name or id.
+    public var profileRef: String?
+    /// A specific saved version (`pv_…`).
+    public var profileVersionId: String?
+    public var prompt: SessionPrompt?
+    public var rewrite: Bool
+    /// At most this many rewrite-agent calls (default 25, at most 60).
+    public var maxRewrites: Int?
+
+    public init(sessionId: String, profile: Profile? = nil, profileRef: String? = nil, profileVersionId: String? = nil, prompt: SessionPrompt? = nil, rewrite: Bool = false, maxRewrites: Int? = nil) {
+        self.sessionId = sessionId
+        self.profile = profile
+        self.profileRef = profileRef
+        self.profileVersionId = profileVersionId
+        self.prompt = prompt
+        self.rewrite = rewrite
+        self.maxRewrites = maxRewrites
+    }
+}
+
+public enum WhatIfChange: String, Codable, Sendable, CaseIterable {
+    /// Unchanged before, and the new rules leave it unchanged too.
+    case sameUnchanged
+    /// Rewritten before; the new rewrite produced identical text.
+    case sameRewrite
+    case rewrittenDifferently
+    case nowRewritten
+    case noLongerRewritten
+    /// Check only: the new rules match, so the rewrite agent would be called.
+    case wouldRewrite
+    /// Over `maxRewrites`: matched but not run.
+    case skipped
+    case failed
+
+    public var label: String {
+        switch self {
+        case .sameUnchanged: "unchanged in both"
+        case .sameRewrite: "same rewrite"
+        case .rewrittenDifferently: "rewritten differently"
+        case .nowRewritten: "newly rewritten"
+        case .noLongerRewritten: "no longer rewritten"
+        case .wouldRewrite: "would go to the rewrite agent"
+        case .skipped: "skipped (limit)"
+        case .failed: "rewrite failed"
+        }
+    }
+}
+
+public struct WhatIfItem: Codable, Sendable, Hashable, Identifiable {
+    public var toolUseId: String
+    public var toolName: String
+    public var toolInput: String?
+    public var originalText: String
+    public var before: DecisionOutcome
+    public var beforeReason: String
+    public var beforeText: String?
+    public var matchedRules: [String]
+    public var afterText: String?
+    public var afterExplanation: String?
+    public var afterError: String?
+    public var change: WhatIfChange
+    public var costUSD: Double?
+    public var id: String { toolUseId }
+
+    public init(
+        toolUseId: String, toolName: String, toolInput: String?, originalText: String, before: DecisionOutcome, beforeReason: String, beforeText: String?,
+        matchedRules: [String], afterText: String? = nil, afterExplanation: String? = nil, afterError: String? = nil, change: WhatIfChange, costUSD: Double? = nil
+    ) {
+        self.toolUseId = toolUseId
+        self.toolName = toolName
+        self.toolInput = toolInput
+        self.originalText = originalText
+        self.before = before
+        self.beforeReason = beforeReason
+        self.beforeText = beforeText
+        self.matchedRules = matchedRules
+        self.afterText = afterText
+        self.afterExplanation = afterExplanation
+        self.afterError = afterError
+        self.change = change
+        self.costUSD = costUSD
+    }
+}
+
+public struct WhatIfResult: Codable, Sendable, Hashable {
+    public var sessionId: String
+    public var sessionName: String
+    /// What was compared, e.g. "Docs steer v3".
+    public var rulesLabel: String
+    public var rewrite: Bool
+    public var items: [WhatIfItem]
+    /// Rewrite-agent calls a full run would make (matched items, up to the limit), and their estimated cost.
+    public var calls: Int
+    public var estimateLowUSD: Double
+    public var estimateHighUSD: Double
+    public var costUSD: Double
+
+    public init(sessionId: String, sessionName: String, rulesLabel: String, rewrite: Bool, items: [WhatIfItem], calls: Int, estimateLowUSD: Double, estimateHighUSD: Double, costUSD: Double) {
+        self.sessionId = sessionId
+        self.sessionName = sessionName
+        self.rulesLabel = rulesLabel
+        self.rewrite = rewrite
+        self.items = items
+        self.calls = calls
+        self.estimateLowUSD = estimateLowUSD
+        self.estimateHighUSD = estimateHighUSD
+        self.costUSD = costUSD
+    }
+
+    public func count(_ c: WhatIfChange) -> Int { items.filter { $0.change == c }.count }
+}
+
 /// A recent decision with its session's name (the playground's "past tool result" picker).
 public struct RecentToolResult: Codable, Sendable, Hashable, Identifiable {
     public var decision: DecisionSummary

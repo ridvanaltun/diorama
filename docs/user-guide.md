@@ -74,6 +74,7 @@ In the app, click **Connect to Claude…** at the bottom of the sidebar (also in
 |---|---|
 | `diorama_status`, `list_sessions`, `get_session`, `get_decision` | Daemon health; sessions; one session's decisions; one result's full audit record (original, rewrite, rules, attempts, what Claude did next) |
 | `list_profiles`, `get_profile`, `list_rule_templates`, `create_profile`, `update_profile` | Read and write profiles. Every save is a new version. |
+| `what_if_replay` | Re-run a session's tool results through other rules and compare. Free check by default; `rewrite` runs the agent (capped). A read-only server allows the check only. |
 | `test_rules` | The rule playground: which rules match a past result or some text, and (with `rewrite`) what the agent would produce. Nothing is recorded. A read-only server allows the free check only. |
 | `get_hook_status`, `install_hook`, `uninstall_hook` | Connect a project folder for hook mode (Claude desktop, IDEs) |
 | `end_session` | Mark a session ended |
@@ -123,6 +124,21 @@ The rule playground tries rules on content without starting a session, and recor
 diorama profiles test "Docs steer" --decision toolu_01abc
 diorama profiles test "Docs steer" --text "Version 1 is current" --input '{"url":"https://docs.example.com"}' --rewrite
 diorama profiles test --file draft.json --text-file page.txt
+```
+
+### What-if replay: compare rules on a past session
+
+**What if…** in a session's header re-runs that session's recorded tool results (their originals) through other rules: another profile, a specific earlier or later version, your session prompt, or an unsaved draft (CLI/MCP). It compares the outcome with what the session actually did.
+
+- The check is free and immediate. It shows which results the new rules would send to the rewrite agent, which would **no longer be rewritten**, and the estimated cost of a full run.
+- **Run N rewrites** calls the agent for each matching result: at most 25 by default, at most 60, four at a time. Each result is then marked **newly rewritten**, **rewritten differently**, **same rewrite** or **no longer rewritten**. Expanding a result shows a diff from what Claude saw to what it would see.
+- Nothing is recorded, and the session's audit trail stays as it was. **Copy as Markdown** puts a summary on the clipboard.
+- This doesn't run Claude Code again, so it can't tell you how Claude would have *responded*. Use an experiment for that.
+
+```bash
+diorama session whatif ses_123 --profile "Docs steer"          # the profile's current version (free check)
+diorama session whatif ses_123 --version pv_abc --rewrite      # a specific version, with rewrites
+diorama session whatif ses_123 --file draft.json --rewrite --max 10
 ```
 
 ### Where a rule applies: tool result or raw page

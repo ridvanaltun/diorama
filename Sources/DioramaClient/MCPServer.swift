@@ -306,6 +306,41 @@ enum MCPTools {
             return out.joined(separator: "\n")
         },
 
+        MCPServer.Tool(
+            name: "what_if_replay",
+            description: "Re-run a session's recorded tool results through other rules (a saved profile, a specific version, an unsaved draft, or a prompt) and compare with what the session did. rewrite=false (default) only checks which rules match and estimates the cost, for free; rewrite=true calls the rewrite agent for each matching result (at most max_rewrites, default 25), which costs money: show the estimate to the user first. Nothing is recorded.",
+            schema: schema([
+                "session_id": string("Session id (ses_…)."), "profile": string("Saved profile name or id (current version)."),
+                "profile_version_id": string("A specific saved version (pv_…), e.g. from get_profile."),
+                "profile_draft": ["type": "object", "description": "An unsaved profile ({name, rules: [...]})."],
+                "prompt": string("A session prompt to add."), "rewrite": ["type": "boolean", "description": "Run the rewrite agent (default false)."],
+                "max_rewrites": ["type": "integer", "minimum": 0, "maximum": 60],
+            ], required: ["session_id"]),
+            readOnly: true, openWorld: true
+        ) { s, a in
+            var req = WhatIfRequest(
+                sessionId: try arg(a, "session_id"), profileRef: a["profile"] as? String, profileVersionId: a["profile_version_id"] as? String,
+                prompt: (a["prompt"] as? String).flatMap { $0.isEmpty ? nil : SessionPrompt(text: $0, tools: ["*"]) }, rewrite: a["rewrite"] as? Bool ?? false,
+                maxRewrites: a["max_rewrites"] as? Int)
+            if a["profile_draft"] != nil { req.profile = try object(a, "profile_draft", as: Profile.self) }
+            if req.rewrite, s.readOnly { throw MCPServer.ToolError("this server is read-only: rewrite=true calls the paid rewrite agent; use rewrite=false") }
+            let r = try await s.daemon().whatIf(req)
+            var out = ["What if: \(r.rulesLabel) on “\(r.sessionName)” (\(r.items.count) tool results)"]
+            out += WhatIfChange.allCases.compactMap { c in r.count(c) > 0 ? "- \(r.count(c)) \(c.label)" : nil }
+            if r.rewrite {
+                out.append("Rewrite cost: $\(String(format: "%.4f", r.costUSD))")
+            } else if r.calls > 0 {
+                out.append("A full run makes \(r.calls) rewrite call(s), estimated $\(String(format: "%.3f", r.estimateLowUSD))–$\(String(format: "%.3f", r.estimateHighUSD)). Ask the user before calling again with rewrite=true.")
+            }
+            for i in r.items where ![.sameUnchanged, .sameRewrite].contains(i.change) {
+                out.append("\n\(i.toolName) \(i.toolUseId)\(target(i.toolName, i.toolInput).map { " (\($0))" } ?? ""): \(i.change.label); before \(i.before.rawValue) (\(i.beforeReason))")
+                if !i.matchedRules.isEmpty { out.append("  rules: \(i.matchedRules.joined(separator: ", "))") }
+                if let e = i.afterExplanation { out.append("  new rewrite: \(e)") }
+                if let t = i.afterText { out.append("  new text: \(clip(t, 1500))") }
+            }
+            return out.joined(separator: "\n")
+        },
+
         // Changes
         .init(
             name: "create_profile",
