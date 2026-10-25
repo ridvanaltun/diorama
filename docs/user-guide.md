@@ -283,6 +283,8 @@ Local models never send content off your Mac and cost nothing, but they follow t
 
 ## Reading the audit trail
 
+After you click a tool result, ↑ and ↓ move to the previous or next one, and its audit record follows. Esc closes the record.
+
 - **App → Sessions** shows a live timeline of every request: its class, status, token usage including cache reads and writes, and the latency Diorama added. Each tool result is marked `rewritten`, `unchanged`, `failed`, `client-modified` or replayed, followed by Claude's next text and tool calls. Selecting a tool result shows the original and rewritten text (as a diff or side by side), the rules with their content hashes and profile version, the instructions, every rewrite attempt (model, latency, cost, explanation, edits, errors), and what Claude did next.
 - **CLI:** `diorama session show <id>`, `diorama session decision <tool_use_id>`, and `diorama session watch [<id>]` for live events.
 - **Raw capture:** full request and response bodies are kept for `retentionDays` (14 by default) and are available through the control API (`GET /api/v1/exchanges/<id>/raw`). Credentials are never stored.

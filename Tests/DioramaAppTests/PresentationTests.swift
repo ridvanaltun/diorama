@@ -102,3 +102,13 @@ import Testing
         #expect(FormLogic.ruleProblems(r).isEmpty, "redaction rules need no instructions")
     }
 }
+
+@Suite struct TimelineNavigationTests {
+    @Test func inputsComeFirstThenChronological() {
+        func d(_ id: String, _ t: Double) -> DecisionSummary {
+            DecisionSummary(toolUseId: id, sessionId: "s", exchangeId: 1, toolName: "WebFetch", outcome: .unchanged, reason: "",
+                            createdAt: Date(timeIntervalSince1970: t), rules: [], replayCount: 0, toolInput: nil)
+        }
+        #expect(TimelineLogic.navigationOrder([d("b", 2), d("input:x", 3), d("a", 1), d("page:c", 4)]) == ["input:x", "a", "b", "page:c"])
+    }
+}

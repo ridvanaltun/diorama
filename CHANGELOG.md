@@ -6,6 +6,7 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 ## Unreleased
 
 ### New
+- **Keyboard navigation.** After selecting a tool result in a timeline, ↑/↓ move between results and Esc closes the audit record.
 - **Compare two sessions.** **Compare…** in the session header (or `diorama session compare`, MCP `compare_sessions`) shows two sessions side by side: counts, cost, duration and tokens with differences, tool results per tool, rules that rewrote, and both final answers (optionally diffed).
 - The session header's actions moved to their own row, so long names and the id no longer get cut off.
 - **Rule tests from real results.** **Add as rule test** in a tool result's audit record (or `diorama profiles add-test --decision`, MCP `add_rule_test`) saves it as a test case expecting the rules that match it now.

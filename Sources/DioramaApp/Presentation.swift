@@ -119,6 +119,12 @@ enum Fmt {
 /// it carried and Claude's response, plus the background requests (WebFetch summarizer,
 /// titles, token counts) that happened during it.
 enum TimelineLogic {
+    /// ↑/↓ order: tool inputs (shown together at the top), then everything else as it happened.
+    static func navigationOrder(_ decisions: [DecisionSummary]) -> [String] {
+        let sorted = decisions.sorted { ($0.createdAt, $0.toolUseId) < ($1.createdAt, $1.toolUseId) }
+        return (sorted.filter { $0.toolUseId.hasPrefix("input:") } + sorted.filter { !$0.toolUseId.hasPrefix("input:") }).map(\.toolUseId)
+    }
+
     struct Turn: Identifiable, Equatable {
         var exchange: ExchangeSummary
         var number: Int

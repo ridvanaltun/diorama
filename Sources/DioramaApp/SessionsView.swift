@@ -322,6 +322,21 @@ struct TimelineView: View {
     @State private var timeline: Timeline?
     @State private var selectedDecision: String?
     @State private var showReplays = false
+    @FocusState private var focused: Bool
+
+    /// Tool results in the order the timeline shows them, for ↑/↓.
+    var order: [String] { TimelineLogic.navigationOrder(timeline?.decisions ?? []) }
+
+    func step(_ delta: Int) -> KeyPress.Result {
+        let ids = order
+        guard !ids.isEmpty else { return .ignored }
+        guard let current = selectedDecision, let i = ids.firstIndex(of: current) else {
+            selectedDecision = delta > 0 ? ids.first : ids.last
+            return .handled
+        }
+        selectedDecision = ids[min(max(i + delta, 0), ids.count - 1)]
+        return .handled
+    }
 
     var body: some View {
         HSplitView {
@@ -379,6 +394,17 @@ struct TimelineView: View {
                 }
             }
             .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
+            .focusable()
+            .focusEffectDisabled()
+            .focused($focused)
+            .onKeyPress(.downArrow) { step(1) }
+            .onKeyPress(.upArrow) { step(-1) }
+            .onKeyPress(.escape) {
+                guard selectedDecision != nil else { return .ignored }
+                selectedDecision = nil
+                return .handled
+            }
+            .onChange(of: selectedDecision) { _, id in if id != nil { focused = true } }
             if let d = selectedDecision {
                 DecisionDetailView(toolUseId: d, onClose: { selectedDecision = nil }).id(d).frame(minWidth: 400, idealWidth: 480)
             }
