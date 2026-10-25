@@ -95,6 +95,12 @@ public struct ControlClient: Sendable {
     public func playground(_ r: PlaygroundRequest) async throws -> PlaygroundResult { try await request("POST", "playground", body: r) }
     public func whatIf(_ r: WhatIfRequest) async throws -> WhatIfResult { try await request("POST", "whatif", body: r) }
     public func spend() async throws -> SpendSummary { try await request("GET", "spend") }
+    public func search(_ query: String, rewrittenOnly: Bool = false, sessionId: String? = nil, limit: Int = 50) async throws -> [SearchHit] {
+        var q = ["q": query, "limit": String(limit)]
+        if rewrittenOnly { q["rewritten"] = "1" }
+        if let sessionId { q["session"] = sessionId }
+        return try await request("GET", "search", query: q)
+    }
     public func recentToolResults(limit: Int = 50) async throws -> [RecentToolResult] { try await request("GET", "decisions", query: ["limit": String(limit)]) }
     public func profiles() async throws -> [ProfileSummary] { try await request("GET", "profiles") }
     public func profile(_ id: String) async throws -> ProfileDetail { try await request("GET", "profiles/\(id.urlPathEscaped)") }

@@ -80,6 +80,13 @@ public final class Store: @unchecked Sendable {
         """
         ALTER TABLE sessions ADD COLUMN transcript_path TEXT;
         """,
+        // v5: full-text search over decisions (tool results, rewrites) and Claude's replies
+        """
+        CREATE VIRTUAL TABLE search_docs USING fts5(
+          kind UNINDEXED, ref UNINDEXED, session_id UNINDEXED, created_at UNINDEXED, outcome UNINDEXED,
+          tool, input, original, rewritten, note, tokenize = 'unicode61 remove_diacritics 2');
+        CREATE TABLE search_indexed(kind TEXT NOT NULL, ref TEXT NOT NULL, PRIMARY KEY(kind, ref));
+        """,
     ]
 
     public static var schemaVersion: Int { migrations.count }

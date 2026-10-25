@@ -8,6 +8,7 @@ struct SessionsView: View {
     @State private var selection: String?
     @State private var showNew = false
     @State private var kindFilter: SessionKind? = .interactive
+    @State private var query = ""
 
     var filtered: [SessionInfo] { model.sessions.filter { kindFilter == nil || $0.kind == kindFilter } }
 
@@ -18,6 +19,13 @@ struct SessionsView: View {
             } else {
                 HSplitView {
                     VStack(spacing: 0) {
+                        if !query.trimmingCharacters(in: .whitespaces).isEmpty {
+                            SearchResultsView(query: query) { hit in
+                                kindFilter = nil
+                                selection = hit.sessionId
+                                if hit.kind == .decision { model.focusDecisionId = hit.ref }
+                            }
+                        } else {
                         Picker("Show", selection: $kindFilter) {
                             Text("Interactive").tag(SessionKind?.some(.interactive))
                             Text("Trials").tag(SessionKind?.some(.trial))
@@ -31,6 +39,7 @@ struct SessionsView: View {
                             if filtered.isEmpty {
                                 ContentUnavailableView("Nothing here", systemImage: "line.3.horizontal.decrease.circle", description: Text("No sessions of this kind yet."))
                             }
+                        }
                         }
                     }
                     .frame(minWidth: 240, idealWidth: 270, maxWidth: 340)
@@ -57,6 +66,7 @@ struct SessionsView: View {
         }
         .sheet(isPresented: $showNew) { NewSessionSheet() }
         .navigationTitle("Sessions")
+        .searchable(text: $query, placement: .toolbar, prompt: "Search results, rewrites, replies")
         .onChange(of: model.wantsNewSession, initial: true) { _, wants in
             if wants {
                 showNew = true
@@ -168,6 +178,81 @@ struct CommandLineInstall: View {
     }
 }
 
+// MARK: - Search
+
+/// Full-text matches across sessions, best first; picking one opens its session (and decision).
+struct SearchResultsView: View {
+    @Environment(AppModel.self) private var model
+    let query: String
+    let open: (SearchHit) -> Void
+    @State private var hits: [SearchHit] = []
+    @State private var rewrittenOnly = false
+    @State private var searched = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Toggle("Only rewritten", isOn: $rewrittenOnly).toggleStyle(.checkbox).font(.caption)
+                Spacer()
+                Text(searched ? Fmt.plural(hits.count, "match", "matches") : "Searching…").font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(8)
+            List(hits) { h in
+                Button { open(h) } label: { SearchHitRow(hit: h) }.buttonStyle(.plain)
+            }
+            .overlay {
+                if searched, hits.isEmpty {
+                    ContentUnavailableView.search(text: query)
+                }
+            }
+        }
+        .task(id: query + (rewrittenOnly ? "\u{1}" : "")) {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            hits = await model.perform { try await $0.search(query, rewrittenOnly: rewrittenOnly, limit: 100) } ?? []
+            searched = true
+        }
+    }
+}
+
+struct SearchHitRow: View {
+    let hit: SearchHit
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Image(systemName: hit.kind == .reply ? "sparkle" : Fmt.toolIcon(hit.toolName)).foregroundStyle(.secondary).frame(width: 16)
+                Text(hit.kind == .reply ? "Claude's reply" : Fmt.toolName(hit.toolName)).font(.callout.weight(.medium))
+                if let o = hit.outcome, o != .unchanged { Badge(text: o.rawValue, color: o.color) }
+                Spacer(minLength: 4)
+                Text(Fmt.relative(hit.createdAt)).font(.caption2).foregroundStyle(.tertiary)
+            }
+            Text(Self.highlighted(hit.snippet)).font(.caption).lineLimit(3)
+            Text(hit.sessionName).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+        }
+        .padding(.vertical, 3)
+        .contentShape(Rectangle())
+    }
+
+    /// The snippet with its ⟦matched⟧ words bold and tinted.
+    static func highlighted(_ snippet: String) -> AttributedString {
+        var out = AttributedString()
+        var rest = Substring(snippet.replacingOccurrences(of: "\n", with: " "))
+        while let open = rest.firstIndex(of: "⟦") {
+            out += AttributedString(String(rest[..<open]))
+            rest = rest[rest.index(after: open)...]
+            let close = rest.firstIndex(of: "⟧") ?? rest.endIndex
+            var match = AttributedString(String(rest[..<close]))
+            match.font = .caption.bold()
+            match.backgroundColor = .yellow.opacity(0.35)
+            out += match
+            rest = close < rest.endIndex ? rest[rest.index(after: close)...] : rest[rest.endIndex...]
+        }
+        out += AttributedString(String(rest))
+        return out
+    }
+}
+
 // MARK: - Session list
 
 struct SessionRow: View {
@@ -264,6 +349,11 @@ struct TimelineView: View {
             if let d = selectedDecision {
                 DecisionDetailView(toolUseId: d, onClose: { selectedDecision = nil }).id(d).frame(minWidth: 400, idealWidth: 480)
             }
+        }
+        .onChange(of: model.focusDecisionId, initial: true) { _, id in
+            guard let id else { return }
+            selectedDecision = id
+            model.focusDecisionId = nil
         }
         .task(id: model.eventTick) {
             if model.lastEvent?.sessionId == nil || model.lastEvent?.sessionId == sessionId || timeline == nil {

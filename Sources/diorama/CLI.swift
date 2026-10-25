@@ -12,7 +12,7 @@ struct Diorama: AsyncParsableCommand {
         discussion: "Diorama routes Claude Code sessions you start with `diorama run` through a local gateway that can rewrite tool results according to your rules, records everything, and runs A/B experiments.",
         version: DioramaVersion.current,
         subcommands: [
-            Run.self, Hook.self, MCP.self, Spend.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
+            Run.self, Hook.self, MCP.self, Spend.self, Search.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
         ])
 }
 
@@ -821,6 +821,36 @@ struct Spend: AsyncParsableCommand {
         for p in s.profiles {
             let pc = p.dailyBudgetUSD.map { " of \(money($0))" + (p.todayUSD >= $0 ? " — used up" : "") } ?? ""
             print("  \(p.name): \(money(p.todayUSD))\(pc)")
+        }
+    }
+}
+
+struct Search: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "Search tool results, rewrites, tool inputs and Claude's replies across all sessions.",
+        discussion: """
+            All words must match; the last one also matches as a prefix. Results are best matches first.
+
+            Examples:
+              diorama search deprecated api
+              diorama search "example.com" --rewritten
+            """)
+    @OptionGroup var global: GlobalOptions
+    @Argument(parsing: .remaining, help: "Words to find.") var words: [String]
+    @Flag(help: "Only results Diorama rewrote.") var rewritten = false
+    @Option(help: "Only this session.") var session: String?
+    @Option(help: "Maximum results.") var limit = 20
+    @Flag var json = false
+
+    func run() async throws {
+        let hits = try await global.client().search(words.joined(separator: " "), rewrittenOnly: rewritten, sessionId: session, limit: limit)
+        if json { return try printJSON(hits) }
+        guard !hits.isEmpty else { return print("No matches.") }
+        for h in hits {
+            let what = h.kind == .reply ? "Claude's reply" : "\(h.toolName ?? "tool") \(h.outcome?.rawValue ?? "")"
+            print("\(dateText(h.createdAt))  \(h.sessionName) (\(h.sessionId)) — \(what)  [\(h.ref)]")
+            let snippet = h.snippet.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "⟦", with: "\u{1B}[1m").replacingOccurrences(of: "⟧", with: "\u{1B}[0m")
+            print("    \(snippet)\n")
         }
     }
 }

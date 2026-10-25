@@ -148,6 +148,11 @@ struct ControlAPI: Sendable {
                 session: try store.info(s), exchanges: try store.exchanges(sessionId: id, afterId: after),
                 decisions: try store.decisions(sessionId: id).map(\.summary), events: try store.events(sessionId: id)))
         }
+        if Self.match(method, route, "GET", "search") != nil {
+            let q = req.query["q"] ?? ""
+            let limit = min(max(Int(req.query["limit"] ?? "") ?? 50, 1), 200)
+            return try ok(try store.search(q, rewrittenOnly: req.query["rewritten"] == "1", sessionId: req.query["session"], limit: limit))
+        }
         if Self.match(method, route, "GET", "spend") != nil {
             return try ok(try daemon.spendSummary())
         }

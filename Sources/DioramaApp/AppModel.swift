@@ -50,6 +50,8 @@ final class AppModel {
     var focusExperimentId: String?
     /// Set when a notification about a run is clicked, to select that run.
     var focusRunId: String?
+    /// Set by search results: the decision to open once its session's timeline appears.
+    var focusDecisionId: String?
     var updateError: String?
 
     private var eventsTask: Task<Void, Never>?

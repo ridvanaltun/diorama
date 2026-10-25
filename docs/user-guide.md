@@ -203,6 +203,23 @@ Local models never send content off your Mac and cost nothing, but they follow t
 - **CLI:** `diorama session show <id>`, `diorama session decision <tool_use_id>`, and `diorama session watch [<id>]` for live events.
 - **Raw capture:** full request and response bodies are kept for `retentionDays` (14 by default) and are available through the control API (`GET /api/v1/exchanges/<id>/raw`). Credentials are never stored.
 
+### Search
+
+The search field on the Sessions screen searches every session, with the best matches first:
+- tool results (the originals and Diorama's rewrites);
+- tool inputs such as URLs, queries and file paths;
+- rewrite reasons;
+- Claude's replies (gateway sessions).
+
+All words must match; the last word also matches as a prefix, so results update as you type. Matched words are highlighted. **Only rewritten** narrows the list to results Diorama changed. Clicking a result opens its session with that tool result selected.
+
+```bash
+diorama search deprecated api
+diorama search example.com --rewritten --session ses_123
+```
+
+Through MCP the tool is `search`. The index lives in the same local database. It fills in as sessions run, and on first start after an update it indexes earlier sessions too.
+
 ### Anomalies
 
 | Event | Meaning |

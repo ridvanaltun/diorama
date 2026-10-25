@@ -233,6 +233,23 @@ enum MCPTools {
             }
             return out.joined(separator: "\n")
         },
+        .init(
+            name: "search",
+            description: "Full-text search across all sessions: tool results (original and rewritten), tool inputs such as URLs and queries, rewrite reasons, and Claude's replies. All words must match. Matched words are marked ⟦like this⟧. Use get_decision or get_session with the returned ids for details.",
+            schema: schema([
+                "query": string("Words to find."), "rewritten_only": ["type": "boolean", "description": "Only results Diorama rewrote."],
+                "session_id": string("Only this session."), "limit": ["type": "integer", "minimum": 1, "maximum": 100, "description": "Default 20."],
+            ], required: ["query"]),
+            readOnly: true
+        ) { s, a in
+            let hits = try await s.daemon().search(try arg(a, "query"), rewrittenOnly: a["rewritten_only"] as? Bool ?? false, sessionId: a["session_id"] as? String,
+                                                   limit: (a["limit"] as? Int) ?? 20)
+            guard !hits.isEmpty else { return "No matches." }
+            return hits.map { h in
+                let what = h.kind == .reply ? "Claude's reply (exchange \(h.ref))" : "\(h.toolName ?? "tool") \(h.outcome?.rawValue ?? "") — tool_use_id \(h.ref)"
+                return "- \(h.sessionName) (\(h.sessionId)), \(DateFormatting.string(h.createdAt)): \(what)\n  \(h.snippet.replacingOccurrences(of: "\n", with: " "))"
+            }.joined(separator: "\n")
+        },
         .init(name: "list_profiles", description: "Profiles: versioned sets of rules that say which tool results to rewrite and how.", schema: schema(), readOnly: true) { s, _ in
             let ps = try await s.daemon().profiles()
             guard !ps.isEmpty else { return "No profiles yet. See list_rule_templates and create_profile." }

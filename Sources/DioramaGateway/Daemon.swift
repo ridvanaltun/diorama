@@ -121,6 +121,18 @@ public final class DioramaDaemon: @unchecked Sendable {
         let recovered = (try? store.recoverInterruptedRuns()) ?? 0
         if recovered > 0 { store.addEvent(sessionId: nil, kind: .warning, message: "Marked \(recovered) interrupted experiment run(s) as failed") }
         if let note = store.recoveryNote { store.addEvent(sessionId: nil, kind: .warning, message: note) }
+        // Search: index decisions and replies as they happen, and whatever earlier versions didn't.
+        let (_, events) = hub.subscribe()
+        background.append(Task { [store] in
+            for await ev in events {
+                switch ev.kind {
+                case .decisionMade, .rewriteFailed: if let ref = ev.refId { Self.indexDecision(ref, store: store) }
+                case .exchangeFinished: if let ref = ev.refId, let id = Int64(ref) { Self.indexReply(id, store: store) }
+                default: break
+                }
+            }
+        })
+        background.append(Task.detached(priority: .utility) { [store] in Self.backfillSearch(store: store) })
         background.append(Task { [store] in
             while !Task.isCancelled {
                 _ = try? store.applyRetention(days: store.settings().retentionDays)
@@ -202,6 +214,38 @@ public final class DioramaDaemon: @unchecked Sendable {
         }
         let json = String(decoding: try JSONSerialization.data(withJSONObject: settings, options: [.sortedKeys, .withoutEscapingSlashes]), as: UTF8.self)
         return SessionLaunch(session: try store.info(record), token: token, baseURL: base, environment: env, claudeArguments: ["--settings", json])
+    }
+
+    // MARK: Search index
+
+    static func indexDecision(_ id: String, store: Store) {
+        guard !store.isIndexed(kind: .decision, ref: id), let d = try? store.decision(toolUseId: id) else { return }
+        let via = ((try? store.session(id: d.sessionId)) ?? nil)?.via ?? .gateway
+        let rewritten = d.replacementBlob.map { blob -> String in
+            var copy = d
+            copy.originalBlob = blob
+            return readableSegments(copy, via: via, store: store).joined(separator: "\n\n")
+        }
+        store.index(kind: .decision, ref: id, sessionId: d.sessionId, createdAt: d.createdAt, outcome: d.outcome, tool: d.toolName, input: d.toolInput,
+                    original: readableSegments(d, via: via, store: store).joined(separator: "\n\n"), rewritten: rewritten, note: d.reason)
+    }
+
+    static func indexReply(_ exchangeId: Int64, store: Store) {
+        guard let e = (try? store.exchange(id: exchangeId)) ?? nil, let a = e.assistant, !(a.text.isEmpty && a.toolUses.isEmpty) else { return }
+        store.index(kind: .reply, ref: String(exchangeId), sessionId: e.sessionId, createdAt: e.startedAt, outcome: nil,
+                    tool: a.toolUses.map(\.name).joined(separator: " "), input: a.toolUses.map(\.input).joined(separator: "\n"),
+                    original: a.text, rewritten: nil, note: nil)
+    }
+
+    /// Indexes everything recorded before search existed (or missed while the daemon was busy).
+    static func backfillSearch(store: Store) {
+        while !Task.isCancelled, let batch = try? store.unindexed(limit: 200), !(batch.decisions.isEmpty && batch.exchanges.isEmpty) {
+            for id in batch.decisions { indexDecision(id, store: store) }
+            for id in batch.exchanges { indexReply(id, store: store) }
+            // Anything that can't be indexed (e.g. a missing blob) is marked so the loop ends.
+            for id in batch.decisions where !store.isIndexed(kind: .decision, ref: id) { store.markIndexed(kind: .decision, ref: id) }
+            for id in batch.exchanges where !store.isIndexed(kind: .reply, ref: String(id)) { store.markIndexed(kind: .reply, ref: String(id)) }
+        }
     }
 
     // MARK: Session → experiment
@@ -465,7 +509,9 @@ public final class DioramaDaemon: @unchecked Sendable {
     }
 
     /// The readable text of a recorded original, split the way the engine split it.
-    func playgroundSegments(_ d: DecisionRecord, via: SessionVia) -> [String] {
+    func playgroundSegments(_ d: DecisionRecord, via: SessionVia) -> [String] { Self.readableSegments(d, via: via, store: store) }
+
+    static func readableSegments(_ d: DecisionRecord, via: SessionVia, store: Store) -> [String] {
         let original = (try? store.blobs.get(d.originalBlob)) ?? []
         if d.toolUseId.hasPrefix("input:") { return [DecisionEngine.prettyJSON(original) ?? String(decoding: original, as: UTF8.self)] }
         guard let v = try? JSONValue.parse(original) else { return [String(decoding: original, as: UTF8.self)] }

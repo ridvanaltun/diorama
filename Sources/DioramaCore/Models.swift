@@ -1040,6 +1040,40 @@ public struct DioramaSettings: Codable, Sendable, Hashable {
     }
 }
 
+// MARK: - Search
+
+public struct SearchHit: Codable, Sendable, Hashable, Identifiable {
+    public enum Kind: String, Codable, Sendable {
+        /// A tool result (or WebFetch page, or tool input) and what Diorama did with it.
+        case decision
+        /// Claude's reply in one request (gateway sessions).
+        case reply
+    }
+
+    public var kind: Kind
+    /// The decision's tool_use_id, or the exchange id of a reply.
+    public var ref: String
+    public var sessionId: String
+    public var sessionName: String
+    public var createdAt: Date
+    public var toolName: String?
+    public var outcome: DecisionOutcome?
+    /// Matching text with the matched terms between ⟦ and ⟧.
+    public var snippet: String
+    public var id: String { kind.rawValue + ":" + ref }
+
+    public init(kind: Kind, ref: String, sessionId: String, sessionName: String, createdAt: Date, toolName: String?, outcome: DecisionOutcome?, snippet: String) {
+        self.kind = kind
+        self.ref = ref
+        self.sessionId = sessionId
+        self.sessionName = sessionName
+        self.createdAt = createdAt
+        self.toolName = toolName
+        self.outcome = outcome
+        self.snippet = snippet
+    }
+}
+
 /// Rewrite-agent spending today (local calendar day) against the caps.
 public struct SpendSummary: Codable, Sendable, Hashable {
     public struct ProfileSpend: Codable, Sendable, Hashable, Identifiable {
