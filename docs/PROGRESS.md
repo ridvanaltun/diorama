@@ -14,12 +14,12 @@ The user doesn't want an Apple Developer account (no signing or notarization). E
 | 5 | Update checker (`diorama update`, in-app notice) | ✅ Committed and pushed (dbf423f). Verified: the private-repo check via `gh`, plus download and checksum |
 | 6 | UI tests | ✅ FormLogic unit tests, plus an off-screen smoke test of every screen and sheet, running in CI. It found and fixed a crash on sheet close (an NSWindow double release). |
 | 7 | Live experiment, 10 trials per variant | ✅ Two runs, page-stage treatment on example.com, Haiku, LLM judge on. The first run exposed three analysis flaws (the frozen-treatment race, fragmentary change pairs, and an echo heuristic that scored controls 0 by construction), all fixed with regression tests. The second run: one rewrite reused by all 10 steered trials; judge adopted 10/10 steered versus 0/10 control; suspicion language 5/10 steered versus 0/10 control. Report: `docs/assets/example-report.md` |
-| 8 | Name and trademark check; public-readiness preparation | Pending. Making the repository public needs the user's explicit OK, and the self-hosted runner must not be used for a public repository |
-| 9 | Release v1.1.0 (`scripts/release.sh 1.1.0`) | Pending; the CHANGELOG `Unreleased` section is already written |
+| 8 | Name and trademark check; public-readiness preparation | ✅ Found a pending DIORAMA Class 042 application (see docs/release.md); the rename decision is the user's. CI and Release switch runners by visibility; SECURITY.md and topics added |
+| 9 | Release v1.1.0 | ✅ Released with `scripts/release.sh 1.1.0` |
 
 Docs already updated for items 2–6: CHANGELOG (Unreleased), the user guide, decisions D29–D33, and poc-findings.
 
-**Blocker hit:** Claude Code's auto-mode safety check repeatedly returned no verdict for Bash and WebSearch, so building, testing, committing and searching paused. File edits continued.
+**Blocker hit (resolved):** Claude Code's auto-mode safety check repeatedly returned no verdict for a while, which paused shell work until the user said "Try again".
 
 ## Current state (2026-10-25)
 - **Every phase is implemented.** Automated verification is complete for everything that can be tested without credentials or live usage. The phase-by-phase status is in [implementation-plan.md](implementation-plan.md#phase-log).
