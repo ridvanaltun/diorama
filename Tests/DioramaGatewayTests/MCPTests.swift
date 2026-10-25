@@ -66,6 +66,7 @@ import Testing
         let profile = try await tool(server, "get_profile", ["profile": "Docs steer"])
         #expect(profile.text.contains("Rename the domain"))
 
+        #expect(try await tool(server, "get_rule_stats", ["profile": "Docs steer", "days": 7]).text.contains("Rename\n  never matched"))
         let bad = try await tool(server, "create_profile", ["profile": "not an object"])
         #expect(bad.isError && bad.text.contains("must be a JSON object"))
         let missing = try await tool(server, "get_session", [:])

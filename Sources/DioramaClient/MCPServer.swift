@@ -269,6 +269,16 @@ enum MCPTools {
             let d = try await s.daemon().profile(try arg(a, "profile"))
             return "Profile \(d.current.profileId), version \(d.current.number) (\(d.current.id)):\n" + (try json(d.current.profile))
         },
+        .init(
+            name: "get_rule_stats",
+            description: "How a profile's rules have been used: per rule, how often it matched, how many of those results were rewritten or left unchanged, classifier answers and cost. Rules that never matched are listed too. Experiment trials are left out unless include_trials is true.",
+            schema: schema(["profile": string("Profile name or id."), "days": ["type": "integer", "description": "Days to look back (default 30, 0 = all time)."],
+                            "include_trials": ["type": "boolean", "description": "Include experiment trials."]], required: ["profile"]),
+            readOnly: true
+        ) { s, a in
+            let days = (a["days"] as? Int) ?? (a["days"] as? Double).map { Int($0) } ?? 30
+            return try await s.daemon().ruleStats(try arg(a, "profile"), days: days, includeTrials: a["include_trials"] as? Bool ?? false).text
+        },
         .init(name: "list_rule_templates", description: "Starting-point profiles that show the rule format (tools, input patterns, instructions, stage).", schema: schema(), readOnly: true) { s, _ in
             try json(try await s.daemon().templates())
         },

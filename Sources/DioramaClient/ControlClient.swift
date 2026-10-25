@@ -104,6 +104,10 @@ public struct ControlClient: Sendable {
     public func recentToolResults(limit: Int = 50) async throws -> [RecentToolResult] { try await request("GET", "decisions", query: ["limit": String(limit)]) }
     public func profiles() async throws -> [ProfileSummary] { try await request("GET", "profiles") }
     public func profile(_ id: String) async throws -> ProfileDetail { try await request("GET", "profiles/\(id.urlPathEscaped)") }
+    /// Per-rule usage over the last `days` days (0 = all time).
+    public func ruleStats(_ profile: String, days: Int = 30, includeTrials: Bool = false) async throws -> ProfileRuleStats {
+        try await request("GET", "profiles/\(profile.urlPathEscaped)/stats", query: ["days": String(days), "trials": includeTrials ? "1" : "0"])
+    }
     public func createProfile(_ p: Profile) async throws -> ProfileVersionInfo { try await request("POST", "profiles", body: p) }
     public func updateProfile(_ id: String, _ p: Profile) async throws -> ProfileDetail { try await request("PUT", "profiles/\(id.urlPathEscaped)", body: p) }
     public func archiveProfile(_ id: String) async throws { let _: [String: String] = try await request("DELETE", "profiles/\(id.urlPathEscaped)") }

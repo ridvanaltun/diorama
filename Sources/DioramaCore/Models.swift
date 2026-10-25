@@ -1232,3 +1232,54 @@ public struct MaintenanceResult: Codable, Sendable {
         self.blobBytes = blobBytes
     }
 }
+
+/// How a profile's rules have been used: per rule, how often it matched, what came of it and what it
+/// cost. A tool result that several rules matched counts for each of them (`shared`), and so does
+/// its cost. Experiment trials are left out unless asked for.
+public struct ProfileRuleStats: Codable, Sendable, Hashable {
+    public struct RuleUse: Codable, Sendable, Hashable, Identifiable {
+        public var ruleId: String
+        public var name: String
+        /// False for rules that only exist in older versions of the profile.
+        public var inCurrentVersion: Bool
+        public var matched: Int = 0
+        public var rewritten: Int = 0
+        public var unchanged: Int = 0
+        public var failed: Int = 0
+        /// Matches where other rules matched the same tool result too.
+        public var shared: Int = 0
+        public var classifierYes: Int = 0
+        public var classifierNo: Int = 0
+        public var sessions: Int = 0
+        public var costUSD: Double = 0
+        public var lastMatchedAt: Date?
+        public var id: String { ruleId }
+
+        public init(ruleId: String, name: String, inCurrentVersion: Bool) {
+            self.ruleId = ruleId
+            self.name = name
+            self.inCurrentVersion = inCurrentVersion
+        }
+    }
+
+    public var profileId: String
+    public var profileName: String
+    /// Start of the window; nil for all time.
+    public var since: Date?
+    public var includesTrials: Bool
+    /// Distinct tool results any rule of this profile matched, and their total cost.
+    public var toolResults: Int
+    public var costUSD: Double
+    /// Current-version rules first (in profile order), then rules from older versions.
+    public var rules: [RuleUse]
+
+    public init(profileId: String, profileName: String, since: Date?, includesTrials: Bool, toolResults: Int, costUSD: Double, rules: [RuleUse]) {
+        self.profileId = profileId
+        self.profileName = profileName
+        self.since = since
+        self.includesTrials = includesTrials
+        self.toolResults = toolResults
+        self.costUSD = costUSD
+        self.rules = rules
+    }
+}

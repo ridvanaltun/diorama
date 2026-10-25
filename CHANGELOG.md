@@ -6,6 +6,7 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 ## Unreleased
 
 ### New
+- **Rule usage.** The profile editor shows, per rule, how many tool results it matched and what came of them (rewritten, unchanged, failed), classifier answers, sessions and cost over 7, 30 or 90 days or all time, and flags rules that never matched. Also `diorama profiles stats` and MCP `get_rule_stats`.
 - **Pause steering.** Stop Diorama changing anything, for one session (**Pause** in its header, `diorama session pause`) or everywhere (menu bar, Settings, `diorama pause`), without restarting Claude. Paused results pass through unchanged; redaction still applies and experiment runs aren't affected. Also MCP `set_steering_paused`.
 - **Content-aware rules.** A rule can carry a classifier: a yes/no question a cheap model answers about the content ("Does this page state a price?"); the rule applies only on "yes", and a "no" or a failed call leaves the result unchanged. Verdicts are recorded as attempts (mode `classify`) and count toward the budget; the playground runs them on Run rewrite. Works with Anthropic models and `ollama:` models.
 - **Session reports.** Export a session's audit trail as Markdown or self-contained HTML (**Export** in the session header, `diorama session report`, MCP `get_session_report`): configuration, summary, notices, each change with a word diff, rules, rewrite-agent work and what Claude did next, and what was left unchanged.

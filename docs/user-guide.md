@@ -185,6 +185,17 @@ diorama session whatif ses_123 --version pv_abc --rewrite      # a specific vers
 diorama session whatif ses_123 --file draft.json --rewrite --max 10
 ```
 
+### Rule usage: which rules fire, and what they cost
+
+The **Usage** section of the profile editor lists each rule with how many tool results it matched, how many of those were rewritten, left unchanged or failed, classifier answers, the sessions involved and the rewrite-agent cost. Choose 7, 30 or 90 days, or all time. Each rule's row in the rule list also shows its count, and rules that matched nothing are marked **never matched**, so you can fix or remove them. Counts cover every version of the profile, and rules removed in later versions are listed as **older version**. A tool result that several rules matched counts, with its cost, for each of them. Experiment trials are left out.
+
+```bash
+diorama profiles stats "Docs steer"              # last 30 days
+diorama profiles stats "Docs steer" --days 0 --trials --json
+```
+
+The MCP tool `get_rule_stats` returns the same summary.
+
 ### Where a rule applies: tool result or raw page
 
 By default (`"stage": "result"`), a rule rewrites the **tool result** Claude receives. For WebFetch, that's a summary: WebFetch downloads the page and has a small model extract what Claude asked for, and Claude only sees that extract.

@@ -110,6 +110,8 @@ struct ProfileEditor: View {
     @State private var draft = Profile(name: "")
     @State private var selectedRule: String?
     @State private var showPlayground = false
+    @State private var stats: ProfileRuleStats?
+    @AppStorage("ruleStatsDays") private var statsDays = 30
 
     var dirty: Bool { detail.map { $0.current.profile != draft } ?? false }
 
@@ -162,6 +164,7 @@ struct ProfileEditor: View {
                                     if rule.match.stage == .input { Badge(text: "input", color: .blue) }
                                     if rule.isRedaction { Badge(text: "redact", color: .orange) }
                                     if rule.match.classifier != nil { Badge(text: "classifier", color: .purple) }
+                                    if let use = stats?.rules.first(where: { $0.ruleId == rule.id }) { RuleUseChip(use: use, days: statsDays) }
                                     if !FormLogic.ruleProblems(rule).isEmpty {
                                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).help(FormLogic.ruleProblems(rule).joined(separator: "\n"))
                                     }
@@ -180,6 +183,7 @@ struct ProfileEditor: View {
                     } header: {
                         Text("Rules (applied in order; later rules take priority)")
                     }
+                    if let stats { RuleUsageSection(stats: stats, days: $statsDays) }
                     Section("Version history") {
                         ForEach(detail.versions) { v in
                             HStack {
@@ -200,6 +204,7 @@ struct ProfileEditor: View {
                 .formStyle(.grouped)
             }
             .sheet(isPresented: $showPlayground) { PlaygroundSheet(draft: draft) }
+            .task(id: "\(statsDays)/\(detail.current.id)") { stats = await model.perform { try await $0.ruleStats(profileId, days: statsDays) } }
         } else {
             ProgressView().task { await load() }
         }
@@ -306,5 +311,90 @@ struct RuleEditor: View {
             Text("Rule id: \(rule.id)").font(.caption2.monospaced()).foregroundStyle(.tertiary).textSelection(.enabled)
         }
         .padding(.vertical, 4)
+    }
+}
+
+/// A rule's usage in its row: how often it matched in the chosen window.
+private struct RuleUseChip: View {
+    let use: ProfileRuleStats.RuleUse
+    let days: Int
+
+    var body: some View {
+        Text(use.matched == 0 ? "never matched" : "\(use.matched)× · \(use.rewritten) rewritten")
+            .font(.caption).monospacedDigit().foregroundStyle(use.matched == 0 ? .orange : .secondary)
+            .help(use.matched == 0 ? "No tool result matched this rule \(RuleUsageSection.window(days))." : RuleUsageSection.detail(use))
+    }
+}
+
+/// How the profile's rules were used: matches, outcomes, classifier answers and cost per rule.
+struct RuleUsageSection: View {
+    let stats: ProfileRuleStats
+    @Binding var days: Int
+
+    static func window(_ days: Int) -> String { days == 0 ? "so far" : "in the last \(Fmt.plural(days, "day"))" }
+
+    static func detail(_ u: ProfileRuleStats.RuleUse) -> String {
+        var parts = ["\(u.rewritten) rewritten, \(u.unchanged) unchanged, \(u.failed) failed", "in \(Fmt.plural(u.sessions, "session"))"]
+        if u.classifierYes + u.classifierNo > 0 { parts.append("classifier \(u.classifierYes) yes / \(u.classifierNo) no") }
+        if u.shared > 0 { parts.append("\(u.shared) shared with other rules") }
+        if let last = u.lastMatchedAt { parts.append("last \(Fmt.relative(last))") }
+        return parts.joined(separator: " · ")
+    }
+
+    var body: some View {
+        Section {
+            if stats.rules.isEmpty {
+                Text("No rules.").foregroundStyle(.secondary)
+            }
+            ForEach(stats.rules) { u in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(u.name).fontWeight(.medium)
+                        if !u.inCurrentVersion { Badge(text: "older version", color: .secondary) }
+                        Spacer()
+                        Text(u.matched == 0 ? "never matched" : "\(u.matched)×").monospacedDigit().foregroundStyle(u.matched == 0 ? .orange : .primary)
+                        Text(Fmt.money(u.costUSD)).monospacedDigit().foregroundStyle(.secondary).frame(minWidth: 64, alignment: .trailing)
+                    }
+                    if u.matched > 0 {
+                        OutcomeBar(use: u)
+                        Text(Self.detail(u)).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        } header: {
+            HStack {
+                Text("Usage")
+                Spacer()
+                Picker("Window", selection: $days) {
+                    Text("7 days").tag(7)
+                    Text("30 days").tag(30)
+                    Text("90 days").tag(90)
+                    Text("All time").tag(0)
+                }
+                .labelsHidden().fixedSize()
+            }
+        } footer: {
+            Text("\(Fmt.plural(stats.toolResults, "tool result")) matched \(Self.window(days)), \(Fmt.money(stats.costUSD)) in rewrite-agent calls, across all versions. "
+                + "A result several rules matched counts for each. Experiment trials aren't included.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Rewritten, unchanged and failed shares of a rule's matches.
+private struct OutcomeBar: View {
+    let use: ProfileRuleStats.RuleUse
+
+    var body: some View {
+        GeometryReader { g in
+            let total = max(Double(use.matched), 1)
+            HStack(spacing: 1) {
+                ForEach([(use.rewritten, Color.purple), (use.unchanged, Color.secondary.opacity(0.4)), (use.failed, Color.red)], id: \.1) { n, c in
+                    if n > 0 { c.frame(width: max(2, g.size.width * Double(n) / total - 1)) }
+                }
+            }
+        }
+        .frame(height: 5).clipShape(Capsule())
     }
 }

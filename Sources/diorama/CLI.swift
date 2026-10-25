@@ -481,7 +481,7 @@ struct Session: AsyncParsableCommand {
 struct Profiles: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Manage profiles (versioned sets of global rules).",
-        subcommands: [List.self, Show.self, Create.self, Update.self, Export.self, Delete.self, Templates.self, Test.self], defaultSubcommand: List.self)
+        subcommands: [List.self, Show.self, Create.self, Update.self, Export.self, Delete.self, Templates.self, Test.self, Stats.self], defaultSubcommand: List.self)
 
     struct List: AsyncParsableCommand {
         @OptionGroup var global: GlobalOptions
@@ -566,6 +566,26 @@ struct Profiles: AsyncParsableCommand {
         func run() async throws {
             try await global.client().archiveProfile(id)
             print("Archived.")
+        }
+    }
+
+    struct Stats: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Show how often each rule of a profile matched, what came of it and what it cost.",
+            discussion: """
+                Counts tool results from all versions of the profile. Rules that never matched show up too, so \
+                you can spot rules to fix or remove. Experiment trials are left out unless you pass --trials.
+                """)
+        @OptionGroup var global: GlobalOptions
+        @Argument(help: "Profile name or id.") var profile: String
+        @Option(help: "Days to look back (0 = all time).") var days = 30
+        @Flag(help: "Include experiment trials.") var trials = false
+        @Flag var json = false
+
+        func run() async throws {
+            let stats = try await global.client().ruleStats(profile, days: days, includeTrials: trials)
+            if json { return try printJSON(stats) }
+            print(stats.text)
         }
     }
 

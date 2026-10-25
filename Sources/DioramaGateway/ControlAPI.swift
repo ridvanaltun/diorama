@@ -105,6 +105,13 @@ struct ControlAPI: Sendable {
         if Self.match(method, route, "POST", "profiles") != nil {
             return try ok(store.createProfile(try decode(Profile.self, req)), status: 201)
         }
+        if let c = Self.match(method, route, "GET", "profiles/:id/stats") {
+            guard let current = try store.resolveProfile(c[0]) else { throw notFound("profile") }
+            let days = Int(req.query["days"] ?? "") ?? 30
+            let since = days > 0 ? Calendar.current.date(byAdding: .day, value: -days, to: Date()) : nil
+            guard let stats = try store.ruleStats(profileId: current.profileId, since: since, includeTrials: req.query["trials"] == "1") else { throw notFound("profile") }
+            return try ok(stats)
+        }
         if let c = Self.match(method, route, "GET", "profiles/:id") {
             let id = c[0]
             return try ok(try profileDetail(id))
