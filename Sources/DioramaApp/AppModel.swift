@@ -48,6 +48,8 @@ final class AppModel {
     var focusSessionId: String?
     /// Set after creating an experiment elsewhere (e.g. from a session) to select it.
     var focusExperimentId: String?
+    /// Set when a notification about a run is clicked, to select that run.
+    var focusRunId: String?
     var updateError: String?
 
     private var eventsTask: Task<Void, Never>?
@@ -127,6 +129,7 @@ final class AppModel {
     func handle(_ ev: SessionEvent) async {
         lastEvent = ev
         eventTick += 1
+        Notifier.shared.handle(ev, sessionName: ev.sessionId.flatMap { id in sessions.first { $0.id == id }?.name })
         switch ev.kind {
         case .sessionCreated, .sessionEnded: await refreshSessions()
         case .profileUpdated: await refreshProfiles()

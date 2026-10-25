@@ -82,6 +82,7 @@ struct SettingsView: View {
                 }
                 Text("Updates are downloaded manually; Diorama never replaces itself. `diorama update --download` fetches and verifies the zip.").font(.caption).foregroundStyle(.secondary)
             }
+            NotificationSettingsSection()
             MCPSettingsSection()
             Section("Command-line tool") {
                 Text("Link the bundled `diorama` command into your PATH (asks for your password):").font(.callout)
@@ -169,5 +170,41 @@ struct BudgetField: View {
     func commit() {
         let t = text.trimmingCharacters(in: .whitespaces)
         if t.isEmpty { value = nil } else if let d = parsed { value = d }
+    }
+}
+
+/// Which events notify (stored per user), plus a test button and the permission state.
+struct NotificationSettingsSection: View {
+    @AppStorage(NotificationPolicy.Prefs.runsKey) private var runs = true
+    @AppStorage(NotificationPolicy.Prefs.budgetKey) private var budget = true
+    @AppStorage(NotificationPolicy.Prefs.failuresKey) private var failures = true
+    @State private var denied = false
+
+    var body: some View {
+        Section {
+            Toggle("An experiment run finishes", isOn: $runs)
+            Toggle("The rewrite budget is used up", isOn: $budget)
+            Toggle("Rewrites start failing in a session", isOn: $failures)
+            HStack {
+                Button("Send a test notification") {
+                    Notifier.shared.post(.init(id: "test-\(Date().timeIntervalSince1970)", title: "Diorama notifications work",
+                                               body: "You'll hear from Diorama here while it's in the background.", target: nil))
+                    Task {
+                        try? await Task.sleep(for: .seconds(1))
+                        denied = await Notifier.shared.authorization() == .denied
+                    }
+                }
+                .disabled(!Notifier.shared.isAvailable)
+                Spacer()
+            }
+            if denied {
+                Label("Notifications are turned off for Diorama in System Settings → Notifications.", systemImage: "bell.slash").font(.caption).foregroundStyle(.orange)
+            }
+            Text("Shown only while Diorama is in the background. Clicking one opens the run or session. Rewrite failures notify at most once per session every 10 minutes; the budget once a day.")
+                .font(.caption).foregroundStyle(.secondary)
+        } header: {
+            Text("Notifications")
+        }
+        .task { denied = await Notifier.shared.authorization() == .denied }
     }
 }

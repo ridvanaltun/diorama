@@ -237,6 +237,15 @@ Two optional daily caps limit rewrite-agent spending:
 
 The day is your local calendar day. Each call is checked before it's made, so one call can go slightly over a cap. When a cap is used up, matching tool results **pass through unchanged** with the reason "not rewritten: … budget is used up". The session is flagged `budget-reached` and shows a warning. The playground and what-if refuse paid runs, and a what-if run is refused up front if its estimate would go over what's left. Free checks keep working. Experiment runs are exempt, because they run against the cost estimate you approved. `diorama spend`, Settings and the menu bar show today's total. The MCP server can read the budget but can't change it.
 
+## Notifications
+
+While Diorama is in the background, it notifies you when:
+- **an experiment run finishes** (or is cancelled);
+- **the rewrite budget is used up** (at most once a day);
+- **rewrites start failing** in a session (at most once per session every 10 minutes).
+
+Clicking a notification opens the run or the session. Choose which ones you want in **Settings → Notifications**, where **Send a test notification** checks that macOS shows them. The first notification asks for permission. If you said no, turn Diorama on in System Settings → Notifications.
+
 ## Menu bar
 
 Diorama puts a small open-box icon in the menu bar. Its dot fills while a routed session is running. The panel lists running sessions; click one to open it in the app. The panel also has New Session, Open Diorama and Quit.

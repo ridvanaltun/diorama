@@ -142,6 +142,21 @@ struct RootView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onAppear {
+            Notifier.shared.start()
+            Notifier.shared.open = { [model] target in
+                NSApp.setActivationPolicy(.regular)
+                NSApp.activate()
+                switch target {
+                case .run(let id):
+                    model.section = .experiments
+                    model.focusRunId = id
+                case .session(let id):
+                    model.section = .sessions
+                    model.focusSessionId = id
+                }
+            }
+        }
         .task(id: model.connection) {
             guard let dir = model.snapshotDir, case .connected = model.connection else { return }
             await Snapshotter.run(dir: dir, model: model) { model.section = $0 }

@@ -57,6 +57,11 @@ struct ExperimentsView: View {
             selection = "exp:" + id
             model.focusExperimentId = nil
         }
+        .onChange(of: model.focusRunId, initial: true) { _, id in
+            guard let id else { return }
+            selection = "run:" + id
+            model.focusRunId = nil
+        }
         .navigationTitle("Experiments")
         .task { if model.snapshotDir != nil, selection == nil, let r = model.experiments.first?.runs.first { selection = "run:" + r.id } }
     }

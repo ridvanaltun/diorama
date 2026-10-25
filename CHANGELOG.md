@@ -6,6 +6,7 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 ## Unreleased
 
 ### New
+- **Notifications.** While Diorama is in the background, macOS notifications tell you when an experiment run finishes, when the rewrite budget is used up (once a day), and when rewrites start failing in a session (at most once per session every 10 minutes). Click to open the run or session; choose them in Settings → Notifications.
 - **Experiment from a session.** **Experiment…** in a session's header prefills an experiment with the session's task (its first prompt), project, tools and model, an unmodified control, and the session's steering pinned to the exact profile version it used. Review, create, then estimate and run as usual. Also `diorama session experiment` and the MCP tool `draft_experiment_from_session`. Profile references now accept a version id (`pv_…`) to pin one version.
 
 ### Fixed
