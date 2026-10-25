@@ -5,6 +5,8 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+## 1.0.0 — 2026-10-25
+
 The first complete version of Diorama.
 
 ### Steering
