@@ -146,6 +146,18 @@ struct ControlAPI: Sendable {
             try store.setPaused(sessionId: id, route.last == "pause")
             return try ok(try store.info(try store.session(id: id)!))
         }
+        if Self.match(method, route, "GET", "export/decisions") != nil {
+            let format = DataExport.Format(rawValue: req.query["format"] ?? "csv") ?? .csv
+            var filter = DecisionExportFilter(includeTrials: req.query["trials"] != "0", rewrittenOnly: req.query["rewritten"] == "1", includeTexts: req.query["texts"] == "1")
+            if let days = Int(req.query["days"] ?? ""), days > 0 { filter.since = Calendar.current.date(byAdding: .day, value: -days, to: Date()) }
+            filter.sessionId = req.query["session"].flatMap { $0.isEmpty ? nil : $0 }
+            if let p = req.query["profile"], !p.isEmpty {
+                guard let v = try store.resolveProfile(p) else { throw notFound("profile") }
+                filter.profileId = v.profileId
+            }
+            let rows = try store.exportDecisions(filter)
+            return try ok(DecisionExport(format: format, rows: rows.count, content: DataExport.render(rows, format: format, includeTexts: filter.includeTexts)))
+        }
         if Self.match(method, route, "GET", "reviews") != nil {
             return try ok(await daemon.engine.reviews.pending)
         }

@@ -8,6 +8,7 @@ struct SessionsView: View {
     @Environment(AppModel.self) private var model
     @State private var selection: String?
     @State private var showNew = false
+    @State private var showExport = false
     @State private var kindFilter: SessionKind? = .interactive
     @State private var query = ""
 
@@ -62,10 +63,15 @@ struct SessionsView: View {
                     .help("Start Claude Code in Terminal, routed through Diorama")
             }
             ToolbarItem {
+                Button { showExport = true } label: { Label("Export Data…", systemImage: "tablecells") }
+                    .help("Export decided tool results across sessions as CSV or JSON Lines")
+            }
+            ToolbarItem {
                 Button { Task { await model.refreshSessions() } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
             }
         }
         .sheet(isPresented: $showNew) { NewSessionSheet() }
+        .sheet(isPresented: $showExport) { ExportDataSheet() }
         .navigationTitle("Sessions")
         .searchable(text: $query, placement: .toolbar, prompt: "Search results, rewrites, replies")
         .onChange(of: model.wantsNewSession, initial: true) { _, wants in

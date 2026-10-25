@@ -12,7 +12,7 @@ struct Diorama: AsyncParsableCommand {
         discussion: "Diorama routes Claude Code sessions you start with `diorama run` through a local gateway that can rewrite tool results according to your rules, records everything, and runs A/B experiments.",
         version: DioramaVersion.current,
         subcommands: [
-            Run.self, Hook.self, MCP.self, Spend.self, Search.self, PauseAll.self, ResumeAll.self, Reviews.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
+            Run.self, Hook.self, MCP.self, Spend.self, Search.self, PauseAll.self, ResumeAll.self, Reviews.self, ExportData.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
         ])
 }
 
@@ -937,6 +937,38 @@ struct Search: AsyncParsableCommand {
         }
     }
 }
+
+struct ExportData: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "export",
+        abstract: "Export decided tool results as CSV or JSON Lines for analysis.",
+        discussion: """
+            One row per tool result Diorama decided: session, profile and version, tool and input, outcome and reason, \
+            matching rules, rewrite attempts and cost, and sizes. --texts adds the original and rewritten text.
+              diorama export --output decisions.csv
+              diorama export --format jsonl --days 7 --profile "Docs steer" --rewritten-only --texts --output week.jsonl
+            """)
+    @OptionGroup var global: GlobalOptions
+    @Option(help: "csv or jsonl.") var format: DataExport.Format = .csv
+    @Option(help: "Only the last N days (0 = all time).") var days = 0
+    @Option(help: "Only this session.") var session: String?
+    @Option(help: "Only sessions that used this profile (name or id).") var profile: String?
+    @Flag(help: "Leave out experiment trials.") var noTrials = false
+    @Flag(help: "Only rewritten tool results.") var rewrittenOnly = false
+    @Flag(help: "Include the original and rewritten text.") var texts = false
+    @Option(help: "Write to a file instead of stdout.") var output: String?
+
+    func run() async throws {
+        let e = try await global.client().exportDecisions(format: format, days: days, sessionId: session, profile: profile,
+                                                           includeTrials: !noTrials, rewrittenOnly: rewrittenOnly, includeTexts: texts)
+        guard let output else { return print(e.content, terminator: "") }
+        let url = URL(fileURLWithPath: (output as NSString).expandingTildeInPath)
+        try e.content.write(to: url, atomically: true, encoding: .utf8)
+        FileHandle.standardError.write(Data("✓ \(e.rows) row(s) written to \(url.path)\n".utf8))
+    }
+}
+
+extension DataExport.Format: ExpressibleByArgument {}
 
 struct Reviews: AsyncParsableCommand {
     static let configuration = CommandConfiguration(

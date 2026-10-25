@@ -124,6 +124,17 @@ public struct ControlClient: Sendable {
     /// Pauses or resumes steering for one session.
     public func setPaused(_ id: String, _ paused: Bool) async throws -> SessionInfo { try await request("POST", "sessions/\(id)/\(paused ? "pause" : "resume")") }
     /// Pauses or resumes steering everywhere.
+    /// Decided tool results as CSV or JSON Lines. `days` 0 = all time; `profile` by name or id.
+    public func exportDecisions(format: DataExport.Format = .csv, days: Int = 0, sessionId: String? = nil, profile: String? = nil,
+                                includeTrials: Bool = true, rewrittenOnly: Bool = false, includeTexts: Bool = false) async throws -> DecisionExport {
+        var q = ["format": format.rawValue, "days": String(days), "trials": includeTrials ? "1" : "0"]
+        if let sessionId { q["session"] = sessionId }
+        if let profile { q["profile"] = profile }
+        if rewrittenOnly { q["rewritten"] = "1" }
+        if includeTexts { q["texts"] = "1" }
+        return try await request("GET", "export/decisions", query: q)
+    }
+
     /// Rewrites waiting for approval (review mode).
     public func pendingReviews() async throws -> [PendingReview] { try await request("GET", "reviews") }
     public func resolveReview(_ id: String, approve: Bool) async throws {

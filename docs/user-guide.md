@@ -271,6 +271,15 @@ diorama session report ses_123 --format html --output report.html
 
 Through MCP the tool is `get_session_report`. Tool results can contain private data (file contents, pages, command output), so review a report before sharing it. The HTML escapes all captured content.
 
+### Exporting data for analysis
+
+**Export Data…** in the Sessions toolbar, or `diorama export`, writes one row per decided tool result as CSV (for spreadsheets) or JSON Lines (for scripts and pandas). Each row has the session, its kind and connection, the profile and version, the tool and its input, the stage, outcome and reason, the matching rules, rewrite attempts, cost, and text sizes. Filter by time, profile, session, trials or rewritten only. The original and rewritten texts are included only if you ask, because they're what your tools returned and can contain private content. Cells that a spreadsheet would run as formulas get a leading `'`.
+
+```bash
+diorama export --output decisions.csv
+diorama export --format jsonl --days 7 --profile "Docs steer" --rewritten-only --texts --output week.jsonl
+```
+
 ### Search
 
 The search field on the Sessions screen searches every session, with the best matches first:

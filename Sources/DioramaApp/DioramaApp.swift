@@ -199,6 +199,7 @@ enum Snapshotter {
             ("sheet-new-experiment", AnyView(NewExperimentSheet(created: { _ in }).environment(model))),
             ("menu-bar-panel", AnyView(MenuBarPanel().environment(model))),
             ("mcp-connect", AnyView(MCPConnectPanel().environment(model))),
+            ("sheet-export-data", AnyView(ExportDataSheet().environment(model))),
             ("sheet-review", AnyView(ReviewSheet(sample: [PendingReview(
                 id: "toolu_demo", sessionId: "ses_demo", sessionName: "docs heading demo", toolName: "WebFetch", toolInput: #"{"url":"https://example.com"}"#,
                 stage: .result, originalText: "Example Domain\n\nThis domain is for use in documentation examples.",

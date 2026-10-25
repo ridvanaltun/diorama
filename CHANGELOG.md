@@ -6,6 +6,7 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 ## Unreleased
 
 ### New
+- **Data export.** **Export Data…** (Sessions toolbar) and `diorama export` write every decided tool result as CSV or JSON Lines: session, profile version, tool and input, outcome, reason, rules, attempts, cost and sizes, optionally with the texts. Filter by time, profile, session, trials or rewritten only.
 - **Share profiles.** **Export…** in the profile editor saves a profile as JSON; **Import Profile…** (or dropping `.json` files on the profile list) adds them, renaming on a name clash. Same format as `diorama profiles export` / `create --file`.
 - **Compare profile versions.** **Compare with vN** in a profile's version history, and **Show Changes…** for unsaved edits, list rules added, removed, changed (field by field, with a word diff for instructions) or moved, plus changed defaults. Also `diorama profiles diff` and MCP `compare_profile_versions`.
 - **Review mode.** A profile can hold each AI rewrite for your approval: Claude waits while Diorama shows the word diff (sheet, banner, menu bar, notification); approve to send it, reject or let the wait (15–120 s) run out to send the original. Also `diorama review`; MCP can list pending reviews but not answer them. Trials and input rules are exempt.
