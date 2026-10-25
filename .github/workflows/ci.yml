@@ -3,19 +3,26 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# One run at a time on the self-hosted Mac; a newer push cancels the older run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
-    runs-on: macos-15
+    # Self-hosted runner on the maintainer's Mac (private repository only — never use
+    # self-hosted runners for public repositories). Never run for pull requests from forks.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
-      - name: Swift version
-        run: swift --version
-      - name: Install Claude Code CLI (for contract tests; no account needed)
-        run: npm install -g @anthropic-ai/claude-code
+      - name: Toolchain
+        run: |
+          swift --version
+          command -v claude && claude --version || echo "claude CLI not found: contract tests will be skipped"
       - name: Build
         run: swift build
       - name: Test
@@ -26,3 +33,4 @@ jobs:
         with:
           name: Diorama-app
           path: dist/Diorama-*.zip
+          retention-days: 7
