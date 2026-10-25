@@ -294,9 +294,9 @@ public final class DecisionEngine: Sendable {
             let hasRules = !(session.profileVersion?.profile.rules.isEmpty ?? true) || session.prompt != nil
             return record(.unchanged, hasRules ? "no rule matched" : "no rules configured")
         }
-        let rewriteRules = app.rules.filter { !$0.isRedaction }
-        let instructions = rewriteRules.map { RuleInstruction(name: $0.name, text: $0.instructions) }
-        let instructionTexts = app.rules.map { r in
+        var rewriteRules = app.rules.filter { !$0.isRedaction }
+        var instructions = rewriteRules.map { RuleInstruction(name: $0.name, text: $0.instructions) }
+        var instructionTexts = app.rules.map { r in
             r.redact.map { "[\(r.name)] Redact \($0.summary) (local, no AI)" } ?? "[\(r.name)] \(r.instructions)"
         }
 
@@ -340,6 +340,31 @@ public final class DecisionEngine: Sendable {
             }
             return redaction != nil ? recordRedacted("not rewritten further: \(why)")
                 : record(.unchanged, "not rewritten: \(why)", refs: app.refs, instructions: instructionTexts)
+        }
+
+        // Content-aware matching: rules with a classifier apply only if a cheap model answers "yes".
+        // A failed classification counts as "no": nothing is rewritten on a guess.
+        if rewriteRules.contains(where: { $0.match.classifier != nil }) {
+            var kept: [Rule] = []
+            var verdicts: [String] = []
+            for r in rewriteRules {
+                guard let c = r.match.classifier else {
+                    kept.append(r)
+                    continue
+                }
+                let v = await classify(c, rule: r, toolName: toolName, toolInput: t.toolInputJSON ?? "{}", content: segments.joined(separator: "\n\n"),
+                                       defaults: app.defaults, decisionId: t.decisionId, sessionId: session.id)
+                if v.answer == true { kept.append(r) }
+                let answer = v.answer.map { $0 ? "yes" : "no" } ?? "failed (\(v.error ?? "unknown error"))"
+                verdicts.append("[\(r.name)] Classifier “\(c.question)”: \(answer)" + (v.reason.map { " — \($0)" } ?? ""))
+            }
+            instructionTexts += verdicts
+            rewriteRules = kept
+            instructions = kept.map { RuleInstruction(name: $0.name, text: $0.instructions) }
+            if kept.isEmpty {
+                let why = "the classifier didn't say yes (" + verdicts.joined(separator: "; ") + ")"
+                return redaction != nil ? recordRedacted(why) : record(.unchanged, why, refs: app.refs, instructions: instructionTexts)
+            }
         }
 
         // Frozen experiment treatment: identical inputs reuse the stored rewrite (decision D11).

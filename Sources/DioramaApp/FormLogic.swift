@@ -102,6 +102,10 @@ enum FormLogic {
     static func ruleProblems(_ rule: Rule) -> [String] {
         var out: [String] = []
         if rule.match.tools.isEmpty { out.append("No tools: the rule never matches.") }
+        if let c = rule.match.classifier {
+            if c.question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { out.append("The classifier needs a yes/no question.") }
+            if rule.isRedaction { out.append("Redaction rules can't use a classifier (they run locally, without a model).") }
+        }
         if let spec = rule.redact {
             if spec.presets.isEmpty && spec.patterns.isEmpty { out.append("Nothing to redact: pick a preset or add a pattern.") }
             for p in spec.patterns where (try? NSRegularExpression(pattern: p)) == nil { out.append("Redaction pattern “\(p)” is an invalid regex.") }

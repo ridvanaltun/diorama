@@ -87,6 +87,8 @@ public struct RewriteResponse: Sendable {
 public protocol RewriteProvider: Sendable {
     var id: String { get }
     func rewrite(_ request: RewriteRequest) async -> RewriteResponse
+    /// Content-aware matching (rule classifiers). Providers that can't classify answer with an error.
+    func classify(_ request: ClassifyRequest) async -> ClassifyResponse
 }
 
 // MARK: - Prompt contract
@@ -300,13 +302,20 @@ public struct AnthropicRewriteProvider: RewriteProvider {
 public struct ScriptedRewriteProvider: RewriteProvider {
     public let id: String
     let handler: @Sendable (RewriteRequest) async -> RewriteResponse
+    let classifier: (@Sendable (ClassifyRequest) async -> ClassifyResponse)?
 
-    public init(id: String = "scripted", handler: @escaping @Sendable (RewriteRequest) async -> RewriteResponse) {
+    public init(id: String = "scripted", classifier: (@Sendable (ClassifyRequest) async -> ClassifyResponse)? = nil,
+                handler: @escaping @Sendable (RewriteRequest) async -> RewriteResponse) {
         self.id = id
         self.handler = handler
+        self.classifier = classifier
     }
 
     public func rewrite(_ request: RewriteRequest) async -> RewriteResponse { await handler(request) }
+
+    public func classify(_ request: ClassifyRequest) async -> ClassifyResponse {
+        await classifier?(request) ?? ClassifyResponse(answer: nil, error: "the scripted provider has no classifier")
+    }
 
     /// Replaces every occurrence of `find` with `replace` using a single edit when it occurs once.
     public static func replacing(_ find: String, with replace: String) -> ScriptedRewriteProvider {

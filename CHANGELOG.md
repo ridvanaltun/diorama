@@ -6,7 +6,11 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 ## Unreleased
 
 ### New
+- **Content-aware rules.** A rule can carry a classifier: a yes/no question a cheap model answers about the content ("Does this page state a price?"); the rule applies only on "yes", and a "no" or a failed call leaves the result unchanged. Verdicts are recorded as attempts (mode `classify`) and count toward the budget; the playground runs them on Run rewrite. Works with Anthropic models and `ollama:` models.
 - **Session reports.** Export a session's audit trail as Markdown or self-contained HTML (**Export** in the session header, `diorama session report`, MCP `get_session_report`): configuration, summary, notices, each change with a word diff, rules, rewrite-agent work and what Claude did next, and what was left unchanged.
+
+### Fixed
+- The playground sent redaction rules (which have no instructions) to the rewrite agent along with the AI rules when both matched.
 
 ## 1.3.0 — 2026-10-25
 

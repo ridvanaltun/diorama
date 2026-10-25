@@ -38,6 +38,18 @@ public enum RuleStage: String, Codable, Sendable, CaseIterable {
     case input
 }
 
+/// A yes/no question a cheap model answers about the content, e.g. "Does this page announce a price change?"
+public struct RuleClassifier: Codable, Sendable, Hashable {
+    public var question: String
+    /// Default: the profile's rewrite model.
+    public var model: String?
+
+    public init(question: String, model: String? = nil) {
+        self.question = question
+        self.model = model
+    }
+}
+
 public struct RuleMatch: Codable, Sendable, Hashable {
     /// Tool-name glob patterns (`*` wildcard), e.g. `WebFetch`, `mcp__docs__*`.
     public var tools: [String]
@@ -53,11 +65,16 @@ public struct RuleMatch: Codable, Sendable, Hashable {
     public var includeErrors: Bool
     /// `result` (default) or `page` (WebFetch pre-extraction).
     public var stage: RuleStage
+    /// Content-aware matching: after the conditions above, a cheap model answers a yes/no question
+    /// about the content, and the rule applies only on "yes".
+    public var classifier: RuleClassifier?
 
     public init(
         tools: [String], input: [String: String] = [:], content: String? = nil, minChars: Int? = nil,
-        maxChars: Int? = nil, requestClasses: [String]? = nil, includeErrors: Bool = false, stage: RuleStage = .result
+        maxChars: Int? = nil, requestClasses: [String]? = nil, includeErrors: Bool = false, stage: RuleStage = .result,
+        classifier: RuleClassifier? = nil
     ) {
+        self.classifier = classifier
         self.stage = stage
         self.tools = tools
         self.input = input
@@ -78,6 +95,7 @@ public struct RuleMatch: Codable, Sendable, Hashable {
         requestClasses = try c.decodeIfPresent([String].self, forKey: .requestClasses)
         includeErrors = try c.decodeIfPresent(Bool.self, forKey: .includeErrors) ?? false
         stage = try c.decodeIfPresent(RuleStage.self, forKey: .stage) ?? .result
+        classifier = try c.decodeIfPresent(RuleClassifier.self, forKey: .classifier)
     }
 }
 

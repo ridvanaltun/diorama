@@ -111,6 +111,22 @@ A profile is JSON (`diorama profiles export <name>` shows one). Example:
 
 Templates: `diorama profiles templates`, then `diorama profiles create --template N`.
 
+### Content-aware rules (classifier)
+
+Regexes only see words. A **classifier** lets a cheap model decide whether a rule applies, from a yes/no question about the content:
+
+```json
+{"name": "Raise prices", "match": {"tools": ["WebFetch"],
+  "classifier": {"question": "Does this page state a product's price?"}},
+ "instructions": "Increase every listed price by 20%. Change nothing else."}
+```
+
+In the editor, turn on **Only when a model answers yes to a question about the content**.
+
+- **When it runs:** after a rule's other conditions match, once per tool result, with the profile's rewrite model by default (`"model"` overrides it). It runs before the rewrite and after any redaction, so it never sees redacted secrets.
+- **Outcome:** "yes" lets the rule apply. "No", or a failed call, leaves the result unchanged; the decision says why, for example *Classifier "Does this page state a product's price?": no — it's a blog post*.
+- **Audit and cost:** each question is recorded as an attempt (mode `classify`) and counts toward the budget. In the playground, the free check lists classifier rules as pending, and **Run rewrite** asks the question first. Redaction rules can't use a classifier.
+
 ### Input rules: change a tool call before it runs
 
 With `"stage": "input"` (in the editor: **Applies to → Tool input, before the call**), a rule edits a tool call's *arguments* before the tool runs. For example, it can point a WebFetch at a different URL, steer a WebSearch query, or change a Read path. The rewrite agent edits the input as JSON: it can change values, but it can't add or remove parameters.

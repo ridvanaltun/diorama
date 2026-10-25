@@ -161,6 +161,7 @@ struct ProfileEditor: View {
                                     if rule.match.stage == .page { Badge(text: "page", color: .teal) }
                                     if rule.match.stage == .input { Badge(text: "input", color: .blue) }
                                     if rule.isRedaction { Badge(text: "redact", color: .orange) }
+                                    if rule.match.classifier != nil { Badge(text: "classifier", color: .purple) }
                                     if !FormLogic.ruleProblems(rule).isEmpty {
                                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).help(FormLogic.ruleProblems(rule).joined(separator: "\n"))
                                     }
@@ -280,6 +281,17 @@ struct RuleEditor: View {
                 Text("Matches become [REDACTED:kind]. Redaction runs first, costs nothing, and still applies when the budget is used up or a rewrite fails.")
                     .font(.caption2).foregroundStyle(.secondary)
             } else {
+                Toggle("Only when a model answers yes to a question about the content", isOn: Binding(
+                    get: { rule.match.classifier != nil },
+                    set: { rule.match.classifier = $0 ? (rule.match.classifier ?? RuleClassifier(question: "")) : nil }))
+                if rule.match.classifier != nil {
+                    TextField("Question, e.g. “Does this page announce a price change?”", text: Binding(
+                        get: { rule.match.classifier?.question ?? "" }, set: { rule.match.classifier?.question = $0 }))
+                    TextField("Classifier model (optional; default: the profile's rewrite model)", text: Binding(
+                        get: { rule.match.classifier?.model ?? "" }, set: { rule.match.classifier?.model = $0.isEmpty ? nil : $0 }))
+                    Text("Asked after the conditions above match, once per tool result; a “no” or a failed call leaves the result unchanged. Each question is a small API call and counts toward the budget.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
                 Text("Instructions for the rewrite agent").font(.caption)
                 TextEditor(text: $rule.instructions).frame(minHeight: 80).overlay(RoundedRectangle(cornerRadius: 4).stroke(.quaternary))
                 HStack {

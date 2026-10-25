@@ -18,9 +18,13 @@ extension DecisionEngine {
             return RuleCheck(ruleId: r.id, name: r.name.isEmpty ? "Untitled rule" : r.name, matches: why == nil, reason: why ?? "matches")
         }
         let matched = rules.filter { RuleMatcher.matches($0, ctx) }
-        let rewriteRules = matched.filter { !$0.isRedaction }
-        let model = rewriteRules.isEmpty ? nil : (rewriteRules.last(where: { $0.model != nil })?.model ?? defaults.model)
+        var rewriteRules = matched.filter { !$0.isRedaction }
+        var model = rewriteRules.isEmpty ? nil : (rewriteRules.last(where: { $0.model != nil })?.model ?? defaults.model)
         var result = PlaygroundResult(toolName: toolName, toolInput: toolInputJSON, stage: stage, originalText: text, checks: checks, model: model)
+        // Classifier questions cost a call, so the free check only says they're pending.
+        for (i, r) in rules.enumerated() where r.match.classifier != nil && result.checks[i].matches && !rewrite {
+            result.checks[i].reason = "matches the conditions; its classifier question runs when you run the rewrite"
+        }
 
         // Redaction is local and free, so the check shows it right away; the agent then sees the redacted text.
         var segments = segments
@@ -38,8 +42,31 @@ extension DecisionEngine {
             }
         }
         guard rewrite else { return result }
+        if rewriteRules.contains(where: { $0.match.classifier != nil }) {
+            var kept: [Rule] = []
+            var spent = 0.0
+            for r in rewriteRules {
+                guard let c = r.match.classifier else {
+                    kept.append(r)
+                    continue
+                }
+                let v = await classify(c, rule: r, toolName: toolName, toolInput: toolInputJSON ?? "{}", content: segments.joined(separator: "\n\n"),
+                                       defaults: defaults, decisionId: nil, sessionId: nil)
+                spent += v.usage.flatMap { Pricing.cost(model: v.modelServed ?? (c.model ?? defaults.model), usage: $0) } ?? 0
+                if v.answer == true { kept.append(r) }
+                if let i = rules.firstIndex(where: { $0.id == r.id }) {
+                    result.checks[i].matches = v.answer == true
+                    result.checks[i].reason = "classifier: " + (v.answer.map { $0 ? "yes" : "no" } ?? "failed (\(v.error ?? "unknown error"))") + (v.reason.map { " — \($0)" } ?? "")
+                }
+            }
+            store.recordSpend(kind: spendKind, profileId: profileId, costUSD: spent)
+            rewriteRules = kept
+            model = kept.isEmpty ? nil : (kept.last(where: { $0.model != nil })?.model ?? defaults.model)
+            result.model = model
+        }
         guard let model else {
             if matched.isEmpty { result.note = "No rule matches this content, so a session would forward it unchanged." }
+            else if !matched.contains(where: \.isRedaction) || redaction == nil { result.note = "The classifier didn't say yes, so a session would leave this unchanged." }
             return result
         }
         guard !segments.isEmpty, !text.isEmpty else {
@@ -52,8 +79,8 @@ extension DecisionEngine {
         }
         var request = RewriteRequest(
             toolName: Self.agentToolLabel(toolName, stage), toolInput: toolInputJSON ?? "{}", segments: segments,
-            instructions: matched.map { RuleInstruction(name: $0.name, text: $0.instructions) }, taskContext: nil, model: model,
-            effort: matched.last(where: { $0.effort != nil })?.effort ?? defaults.effort, maxOutputTokens: defaults.maxOutputTokens,
+            instructions: rewriteRules.map { RuleInstruction(name: $0.name, text: $0.instructions) }, taskContext: nil, model: model,
+            effort: rewriteRules.last(where: { $0.effort != nil })?.effort ?? defaults.effort, maxOutputTokens: defaults.maxOutputTokens,
             timeout: defaults.timeoutSeconds)
         let provider = providerFor(model)
         var latency = 0.0

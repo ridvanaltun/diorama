@@ -24,6 +24,10 @@ extension Store {
             if r.match.stage == .page, !r.match.tools.allSatisfy({ Glob.matches($0, "WebFetch") }) {
                 problems.append("rule '\(r.name)': the page stage applies only to WebFetch (tools must match WebFetch)")
             }
+            if let c = r.match.classifier {
+                if c.question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { problems.append("rule '\(r.name)': the classifier has no question") }
+                if r.redact != nil { problems.append("rule '\(r.name)': redaction rules can't use a classifier") }
+            }
             if let spec = r.redact {
                 if spec.presets.isEmpty && spec.patterns.isEmpty { problems.append("rule '\(r.name)' redacts nothing (no presets or patterns)") }
                 for p in spec.patterns where (try? NSRegularExpression(pattern: p)) == nil {
