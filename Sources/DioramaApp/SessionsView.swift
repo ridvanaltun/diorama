@@ -405,6 +405,7 @@ struct SessionHeader: View {
     @State private var showWhatIf = false
     @State private var draft: ExperimentDraft?
     @State private var renaming: String?
+    @State private var compareWith: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -432,6 +433,9 @@ struct SessionHeader: View {
                         .help("Connected through a Claude Code hook (Claude desktop, IDEs). Diorama sees tool results only: no model requests, token usage or Claude's replies.")
                 }
                 Spacer()
+                CopyableID(id: session.id)
+            }
+            HStack(spacing: 8) {
                 Button { showWhatIf = true } label: { Label("What if…", systemImage: "arrow.triangle.branch") }
                     .controlSize(.small)
                     .disabled(session.stats.toolResults == 0)
@@ -455,15 +459,19 @@ struct SessionHeader: View {
                 }
                 .controlSize(.small)
                 .fixedSize()
+                CompareWithMenu(session: session, other: $compareWith)
                 Button { Task { draft = await model.perform { try await $0.experimentDraft(sessionId: session.id) } } } label: {
                     Label("Experiment…", systemImage: "flask")
                 }
                 .controlSize(.small)
                 .disabled(session.kind != .interactive)
                 .help("Measure this session's steering: an experiment with the same task and project, plus an unmodified control")
-                CopyableID(id: session.id)
+                Spacer()
             }
             .sheet(isPresented: $showWhatIf) { WhatIfSheet(session: session) }
+            .sheet(isPresented: Binding(get: { compareWith != nil }, set: { if !$0 { compareWith = nil } })) {
+                if let other = compareWith { SessionCompareSheet(a: session.id, b: other) }
+            }
             .sheet(item: $draft) { d in
                 NewExperimentSheet(draft: d) { id in
                     Task { await model.refreshExperiments() }

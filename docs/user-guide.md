@@ -287,6 +287,16 @@ Local models never send content off your Mac and cost nothing, but they follow t
 - **CLI:** `diorama session show <id>`, `diorama session decision <tool_use_id>`, and `diorama session watch [<id>]` for live events.
 - **Raw capture:** full request and response bodies are kept for `retentionDays` (14 by default) and are available through the control API (`GET /api/v1/exchanges/<id>/raw`). Credentials are never stored.
 
+### Comparing two sessions
+
+**Compare…** in a session's header lists recent sessions, with ones from the same folder first. Pick one to see the two side by side:
+- duration, model requests, tool results, rewrites, failures, rewrite cost and tokens, each with B − A;
+- tool results per tool;
+- the rules that rewrote something in each session;
+- Claude's final answer in each, optionally as a word diff.
+
+Hook-mode sessions show "—" for request and token counts and have no final answer, because hook mode doesn't see model traffic. This is a quick look, not a measurement. For repeated trials with a control, use an experiment. `diorama session compare A B` and the MCP tool `compare_sessions` return the same comparison.
+
 ### Notes and tags
 
 Label sessions so you can find them later. In the session header, type in **Add tag** and press Return, or hover over a tag and click × to remove it. **Add Notes** opens a notes editor, and double-clicking the session name renames it. Tags appear in the session list, and the **Tag** menu above the list filters by one. Tags differing only in case are treated as the same tag. Notes and tags are included in session reports, in data exports (`session_tags`) and in MCP `get_session`.

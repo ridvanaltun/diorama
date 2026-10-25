@@ -502,6 +502,13 @@ enum MCPTools {
             return "Steering \(paused ? "paused" : "resumed") everywhere."
         },
         .init(
+            name: "compare_sessions",
+            description: "Two sessions side by side: duration, requests, tool results, rewrites, cost, tokens, tool results per tool, rules that rewrote, and Claude's final answer in each. For a measured comparison with a control, use an experiment.",
+            schema: schema(["a": string("First session id."), "b": string("Second session id.")], required: ["a", "b"]), readOnly: true
+        ) { s, a in
+            try await s.daemon().compareSessions(try arg(a, "a"), try arg(a, "b")).text
+        },
+        .init(
             name: "annotate_session",
             description: "Rename a session, or replace its notes or tags (the user's own labels, e.g. 'baseline'). Omitted fields stay as they are; tags replace the whole list.",
             schema: schema(["session_id": string("Session id."), "name": string("New name (optional)."), "notes": string("New notes (optional; empty clears)."),

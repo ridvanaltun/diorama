@@ -166,6 +166,12 @@ public struct ControlClient: Sendable {
     }
     public func setSteeringPaused(_ paused: Bool) async throws -> DioramaSettings { try await request("POST", "steering/\(paused ? "pause" : "resume")") }
     public func timeline(_ id: String) async throws -> Timeline { try await request("GET", "sessions/\(id)/timeline") }
+    /// Two sessions side by side (built from their timelines).
+    public func compareSessions(_ a: String, _ b: String) async throws -> SessionComparison {
+        async let x = timeline(a)
+        async let y = timeline(b)
+        return SessionComparison.make(try await x, try await y)
+    }
     /// A session's audit trail as a document: "md" or "html".
     public func sessionReport(_ sessionId: String, format: String = "md") async throws -> String {
         let r: [String: String] = try await request("GET", "sessions/\(sessionId)/report", query: ["format": format])

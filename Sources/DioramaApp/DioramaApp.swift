@@ -219,6 +219,10 @@ enum Snapshotter {
                 sheets.append(("sheet-experiment-from-session", AnyView(NewExperimentSheet(draft: draft, created: { _ in }).environment(model))))
             }
         }
+        let interactive = model.sessions.filter { $0.kind == .interactive }
+        if interactive.count >= 2, let c = try? await model.client?.compareSessions(interactive[1].id, interactive[0].id) {
+            sheets.append(("sheet-session-compare", AnyView(SessionCompareSheet(a: c.a.id, b: c.b.id, sample: c).environment(model))))
+        }
         if let run = model.experiments.first?.runs.first, let c = try? await model.client?.comparison(run.id), c.trials.filter({ $0.facts != nil }).count >= 2 {
             sheets.append(("sheet-compare-trials", AnyView(TrialCompareSheet(trials: c.trials.filter { $0.facts != nil }).environment(model))))
         }

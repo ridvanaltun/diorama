@@ -263,7 +263,7 @@ struct Sessions: AsyncParsableCommand {
 }
 
 struct Session: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Inspect a session.", subcommands: [Show.self, Decision.self, Watch.self, End.self, Pause.self, Resume.self, WhatIf.self, ToExperiment.self, Report.self, Note.self, Tag.self, Rename.self])
+    static let configuration = CommandConfiguration(abstract: "Inspect a session.", subcommands: [Show.self, Decision.self, Watch.self, End.self, Pause.self, Resume.self, WhatIf.self, ToExperiment.self, Report.self, Note.self, Tag.self, Rename.self, Compare.self])
 
     struct Show: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Show a session's timeline.")
@@ -364,6 +364,21 @@ struct Session: AsyncParsableCommand {
             for try await e in c.eventStream(session: id) {
                 print("\(e.createdAt.formatted(date: .omitted, time: .standard)) \(e.sessionId ?? "-") \(e.kind.rawValue): \(e.message)")
             }
+        }
+    }
+
+    struct Compare: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Compare two sessions side by side: counts, cost, duration, tools, rules and Claude's final answers.",
+            discussion: "diorama session compare ses_baseline ses_steered   (for a measured comparison with a control, use an experiment)")
+        @OptionGroup var global: GlobalOptions
+        @Argument var a: String
+        @Argument var b: String
+        @Flag var json = false
+        func run() async throws {
+            let c = try await global.client().compareSessions(a, b)
+            if json { return try printJSON(c) }
+            print(c.text)
         }
     }
 
