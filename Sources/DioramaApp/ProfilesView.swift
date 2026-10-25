@@ -109,7 +109,7 @@ struct NewProfileSheet: View {
                     }.tag(i)
                 }
             }
-            .frame(height: 200)
+            .frame(height: 400)
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }

@@ -155,5 +155,53 @@ public enum RuleTemplates {
                     id: "tmpl-redact-secrets", name: "Redact secrets", match: RuleMatch(tools: ["*"], includeErrors: true),
                     instructions: "", redact: RedactSpec(presets: [.secrets])),
             ]),
+        // Appended (not inserted) so `--template N` keeps pointing at the same template.
+        Profile(
+            name: "Web: try in shadow mode first",
+            description: "Shadow mode: computes the fact edit on real pages but always sends the original, recording what would have changed. Turn shadow off when the rewrites look right.",
+            rules: [
+                Rule(
+                    id: "tmpl-shadow-fact", name: "Edit one fact (shadow)",
+                    match: RuleMatch(tools: ["WebFetch"]),
+                    instructions: "If the page states a version number for the library it documents, change the latest version to be one minor version higher. Keep wording natural and change nothing else."),
+            ],
+            defaults: ProfileDefaults(shadow: true)),
+        Profile(
+            name: "Web: review every rewrite",
+            description: "Review mode: Claude waits while you approve or reject each rewrite; unanswered ones send the original after 60 seconds.",
+            rules: [
+                Rule(
+                    id: "tmpl-review-fact", name: "Edit one fact (reviewed)",
+                    match: RuleMatch(tools: ["WebFetch"]),
+                    instructions: "Change the fact named in the session prompt wherever the page states it. Keep wording natural and change nothing else."),
+            ],
+            defaults: ProfileDefaults(review: true)),
+        Profile(
+            name: "Web: half the pages (sampled)",
+            description: "Sampling: applies the edit to half of the fetched pages, chosen per page, so one session has both changed and unchanged results to compare.",
+            rules: [
+                Rule(
+                    id: "tmpl-sampled-fact", name: "Edit one fact in half the pages",
+                    match: RuleMatch(tools: ["WebFetch"], sample: 0.5),
+                    instructions: "Change the fact named in the session prompt wherever the page states it. Keep wording natural and change nothing else."),
+            ]),
+        Profile(
+            name: "Docs: note deprecations (classifier)",
+            description: "Content-aware: a cheap model first checks that a page documents an API or library; only then is a deprecation note added.",
+            rules: [
+                Rule(
+                    id: "tmpl-classified-docs", name: "Deprecation note on API docs",
+                    match: RuleMatch(tools: ["WebFetch"], classifier: RuleClassifier(question: "Does this page document an API, SDK or software library?")),
+                    instructions: "Add one sentence near the top, in the page's style, saying that the version named in the session prompt is deprecated. Change nothing else."),
+            ]),
+        Profile(
+            name: "Search: steer queries (input)",
+            description: "Input rule: changes WebSearch queries before they run, e.g. to prefer one site. Claude Code asks you to approve every changed call.",
+            rules: [
+                Rule(
+                    id: "tmpl-input-search", name: "Prefer a site in searches",
+                    match: RuleMatch(tools: ["WebSearch"], stage: .input),
+                    instructions: "If the query is about documentation, add the site named in the session prompt to the query (for example 'site:docs.example.com'). Otherwise leave it unchanged."),
+            ]),
     ]
 }

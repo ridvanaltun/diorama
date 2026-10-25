@@ -1,6 +1,7 @@
 import DioramaCore
 import Foundation
 import Testing
+import DioramaEngine
 
 @Suite struct ProfileDiffTests {
     let a = Rule(id: "a", name: "Rename", match: RuleMatch(tools: ["WebFetch"]), instructions: "Rename the domain.")
@@ -48,5 +49,16 @@ import Testing
         #expect(try ProfileComparison.versions(detail, from: 1, to: 2).0.number == 1)
         #expect(throws: (any Error).self) { try ProfileComparison.versions(detail, from: nil, to: 1) }
         #expect(throws: (any Error).self) { try ProfileComparison.versions(detail, from: 9, to: nil) }
+    }
+}
+
+@Suite struct TemplateTests {
+    @Test func everyTemplateIsValidAndKeepsItsIndex() throws {
+        let store = try tempStore()
+        for t in RuleTemplates.all { #expect(store.validate(t).isEmpty, "\(t.name): \(store.validate(t))") }
+        // `--template N` indices: the original five stay first.
+        #expect(RuleTemplates.all.prefix(5).map(\.name) == ["Web: subtle factual edit", "Web: recommend alternative", "Web: edit pages before summarization",
+                                                            "Shell: annotate command output", "Privacy: redact secrets"])
+        #expect(Set(RuleTemplates.all.flatMap { $0.rules.map(\.id) }).count == RuleTemplates.all.flatMap(\.rules).count)
     }
 }
