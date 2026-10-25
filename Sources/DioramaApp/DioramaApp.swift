@@ -100,7 +100,7 @@ struct RootView: View {
         }
         .task(id: model.connection) {
             guard let dir = model.snapshotDir, case .connected = model.connection else { return }
-            await Snapshotter.run(dir: dir) { section = $0 }
+            await Snapshotter.run(dir: dir, model: model) { section = $0 }
         }
         .alert("Diorama", isPresented: Binding(get: { model.lastError != nil }, set: { if !$0 { model.lastError = nil } })) {
             Button("OK") { model.lastError = nil }
@@ -110,26 +110,52 @@ struct RootView: View {
     }
 }
 
-/// Renders the app's own window (no screen-recording permission needed) for each section.
+/// Renders the app's own windows (no screen-recording permission needed): every sidebar
+/// section, then each sheet. Used for screenshots and as a UI smoke test in CI. With
+/// DIORAMA_SNAPSHOT_OFFSCREEN set, windows stay off-screen.
 @MainActor
 enum Snapshotter {
-    static func run(dir: URL, select: (SidebarSection) -> Void) async {
+    static var offscreen: Bool { ProcessInfo.processInfo.environment["DIORAMA_SNAPSHOT_OFFSCREEN"] != nil }
+
+    static func run(dir: URL, model: AppModel, select: (SidebarSection) -> Void) async {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        if let w = NSApp.windows.first(where: { $0.isVisible }) {
+        let main = NSApp.windows.first(where: { $0.isVisible })
+        if let w = main {
             w.setContentSize(NSSize(width: 1500, height: 920))
-            w.center()
+            if offscreen { w.setFrameOrigin(NSPoint(x: -30_000, y: -30_000)) } else { w.center() }
         }
         for section in SidebarSection.allCases {
             select(section)
             try? await Task.sleep(for: .seconds(2.5))
-            capture(dir.appendingPathComponent("\(section.rawValue.lowercased()).png"))
+            if let view = main?.contentView { capture(view, dir.appendingPathComponent("\(section.rawValue.lowercased()).png")) }
+        }
+        let sheets: [(String, AnyView)] = [
+            ("sheet-new-session", AnyView(NewSessionSheet().environment(model))),
+            ("sheet-new-profile", AnyView(NewProfileSheet(selection: .constant(nil)).environment(model))),
+            ("sheet-new-experiment", AnyView(NewExperimentSheet(created: { _ in }).environment(model))),
+        ]
+        for (name, view) in sheets {
+            let host = NSHostingView(rootView: view)
+            let window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: 700, height: 780), styleMask: [.titled], backing: .buffered, defer: false)
+            // Code-created windows default to releasedWhenClosed = true, which double-releases
+            // under ARC; with the close animation that crashed (EXC_BAD_ACCESS in objc_release).
+            window.isReleasedWhenClosed = false
+            window.animationBehavior = .none
+            window.contentView = host
+            window.orderFrontRegardless()
+            try? await Task.sleep(for: .seconds(1))
+            // Size the window to the sheet's natural size so nothing is clipped.
+            window.setContentSize(host.fittingSize)
+            host.layoutSubtreeIfNeeded()
+            try? await Task.sleep(for: .milliseconds(300))
+            capture(host, dir.appendingPathComponent("\(name).png"))
+            window.close()
         }
         NSApp.terminate(nil)
     }
 
-    static func capture(_ url: URL) {
-        guard let view = NSApp.windows.first(where: { $0.isVisible })?.contentView,
-              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+    static func capture(_ view: NSView, _ url: URL) {
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: rep)
         try? rep.representation(using: .png, properties: [:])?.write(to: url)
     }

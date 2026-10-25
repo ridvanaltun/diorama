@@ -347,10 +347,10 @@ struct NewExperimentSheet: View {
                 Button("Cancel") { dismiss() }
                 Button("Create") {
                     Task {
-                        let def = ExperimentDefinition(
-                            name: name, task: task, projectPath: project,
-                            claude: ClaudeRunOptions(model: claudeModel.isEmpty ? nil : claudeModel, allowedTools: allowedTools.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }, maxTurns: maxTurns, maxBudgetUSD: budget, isolateConfiguration: isolate),
-                            variants: variants.map { var v = $0; v.name = v.key; return v }, trialsPerVariant: trials, concurrency: concurrency, treatment: frozen ? .frozen : .fresh, judge: useJudge ? JudgeConfig() : nil)
+                        let def = FormLogic.experimentDefinition(FormLogic.ExperimentForm(
+                            name: name, task: task, project: project, claudeModel: claudeModel, allowedTools: allowedTools, maxTurns: maxTurns,
+                            budget: budget, trials: trials, concurrency: concurrency, frozen: frozen, isolate: isolate, useJudge: useJudge,
+                            variants: variants))
                         if let e = await model.perform({ try await $0.createExperiment(def) }) {
                             await model.refreshExperiments()
                             created(e.id)

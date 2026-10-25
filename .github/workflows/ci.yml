@@ -29,6 +29,8 @@ jobs:
         run: swift test
       - name: Bundle app (ad-hoc signed)
         run: ./scripts/bundle-app.sh
+      - name: UI smoke test (renders every screen and sheet off-screen)
+        run: ./scripts/ui-smoke-test.sh
       - uses: actions/upload-artifact@v7
         with:
           name: Diorama-app

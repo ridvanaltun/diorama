@@ -53,6 +53,7 @@ let package = Package(
             path: "Tests/DioramaTestSupport"
         ),
         .testTarget(name: "DioramaJSONTests", dependencies: ["DioramaJSON"]),
+        .testTarget(name: "DioramaAppTests", dependencies: ["DioramaApp", "DioramaCore"]),
         .testTarget(name: "DioramaEngineTests", dependencies: ["DioramaEngine", "DioramaStore", "DioramaJSON", "DioramaCore"]),
         .testTarget(
             name: "DioramaGatewayTests",

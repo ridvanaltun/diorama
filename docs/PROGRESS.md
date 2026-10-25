@@ -2,6 +2,25 @@
 
 This file is kept current while work is in progress, so that progress survives restarts and context limits.
 
+## v1.1.0 work in progress (2026-10-25)
+The user doesn't want an Apple Developer account (no signing or notarization). Everything else from the follow-up list:
+
+| # | Item | State |
+|---|---|---|
+| 1 | Verify the MCP tool_result shape live | ✅ Done: blocks `[text, image, text]` (poc-findings) |
+| 2 | Pre-extraction mode (rule `stage: page`) | ✅ Committed and pushed (e0f9958), with engine tests and a real-Claude contract test |
+| 3 | Opt-in LLM judge | ✅ Committed and pushed |
+| 4 | Ollama provider (`ollama:` models) | ✅ Committed and pushed. Tested against a fake server only; Ollama isn't installed |
+| 5 | Update checker (`diorama update`, in-app notice) | ✅ Committed and pushed (dbf423f). Verified: the private-repo check via `gh`, plus download and checksum |
+| 6 | UI tests | ⏳ **Written but not yet built or run:** `Sources/DioramaApp/FormLogic.swift` (views refactored to use it), `Tests/DioramaAppTests/FormLogicTests.swift` with its test target in Package.swift, sheet rendering in `Snapshotter`, `scripts/ui-smoke-test.sh` (needs `chmod +x`), and a CI step. Next: `swift build && swift test`, run the smoke test on `dist/` after `bundle-app.sh`, then commit. |
+| 7 | Live experiment, 10 trials per variant (Haiku; page-stage profile to show frozen reuse) | Pending |
+| 8 | Name and trademark check; public-readiness preparation | Pending. Making the repository public needs the user's explicit OK, and the self-hosted runner must not be used for a public repository |
+| 9 | Release v1.1.0 (`scripts/release.sh 1.1.0`) | Pending; the CHANGELOG `Unreleased` section is already written |
+
+Docs already updated for items 2–6: CHANGELOG (Unreleased), the user guide, decisions D29–D33, and poc-findings.
+
+**Blocker hit:** Claude Code's auto-mode safety check repeatedly returned no verdict for Bash and WebSearch, so building, testing, committing and searching paused. File edits continued.
+
 ## Current state (2026-10-25)
 - **Every phase is implemented.** Automated verification is complete for everything that can be tested without credentials or live usage. The phase-by-phase status is in [implementation-plan.md](implementation-plan.md#phase-log).
 - **Test suite:** `swift test`, **63 tests in 12 suites, all passing**. Five of them are contract tests with the real Claude Code CLI 2.1.296. There are 0 compiler warnings.

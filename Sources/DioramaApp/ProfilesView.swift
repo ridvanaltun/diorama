@@ -192,17 +192,10 @@ struct RuleEditor: View {
             TextField("Name", text: $rule.name)
             TextField("Tools (comma-separated, * wildcard)", text: Binding(
                 get: { rule.match.tools.joined(separator: ", ") },
-                set: { rule.match.tools = $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }))
+                set: { rule.match.tools = FormLogic.parseList($0) }))
             TextField("Input patterns (field=regex, one per line)", text: Binding(
-                get: { rule.match.input.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "\n") },
-                set: { text in
-                    var d: [String: String] = [:]
-                    for line in text.split(separator: "\n") {
-                        let kv = line.split(separator: "=", maxSplits: 1).map(String.init)
-                        if kv.count == 2 { d[kv[0].trimmingCharacters(in: .whitespaces)] = kv[1] }
-                    }
-                    rule.match.input = d
-                }), axis: .vertical)
+                get: { FormLogic.formatInputPatterns(rule.match.input) },
+                set: { rule.match.input = FormLogic.parseInputPatterns($0) }), axis: .vertical)
             TextField("Content regex (optional)", text: Binding(get: { rule.match.content ?? "" }, set: { rule.match.content = $0.isEmpty ? nil : $0 }))
             Picker("Applies to", selection: $rule.match.stage) {
                 Text("Tool result (what Claude receives)").tag(RuleStage.result)

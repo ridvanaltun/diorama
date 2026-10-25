@@ -66,6 +66,34 @@ A profile is JSON (`diorama profiles export <name>` shows one). Example:
 
 Templates: `diorama profiles templates`, then `diorama profiles create --template N`.
 
+### Where a rule applies: tool result or raw page
+
+By default (`"stage": "result"`), a rule rewrites the **tool result** Claude receives. For WebFetch, that's a summary: WebFetch downloads the page and has a small model extract what Claude asked for, and Claude only sees that extract.
+
+With `"stage": "page"` (WebFetch only), the rule rewrites the **raw page** before the summarizing model reads it ("pre-extraction"):
+
+```json
+{ "name": "Rename on page", "match": { "tools": ["WebFetch"], "input": { "url": "example\\.com" }, "stage": "page" },
+  "instructions": "Replace the product name X with Y everywhere." }
+```
+
+- **Reproducible:** a page is identified by its URL and content, not by the prompt Claude happened to write. Frozen experiment treatments are therefore reused across trials, unlike WebFetch summaries, which vary from run to run.
+- **Indirect:** Claude sees the summarizer's interpretation of your edit, which is closer to how a real altered web page would reach it.
+- **Session prompts too:** `diorama run --prompt "…" --prompt-stage page`, or the pre-extraction toggle in the app's New Session sheet.
+- **In the audit trail:** page decisions appear as `WebFetch (page)` entries with the id `page:<tool_use_id>`.
+
+### Rewrite models
+
+Any Anthropic model id works (default `claude-haiku-5-5`). A rule's `model` overrides the profile default.
+
+For **local models**, install [Ollama](https://ollama.com), pull a model, and use the `ollama:` prefix, for example `"model": "ollama:llama3.1"`. The Ollama server address is a setting:
+
+```bash
+diorama settings set ollamaURL http://127.0.0.1:11434
+```
+
+Local models never send content off your Mac and cost nothing, but they follow the edit format less reliably. Diorama retries once when an edit doesn't apply.
+
 ## Reading the audit trail
 
 - **App → Sessions** shows a live timeline of every request: its class, status, token usage including cache reads and writes, and the latency Diorama added. Each tool result is marked `rewritten`, `unchanged`, `failed`, `client-modified` or replayed, followed by Claude's next text and tool calls. Selecting a tool result shows the original and rewritten text (as a diff or side by side), the rules with their content hashes and profile version, the instructions, every rewrite attempt (model, latency, cost, explanation, edits, errors), and what Claude did next.
@@ -93,7 +121,8 @@ Key fields:
 - `variants`: two or more. Exactly one with no `profile` and no `prompt` is the **control**.
 - `trialsPerVariant`, `concurrency`, `seed`.
 - `treatment`: `frozen` (default) reuses one rewrite for identical tool results across trials. `fresh` rewrites in every trial, which also measures the rewrite agent's variability.
-  Reuse needs byte-identical tool results. WebFetch summarizes pages with a model, so its output usually differs between trials, and each trial then gets its own rewrite. The comparison says so when that happens. Read, Bash, Grep and most MCP tools return deterministic output and are reused.
+  Reuse needs byte-identical tool results. WebFetch summarizes pages with a model, so its output usually differs between trials, and each trial then gets its own rewrite. The comparison says so when that happens. Read, Bash, Grep and most MCP tools return deterministic output and are reused. For WebFetch, use **page-stage rules** to get reuse.
+- `judge` (optional): `{"model": "claude-haiku-5-5"}` turns on the LLM judge. After the run, every successful trial is rated `adopted`, `not_adopted` or `unclear`, according to whether its final answer used the changed information. Controls are rated against the same changes, as a baseline. This costs one small call per trial on your rewrite key (or $0 with `ollama:` models).
 
 `diorama experiment run exp.json` shows an estimate for Claude Code usage and the rewrite agent, then asks you to type `yes`. The control API also refuses to start a run without the estimate's confirmation token. Trials run in blocked random order: every variant once per round, shuffled by the seed.
 
@@ -103,6 +132,7 @@ Key fields:
   - *echoed rewritten content*: text introduced by a rewrite appears in the final answer
   - *flagged suspicion*: wording such as "looks altered" or "doesn't match"
   - *tried to verify*: re-fetching a rewritten URL, or curl/wget after a rewrite
+  - *LLM judge: adopted* (when enabled): a model's verdict, with its rationale stored in each trial's evidence
 - Proportions come with Wilson 95% intervals. Variants with fewer than 10 valid trials are marked exploratory, and reports state that differences are associations, not proof of cause.
 - Trials whose rewrite failed are marked `invalid` and excluded from the facts, because they didn't receive the intended treatment.
 
@@ -118,6 +148,21 @@ Key fields:
 | `retentionDays` | How long raw request/response capture is kept |
 | `captureRawBodies` | `true` or `false` |
 | `claudePath` | Path to the `claude` executable |
+| `ollamaURL` | Ollama server for `ollama:` models (default `http://127.0.0.1:11434`) |
+
+## Updates
+
+```bash
+diorama update             # is there a newer release?
+diorama update --download  # downloads the zip to ~/Downloads and verifies its checksum
+```
+
+The app checks once a day and shows a notice in the sidebar. Turn that off or check now under Settings → Updates. Diorama never replaces itself. To install an update:
+1. Quit the app and run `diorama daemon stop`.
+2. Replace `/Applications/Diorama.app` with the new copy.
+3. Run `xattr -dr com.apple.quarantine /Applications/Diorama.app`.
+
+The builds aren't notarized. For a private repository, the check uses the signed-in `gh` CLI.
 
 ## Data locations
 

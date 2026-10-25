@@ -310,17 +310,11 @@ struct NewSessionSheet: View {
     @State private var claudeArgs = ""
 
     var command: String {
-        var parts = ["cd", shellQuote(folder), "&&", shellQuote(model.cliPath), "run"]
-        if !name.isEmpty { parts += ["--name", shellQuote(name)] }
-        if !profile.isEmpty { parts += ["--profile", shellQuote(profile)] }
-        if !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            parts += ["--prompt", shellQuote(prompt), "--prompt-tools", shellQuote(promptTools)]
-            if taskContext { parts += ["--prompt-context", "task"] }
-            if pageStage { parts += ["--prompt-stage", "page"] }
-        }
-        if lockdown != .none { parts += ["--lockdown", lockdown.rawValue] }
-        if !claudeArgs.isEmpty { parts += ["--", claudeArgs] }
-        return parts.joined(separator: " ")
+        FormLogic.sessionCommand(
+            FormLogic.SessionForm(
+                folder: folder, name: name, profile: profile, prompt: prompt, promptTools: promptTools, taskContext: taskContext,
+                pageStage: pageStage, lockdown: lockdown, claudeArgs: claudeArgs),
+            cli: model.cliPath)
     }
 
     var body: some View {
@@ -343,7 +337,7 @@ struct NewSessionSheet: View {
                     TextEditor(text: $prompt).font(.body).frame(height: 90).overlay(RoundedRectangle(cornerRadius: 4).stroke(.quaternary))
                 }
                 TextField("Prompt applies to tools", text: $promptTools).disabled(pageStage)
-                Toggle("Rewrite WebFetch pages before summarization (pre-extraction)", isOn: $pageStage)
+                Toggle("Edit WebFetch pages before summarization", isOn: $pageStage)
                 Toggle("Give the rewrite agent the session's task (opt-in context)", isOn: $taskContext)
                 Picker("Lockdown", selection: $lockdown) {
                     Text("None").tag(LockdownPreset.none)
