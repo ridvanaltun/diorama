@@ -450,10 +450,21 @@ func crc32(_ bytes: [UInt8]) -> UInt32 {
         #expect(sent["model"] as? String == "llama3.1")
         #expect(sent["stream"] as? Bool == false)
         #expect((sent["format"] as? [String: Any])?["type"] as? String == "object")
+        #expect((sent["options"] as? [String: Any])?["num_ctx"] as? Int == 8192, "a context that fits the prompt, not Ollama's small default")
         #expect(Pricing.cost(model: "ollama:llama3.1", usage: TokenUsage(inputTokens: 1000)) == 0)
         let j = await p.judge(JudgeRequest(task: "t", changes: [JudgedChange(before: "a", after: "b")], finalOutput: "b", question: "q", model: "ollama:llama3.1"))
         #expect(j.verdict == "adopted")
         #expect(j.costUSD == 0)
+    }
+
+    @Test func sizesTheContextToThePrompt() async {
+        #expect(OllamaRewriteProvider.contextSize(promptChars: 3000, maxOutput: 1024) == 8192)
+        #expect(OllamaRewriteProvider.contextSize(promptChars: 60_000, maxOutput: 4096) == 26624)
+        #expect(OllamaRewriteProvider.contextSize(promptChars: 200_000, maxOutput: 4096) == nil)
+        let p = OllamaRewriteProvider(baseURL: { URL(string: "http://127.0.0.1:9")! })
+        let r = await p.rewrite(RewriteRequest(toolName: "t", toolInput: "{}", segments: [String(repeating: "x", count: 250_000)], instructions: [], taskContext: nil,
+                                               model: "ollama:m", effort: nil, maxOutputTokens: 1000, timeout: 3))
+        #expect(r.status == .failed && r.error?.contains("too long for a local model") == true, "fails clearly instead of being cut off")
     }
 
     @Test func reportsWhenOllamaIsNotRunning() async {

@@ -11,6 +11,9 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 - **Compare models in the playground.** Run the same rewrite on up to four models at once (**Compare models**, `diorama profiles test --rewrite --models a,b`, MCP `test_rules` with `models`) and see each one's result, diff, time and cost, with the fastest and cheapest marked.
 - **Did Claude use it?** Each rewritten tool result is labeled from what Claude did next: **used** (it repeated text the rewrite introduced), **questioned**, **checked** (re-fetched or ran a network command), **original surfaced**, or **no sign**, with the evidence. Shown in the timeline, the audit record, a "used by Claude" tile in the session header, reports and MCP `get_session`. A heuristic, labeled as one.
 
+### Fixed
+- Local (`ollama:`) models were limited to Ollama's default context (4k tokens on most Macs), which cuts long tool results silently. Each request now asks for a context that fits it (8k–64k tokens), and results too long for that fail with a clear message.
+
 ## 1.5.0 — 2026-10-25
 
 ### New

@@ -24,12 +24,28 @@ public struct OllamaRewriteProvider: RewriteProvider, JudgeProvider {
         var timedOut = false
     }
 
-    func chat(model: String, system: String, user: String, schema: JSONValue, timeout: TimeInterval) async -> (request: String, result: ChatResult) {
+    /// Ollama's default context is small (4k tokens on Macs with under 24 GB of memory) and longer
+    /// prompts are cut silently, so every request asks for a context that fits it.
+    public static let minContext = 8192, maxContext = 65536
+
+    /// Tokens to ask for (a conservative 3 characters per token, plus room for the answer), or nil
+    /// when even `maxContext` is too small.
+    public static func contextSize(promptChars: Int, maxOutput: Int) -> Int? {
+        let needed = promptChars / 3 + 512 + min(maxOutput, 8192)
+        guard needed <= maxContext else { return nil }
+        return max(minContext, (needed + 2047) / 2048 * 2048)
+    }
+
+    func chat(model: String, system: String, user: String, schema: JSONValue, timeout: TimeInterval, maxOutput: Int = 1024) async -> (request: String, result: ChatResult) {
+        guard let context = Self.contextSize(promptChars: system.count + user.count, maxOutput: maxOutput) else {
+            let tokens = (system.count + user.count) / 3
+            return ("", ChatResult(error: "too long for a local model: about \(tokens) tokens, more than the \(Self.maxContext)-token context Diorama asks Ollama for. Lower the rule's max input, or use a Claude model for this rule"))
+        }
         let body: JSONValue = .object([
             "model": .string(Self.localModel(model)),
             "stream": .bool(false),
             "format": schema,
-            "options": .object(["temperature": .number("0")]),
+            "options": .object(["temperature": .number("0"), "num_ctx": .number(String(context))]),
             "messages": .array([
                 .object(["role": .string("system"), "content": .string(system)]),
                 .object(["role": .string("user"), "content": .string(user)]),
@@ -65,7 +81,8 @@ public struct OllamaRewriteProvider: RewriteProvider, JudgeProvider {
 
     public func rewrite(_ r: RewriteRequest) async -> RewriteResponse {
         let start = Date()
-        let (request, res) = await chat(model: r.model, system: RewritePrompt.system, user: RewritePrompt.userMessage(r), schema: RewritePrompt.schema, timeout: r.timeout)
+        let (request, res) = await chat(model: r.model, system: RewritePrompt.system, user: RewritePrompt.userMessage(r), schema: RewritePrompt.schema, timeout: r.timeout,
+                                        maxOutput: r.maxOutputTokens)
         let latency = Date().timeIntervalSince(start) * 1000
         guard let content = res.content else {
             return RewriteResponse(status: res.timedOut ? .timedOut : .failed, error: res.error, modelServed: res.model, usage: res.usage, rawRequest: request, rawResponse: res.raw, latencyMs: latency)

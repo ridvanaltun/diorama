@@ -296,6 +296,8 @@ diorama settings set ollamaURL http://127.0.0.1:11434
 
 Local models never send content off your Mac and cost nothing, but they follow the edit format less reliably. Diorama retries once when an edit doesn't apply.
 
+Ollama's default context is small (4k tokens on Macs with less than 24 GB of memory) and cuts longer prompts silently. So each request asks Ollama for a context that fits it, between 8k and 64k tokens. A tool result too long even for 64k fails with "too long for a local model" instead of reaching the model cut off. Lower the rule's **Max input**, or use a Claude model for that rule. Larger contexts need more memory and run slower.
+
 ## Reading the audit trail
 
 After you click a tool result, ↑ and ↓ move to the previous or next one, and its audit record follows. Esc closes the record.
