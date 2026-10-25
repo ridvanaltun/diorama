@@ -421,6 +421,20 @@ enum MCPTools {
             return try HookInstaller.uninstall(settings: url) ? "Removed Diorama's hook from \(url.path)." : "No Diorama hook in \(url.path)."
         },
         .init(
+            name: "set_steering_paused",
+            description: "Pause or resume steering, for one session (session_id) or everywhere (no session_id). While paused, tool results reach Claude unchanged: no AI rewrites or input changes, though redaction still applies. Experiment runs aren't affected.",
+            schema: schema(["paused": ["type": "boolean", "description": "true to pause, false to resume."], "session_id": string("Only this session (optional).")], required: ["paused"]),
+            readOnly: false
+        ) { s, a in
+            guard let paused = a["paused"] as? Bool else { throw MCPServer.ToolError("missing argument 'paused'") }
+            if let id = a["session_id"] as? String, !id.isEmpty {
+                let info = try await s.daemon().setPaused(id, paused)
+                return "Steering \(paused ? "paused" : "resumed") for “\(info.name)” (\(info.id))."
+            }
+            _ = try await s.daemon().setSteeringPaused(paused)
+            return "Steering \(paused ? "paused" : "resumed") everywhere."
+        },
+        .init(
             name: "end_session", description: "Mark a session as ended (it stops appearing as running; its records stay).",
             schema: schema(["session_id": string("Session id.")], required: ["session_id"]), readOnly: false
         ) { s, a in

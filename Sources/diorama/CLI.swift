@@ -12,7 +12,7 @@ struct Diorama: AsyncParsableCommand {
         discussion: "Diorama routes Claude Code sessions you start with `diorama run` through a local gateway that can rewrite tool results according to your rules, records everything, and runs A/B experiments.",
         version: DioramaVersion.current,
         subcommands: [
-            Run.self, Hook.self, MCP.self, Spend.self, Search.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
+            Run.self, Hook.self, MCP.self, Spend.self, Search.self, PauseAll.self, ResumeAll.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
         ])
 }
 
@@ -250,7 +250,7 @@ struct Sessions: AsyncParsableCommand {
 }
 
 struct Session: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Inspect a session.", subcommands: [Show.self, Decision.self, Watch.self, End.self, WhatIf.self, ToExperiment.self, Report.self])
+    static let configuration = CommandConfiguration(abstract: "Inspect a session.", subcommands: [Show.self, Decision.self, Watch.self, End.self, Pause.self, Resume.self, WhatIf.self, ToExperiment.self, Report.self])
 
     struct Show: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Show a session's timeline.")
@@ -351,6 +351,26 @@ struct Session: AsyncParsableCommand {
             for try await e in c.eventStream(session: id) {
                 print("\(e.createdAt.formatted(date: .omitted, time: .standard)) \(e.sessionId ?? "-") \(e.kind.rawValue): \(e.message)")
             }
+        }
+    }
+
+    struct Pause: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Pause steering for a session: tool results reach Claude unchanged (redaction still applies).")
+        @OptionGroup var global: GlobalOptions
+        @Argument var id: String
+        func run() async throws {
+            let s = try await global.client().setPaused(id, true)
+            print("⏸ Steering paused for “\(s.name)”. Resume with `diorama session resume \(s.id)`.")
+        }
+    }
+
+    struct Resume: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Resume steering for a session.")
+        @OptionGroup var global: GlobalOptions
+        @Argument var id: String
+        func run() async throws {
+            let s = try await global.client().setPaused(id, false)
+            print("▶ Steering resumed for “\(s.name)”.")
         }
     }
 
@@ -872,5 +892,25 @@ struct Search: AsyncParsableCommand {
             let snippet = h.snippet.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "⟦", with: "\u{1B}[1m").replacingOccurrences(of: "⟧", with: "\u{1B}[0m")
             print("    \(snippet)\n")
         }
+    }
+}
+
+struct PauseAll: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "pause",
+        abstract: "Pause steering everywhere: no AI rewrites or input changes in any session until `diorama resume` (redaction keeps working; experiment runs are not affected).")
+    @OptionGroup var global: GlobalOptions
+    func run() async throws {
+        _ = try await global.client().setSteeringPaused(true)
+        print("⏸ Steering paused everywhere. Resume with `diorama resume`.")
+    }
+}
+
+struct ResumeAll: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "resume", abstract: "Resume steering everywhere.")
+    @OptionGroup var global: GlobalOptions
+    func run() async throws {
+        _ = try await global.client().setSteeringPaused(false)
+        print("▶ Steering resumed.")
     }
 }

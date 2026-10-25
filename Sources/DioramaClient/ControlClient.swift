@@ -116,6 +116,10 @@ public struct ControlClient: Sendable {
     public func createSession(_ spec: SessionSpec) async throws -> SessionLaunch { try await request("POST", "sessions", body: spec) }
     public func session(_ id: String) async throws -> SessionInfo { try await request("GET", "sessions/\(id)") }
     public func endSession(_ id: String) async throws -> SessionInfo { try await request("POST", "sessions/\(id)/end") }
+    /// Pauses or resumes steering for one session.
+    public func setPaused(_ id: String, _ paused: Bool) async throws -> SessionInfo { try await request("POST", "sessions/\(id)/\(paused ? "pause" : "resume")") }
+    /// Pauses or resumes steering everywhere.
+    public func setSteeringPaused(_ paused: Bool) async throws -> DioramaSettings { try await request("POST", "steering/\(paused ? "pause" : "resume")") }
     public func timeline(_ id: String) async throws -> Timeline { try await request("GET", "sessions/\(id)/timeline") }
     /// A session's audit trail as a document: "md" or "html".
     public func sessionReport(_ sessionId: String, format: String = "md") async throws -> String {

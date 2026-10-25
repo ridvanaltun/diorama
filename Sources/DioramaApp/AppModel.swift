@@ -136,6 +136,10 @@ final class AppModel {
         case .sessionCreated, .sessionEnded: await refreshSessions()
         case .profileUpdated: await refreshProfiles()
         case .runStarted, .runFinished, .trialFinished: await refreshExperiments()
+        case .warning where ev.message.hasPrefix("Steering"):
+            // Paused or resumed from the CLI, MCP or another window.
+            await refreshSessions()
+            await refreshSettings()
         case .exchangeFinished, .decisionMade, .rewriteFailed:
             // Cheap: update just the counters for the list.
             if eventTick % 5 == 0 { await refreshSessions() }

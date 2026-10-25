@@ -87,6 +87,10 @@ public final class Store: @unchecked Sendable {
           tool, input, original, rewritten, note, tokenize = 'unicode61 remove_diacritics 2');
         CREATE TABLE search_indexed(kind TEXT NOT NULL, ref TEXT NOT NULL, PRIMARY KEY(kind, ref));
         """,
+        // v6: pausing steering per session
+        """
+        ALTER TABLE sessions ADD COLUMN paused INTEGER NOT NULL DEFAULT 0;
+        """,
     ]
 
     public static var schemaVersion: Int { migrations.count }

@@ -74,7 +74,9 @@ struct ControlAPI: Sendable {
             return try ok(store.settings())
         }
         if Self.match(method, route, "PUT", "settings") != nil {
-            let s = try decode(DioramaSettings.self, req)
+            var s = try decode(DioramaSettings.self, req)
+            // Pausing has its own endpoints; a settings save (possibly from an older draft) never changes it.
+            s.steeringPaused = store.settings().steeringPaused
             guard s.retentionDays >= 1, s.retentionDays <= 3650 else { throw Failure(status: 400, message: "retentionDays must be 1–3650") }
             if let b = s.dailyBudgetUSD, !(b >= 0) { throw Failure(status: 400, message: "dailyBudgetUSD must be zero or more") }
             try store.saveSettings(s)
@@ -130,6 +132,23 @@ struct ControlAPI: Sendable {
             let id = c[0]
             guard let s = try store.session(id: id) else { throw notFound("session") }
             return try ok(try store.info(s))
+        }
+        if let c = Self.match(method, route, "POST", "sessions/:id/pause") ?? Self.match(method, route, "POST", "sessions/:id/resume") {
+            let id = c[0]
+            guard try store.session(id: id) != nil else { throw notFound("session") }
+            try store.setPaused(sessionId: id, route.last == "pause")
+            return try ok(try store.info(try store.session(id: id)!))
+        }
+        if Self.match(method, route, "POST", "steering/pause") != nil || Self.match(method, route, "POST", "steering/resume") != nil {
+            var s = store.settings()
+            let pause = route.last == "pause"
+            if s.steeringPaused != pause {
+                s.steeringPaused = pause
+                try store.saveSettings(s)
+                daemon.sessions.settingsChanged()
+                store.addEvent(sessionId: nil, kind: .warning, message: pause ? "Steering paused everywhere: tool results reach Claude unchanged (redaction still applies)" : "Steering resumed everywhere")
+            }
+            return try ok(s)
         }
         if let c = Self.match(method, route, "POST", "sessions/:id/end") {
             let id = c[0]

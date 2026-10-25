@@ -271,6 +271,7 @@ struct SessionRow: View {
             Text(session.profileName.map { "\($0) · v\(session.profileVersionNumber ?? 0)" } ?? (session.prompt != nil ? "Session prompt" : "No rules (record only)"))
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             HStack(spacing: 6) {
+                if session.isPaused { Badge(text: "paused", color: .orange) }
                 if session.isHook { Badge(text: "hook", color: .teal).help("Hook mode: tool results only") }
                 if session.stats.rewrites > 0 { Badge(text: Fmt.plural(session.stats.rewrites, "rewrite"), color: .purple) }
                 if session.stats.failures > 0 { Badge(text: Fmt.plural(session.stats.failures, "failure"), color: .red) }
@@ -379,6 +380,7 @@ struct SessionHeader: View {
                 Text(session.name).font(.title2.bold()).lineLimit(1)
                 Badge(text: session.status == .active ? "running" : "ended", color: session.status == .active ? .green : .secondary)
                 if session.kind == .trial { Badge(text: "trial", color: .blue) }
+                if session.isPaused { Badge(text: "paused", color: .orange).help("Steering is paused: tool results reach Claude unchanged (redaction still applies)") }
                 if session.isHook {
                     Badge(text: "hook mode", color: .teal)
                         .help("Connected through a Claude Code hook (Claude desktop, IDEs). Diorama sees tool results only: no model requests, token usage or Claude's replies.")
@@ -388,6 +390,15 @@ struct SessionHeader: View {
                     .controlSize(.small)
                     .disabled(session.stats.toolResults == 0)
                     .help("Re-run this session's tool results through other rules and compare")
+                if session.status == .active, session.kind == .interactive {
+                    Button {
+                        Task { _ = await model.perform { try await $0.setPaused(session.id, !session.isPaused) }; await model.refreshSessions() }
+                    } label: {
+                        Label(session.isPaused ? "Resume" : "Pause", systemImage: session.isPaused ? "play.fill" : "pause.fill")
+                    }
+                    .controlSize(.small)
+                    .help(session.isPaused ? "Resume steering for this session" : "Pause steering: tool results reach Claude unchanged until you resume (redaction still applies)")
+                }
                 Menu {
                     Button("Markdown report…") { Task { await export("md") } }
                     Button("HTML report…") { Task { await export("html") } }

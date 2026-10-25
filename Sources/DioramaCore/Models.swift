@@ -396,13 +396,17 @@ public struct SessionInfo: Codable, Sendable, Hashable, Identifiable {
     /// Nil (older daemons) means `.gateway`.
     public var via: SessionVia?
     public var isHook: Bool { via == .hook }
+    /// Steering paused for this session (nil from older daemons).
+    public var paused: Bool?
+    public var isPaused: Bool { paused == true }
 
     public init(
         id: String, name: String, cwd: String, kind: SessionKind, status: SessionStatus, createdAt: Date, endedAt: Date?,
         profileId: String?, profileName: String?, profileVersionId: String?, profileVersionNumber: Int?,
         prompt: SessionPrompt?, lockdown: LockdownPreset, trialId: String?, claudeSessionIds: [String], flags: [String],
-        stats: SessionStats, via: SessionVia? = nil
+        stats: SessionStats, via: SessionVia? = nil, paused: Bool? = nil
     ) {
+        self.paused = paused
         self.via = via
         self.id = id
         self.name = name
@@ -1035,10 +1039,13 @@ public struct DioramaSettings: Codable, Sendable, Hashable {
     /// Cap on rewrite-agent spending per local calendar day (interactive sessions, playground,
     /// what-if; experiments are covered by their own approved estimate). Nil = no cap.
     public var dailyBudgetUSD: Double?
+    /// Pauses steering everywhere: AI rewrites and input rules stop in every session; redaction keeps working.
+    public var steeringPaused: Bool
 
     public static let defaultOllamaURL = "http://127.0.0.1:11434"
 
     public init(defaultModel: String = ProfileDefaults.defaultModel, retentionDays: Int = 14, captureRawBodies: Bool = true, claudePath: String? = nil, ollamaURL: String = DioramaSettings.defaultOllamaURL) {
+        self.steeringPaused = false
         self.ollamaURL = ollamaURL
         self.defaultModel = defaultModel
         self.retentionDays = retentionDays
@@ -1055,6 +1062,7 @@ public struct DioramaSettings: Codable, Sendable, Hashable {
         claudePath = try c.decodeIfPresent(String.self, forKey: .claudePath)
         ollamaURL = try c.decodeIfPresent(String.self, forKey: .ollamaURL) ?? DioramaSettings.defaultOllamaURL
         dailyBudgetUSD = try c.decodeIfPresent(Double.self, forKey: .dailyBudgetUSD)
+        steeringPaused = try c.decodeIfPresent(Bool.self, forKey: .steeringPaused) ?? false
     }
 }
 

@@ -327,6 +327,14 @@ public final class DecisionEngine: Sendable {
             return redaction != nil ? recordRedacted(why) : record(.unchanged, why, refs: app.refs, instructions: instructionTexts)
         }
 
+        // Paused steering (this session, or everywhere): no AI rewrites or input changes; redaction still applies.
+        // Experiment trials are exempt; pausing one mid-run would corrupt the experiment.
+        if session.trialId == nil, store.settings().steeringPaused || store.isPaused(sessionId: session.id) {
+            let scope = store.settings().steeringPaused ? "steering is paused everywhere" : "steering is paused for this session"
+            return redaction != nil ? recordRedacted("not rewritten further: \(scope)")
+                : record(.unchanged, "not rewritten: \(scope)", refs: app.refs, instructions: instructionTexts)
+        }
+
         // Budget guard: interactive sessions stop calling the rewrite agent once a daily cap is used up.
         // Experiment trials are exempt; they run against their own approved estimate.
         if session.trialId == nil,

@@ -23,6 +23,8 @@ public struct SessionRecord: Sendable, Hashable {
     public var via: SessionVia = .gateway
     /// Claude Code's transcript (hook mode only).
     public var transcriptPath: String?
+    /// Steering paused for this session: AI rewrites and input rules stop; redaction keeps working.
+    public var paused = false
 }
 
 extension Store {
@@ -72,7 +74,8 @@ extension Store {
             treatmentScope: r.string("treatment_scope"),
             claudeSessionIds: decode([String].self, r.string("claude_session_ids")) ?? [],
             flags: decode([String].self, r.string("flags")) ?? [],
-            via: SessionVia(rawValue: r.string("via") ?? "") ?? .gateway, transcriptPath: r.string("transcript_path"))
+            via: SessionVia(rawValue: r.string("via") ?? "") ?? .gateway, transcriptPath: r.string("transcript_path"),
+            paused: (r.int("paused") ?? 0) != 0)
     }
 
     public func session(id: String) throws -> SessionRecord? {
@@ -93,6 +96,18 @@ extension Store {
     public func endSession(id: String) throws {
         try db.run("UPDATE sessions SET status = 'ended', ended_at = ? WHERE id = ? AND status = 'active'", [.date(Date()), .text(id)])
         if db.changes > 0 { addEvent(sessionId: id, kind: .sessionEnded, message: "Session ended", refId: id) }
+    }
+
+    /// Pauses or resumes steering for a session (checked on every decision, so it takes effect at once).
+    public func setPaused(sessionId: String, _ paused: Bool) throws {
+        try db.run("UPDATE sessions SET paused = ? WHERE id = ? AND paused != ?", [.int(paused ? 1 : 0), .text(sessionId), .int(paused ? 1 : 0)])
+        if db.changes > 0 {
+            addEvent(sessionId: sessionId, kind: .warning, message: paused ? "Steering paused: tool results reach Claude unchanged (redaction still applies)" : "Steering resumed", refId: sessionId)
+        }
+    }
+
+    public func isPaused(sessionId: String) -> Bool {
+        ((try? db.query("SELECT paused FROM sessions WHERE id = ?", [.text(sessionId)]).first?.int("paused")) ?? 0) != 0
     }
 
     public func setTranscriptPath(sessionId: String, _ path: String) throws {
@@ -139,7 +154,7 @@ extension Store {
             id: r.id, name: r.name, cwd: r.cwd, kind: r.kind, status: r.status, createdAt: r.createdAt, endedAt: r.endedAt,
             profileId: r.profileId, profileName: r.profileVersion?.profile.name, profileVersionId: r.profileVersion?.id,
             profileVersionNumber: r.profileVersion?.number, prompt: r.prompt, lockdown: r.lockdown, trialId: r.trialId,
-            claudeSessionIds: r.claudeSessionIds, flags: r.flags, stats: try stats(sessionId: r.id), via: r.via)
+            claudeSessionIds: r.claudeSessionIds, flags: r.flags, stats: try stats(sessionId: r.id), via: r.via, paused: r.paused)
     }
 
     /// Marks sessions left `active` by a previous daemon whose Claude process is gone.

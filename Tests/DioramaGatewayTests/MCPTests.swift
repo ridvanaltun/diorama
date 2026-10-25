@@ -83,6 +83,12 @@ import Testing
         let launch = try await env.client.createSession(SessionSpec(name: "via mcp", cwd: "/tmp"))
         #expect(try await tool(server, "list_sessions").text.contains("“via mcp”"))
         #expect(try await tool(server, "get_session", ["session_id": launch.session.id]).text.contains("Tool results: 0"))
+        #expect(try await tool(server, "set_steering_paused", ["paused": true, "session_id": launch.session.id]).text.hasPrefix("Steering paused for “via mcp”"))
+        #expect(try await env.client.session(launch.session.id).isPaused)
+        #expect(try await tool(server, "set_steering_paused", ["paused": true]).text == "Steering paused everywhere.")
+        #expect(try await env.client.settings().steeringPaused)
+        _ = try await tool(server, "set_steering_paused", ["paused": false])
+        #expect(try await !env.client.settings().steeringPaused)
         #expect(try await tool(server, "end_session", ["session_id": launch.session.id]).text.contains("ended"))
 
         // Starting a run without a valid prepared run and token fails as a readable tool error.

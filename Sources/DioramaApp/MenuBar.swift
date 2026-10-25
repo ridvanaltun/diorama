@@ -35,11 +35,15 @@ struct MenuBarPanel: View {
                                 Text(s.name).lineLimit(1)
                                 Spacer(minLength: 4)
                                 if s.kind == .trial { Badge(text: "trial", color: .blue) }
+                                if s.isPaused { Badge(text: "paused", color: .orange) }
                                 if s.stats.rewrites > 0 { Badge(text: Fmt.plural(s.stats.rewrites, "rewrite"), color: .purple) }
                             }
                             Text(Fmt.shortPath(s.cwd)).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).padding(.leading, 12)
                         }
                     }
+                }
+                if model.settings.steeringPaused {
+                    Label("Steering paused everywhere", systemImage: "pause.circle.fill").font(.caption).foregroundStyle(.orange).padding(.horizontal, 6)
                 }
                 if active.count > 6 {
                     Text("and \(active.count - 6) more").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 6)
@@ -62,6 +66,9 @@ struct MenuBarPanel: View {
                 }
                 MenuRow(action: { open {} }) {
                     Label("Open Diorama", systemImage: "macwindow")
+                }
+                MenuRow(action: { Task { await togglePauseAll() } }) {
+                    Label(model.settings.steeringPaused ? "Resume Steering" : "Pause All Steering", systemImage: model.settings.steeringPaused ? "play.circle" : "pause.circle")
                 }
                 MenuRow(action: { open { model.showMCPConnect = true } }) {
                     Label("Connect to Claude…", systemImage: "sparkles")
@@ -100,6 +107,10 @@ struct MenuBarPanel: View {
         case .failed:
             Label("Daemon offline", systemImage: "circle.fill").labelStyle(StatusLabelStyle(color: .red))
         }
+    }
+
+    func togglePauseAll() async {
+        if let s = await model.perform({ [paused = model.settings.steeringPaused] in try await $0.setSteeringPaused(!paused) }) { model.settings = s }
     }
 
     func open(_ then: () -> Void) {

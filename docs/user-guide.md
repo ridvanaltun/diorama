@@ -326,6 +326,15 @@ Two optional daily caps limit rewrite-agent spending:
 
 The day is your local calendar day. Each call is checked before it's made, so one call can go slightly over a cap. When a cap is used up, matching tool results **pass through unchanged** with the reason "not rewritten: … budget is used up". The session is flagged `budget-reached` and shows a warning. The playground and what-if refuse paid runs, and a what-if run is refused up front if its estimate would go over what's left. Free checks keep working. Experiment runs are exempt, because they run against the cost estimate you approved. `diorama spend`, Settings and the menu bar show today's total. The MCP server can read the budget but can't change it.
 
+### Pausing steering
+
+To see what Claude does with the real results, pause steering instead of ending the session or restarting Claude:
+
+- **One session:** **Pause** in the session header, `diorama session pause <id>` (and `resume`), or the MCP tool `set_steering_paused` with a `session_id`.
+- **Everywhere:** **Pause All Steering** in the menu bar, **Settings → Steering**, `diorama pause` / `diorama resume`, or `set_steering_paused` without a session.
+
+While paused, tool results reach Claude unchanged with the reason "not rewritten: steering is paused …", and input rules don't change tool calls. Redaction rules keep running, so secrets stay hidden. Results already decided keep their decision (D9), so pausing affects new tool results only. Experiment runs aren't affected. Paused sessions show a **paused** badge; the pause survives daemon restarts.
+
 ## Notifications
 
 While Diorama is in the background, it notifies you when:

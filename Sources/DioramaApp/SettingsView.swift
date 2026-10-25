@@ -57,6 +57,13 @@ struct SettingsView: View {
                 }
                 if let m = maintenance { Text(m).font(.caption).foregroundStyle(.secondary) }
             }
+            Section("Steering") {
+                Toggle("Pause steering everywhere", isOn: Binding(
+                    get: { model.settings.steeringPaused },
+                    set: { on in Task { if let s = await model.perform({ try await $0.setSteeringPaused(on) }) { model.settings = s; draft.steeringPaused = s.steeringPaused } } }))
+                Text("While paused, tool results reach Claude unchanged in every session: no AI rewrites or input changes. Redaction keeps working, and experiment runs aren't affected. Pause a single session from its header.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("App") {
                 Toggle("Show Diorama in the menu bar", isOn: Binding(
                     get: { AppDelegate.menuBarEnabled },
