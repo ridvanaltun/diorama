@@ -26,6 +26,11 @@ struct PlaygroundSheet: View {
     @State private var result: PlaygroundResult?
     @State private var error: String?
     @State private var rewriting = false
+    /// Models to compare (comma-separated); fewer than two runs a single rewrite.
+    @AppStorage("playgroundCompareModels") private var compareModels = ""
+
+    static let comparableModels = ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]
+    var compared: [String] { compareModels.split(separator: ",").map(String.init).filter { !$0.isEmpty } }
 
     init(draft: Profile? = nil, toolUseId: String? = nil) {
         self.draft = draft
@@ -74,13 +79,27 @@ struct PlaygroundSheet: View {
                 .padding(20)
             }
             HStack {
-                if let m = result?.model { Text("Rewrite model: \(m)").font(.caption).foregroundStyle(.secondary) }
+                if let m = result?.model, compared.count < 2 { Text("Rewrite model: \(m)").font(.caption).foregroundStyle(.secondary) }
+                Menu {
+                    Section("Run the rewrite on each of") {
+                        ForEach(Self.comparableModels, id: \.self) { m in
+                            Toggle(m, isOn: Binding(
+                                get: { compared.contains(m) },
+                                set: { on in compareModels = (on ? compared + [m] : compared.filter { $0 != m }).joined(separator: ",") }))
+                        }
+                    }
+                    Text("Each model is one paid call. Pick two or more to compare.")
+                } label: {
+                    Label(compared.count >= 2 ? "Comparing \(compared.count) models" : "Compare models", systemImage: "square.split.3x1")
+                }
+                .fixedSize()
+                .help("Run the same rewrite on several models side by side: result, time and cost")
                 Spacer()
                 Button("Close") { dismiss() }
                 Button {
                     Task { await run(rewrite: true) }
                 } label: {
-                    if rewriting { ProgressView().controlSize(.small) } else { Text("Run rewrite") }
+                    if rewriting { ProgressView().controlSize(.small) } else { Text(compared.count >= 2 ? "Run on \(compared.count) models" : "Run rewrite") }
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
@@ -170,6 +189,7 @@ struct PlaygroundSheet: View {
             return
         }
         r.rewrite = rewrite
+        if rewrite, compared.count >= 2 { r.models = compared }
         if rewrite { rewriting = true }
         defer { rewriting = false }
         guard let client = model.client else { return }
@@ -198,7 +218,9 @@ private struct ResultView: View {
                 }
             }
             if let note = result.note { Label(note, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary) }
-            if let rw = result.rewrite {
+            if let all = result.comparisons {
+                ModelComparisonView(original: result.originalText, rewrites: all)
+            } else if let rw = result.rewrite {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("Rewrite").font(.headline)
@@ -222,6 +244,45 @@ private struct ResultView: View {
                     Text("Content").font(.headline)
                     MonoBlock(text: result.originalText).frame(minHeight: 80, maxHeight: 200)
                 }
+            }
+        }
+    }
+}
+
+/// The same rewrite on several models: what each produced, how long it took, what it cost.
+struct ModelComparisonView: View {
+    let original: String
+    let rewrites: [PlaygroundRewrite]
+
+    var fastest: String? { rewrites.filter { $0.status == .succeeded }.min { $0.latencyMs < $1.latencyMs }?.model }
+    var cheapest: String? { rewrites.filter { $0.status == .succeeded && $0.costUSD != nil }.min { ($0.costUSD ?? 0) < ($1.costUSD ?? 0) }?.model }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Model comparison").font(.headline)
+            let total = rewrites.compactMap(\.costUSD).reduce(0, +)
+            Text("\(rewrites.count) models · total \(Fmt.money(total)). Results vary between runs; compare a few times before choosing.")
+                .font(.caption).foregroundStyle(.secondary)
+            ForEach(Array(rewrites.enumerated()), id: \.offset) { _, rw in
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Text(rw.model).font(.callout.monospaced().weight(.medium))
+                        Badge(text: rw.status.rawValue, color: rw.status == .succeeded ? .purple : (rw.status == .unchanged ? .secondary : .red))
+                        if rw.model == fastest, rewrites.count > 1 { Badge(text: "fastest", color: .blue) }
+                        if rw.model == cheapest, rewrites.count > 1 { Badge(text: "cheapest", color: .green) }
+                        Spacer()
+                        Text("\(Fmt.duration(rw.latencyMs)) · \(Fmt.money(rw.costUSD))").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                    if let e = rw.explanation { Text(e).font(.callout) }
+                    if let err = rw.error { Text(err).font(.callout).foregroundStyle(.red) }
+                    if let r = rw.replacementText {
+                        DiffText(original: original, replacement: r).padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                    }
+                }
+                .padding(10)
+                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
             }
         }
     }

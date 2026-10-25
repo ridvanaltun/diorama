@@ -8,7 +8,8 @@ extension DecisionEngine {
     /// exactly as a session would, but records nothing.
     public func playground(
         rules: [Rule], defaults: ProfileDefaults, toolName: String, toolInputJSON: String?, segments: [String], isError: Bool = false,
-        stage: RuleStage, rewrite: Bool, spendKind: String = "playground", profileId: String? = nil, sampleId: String? = nil
+        stage: RuleStage, rewrite: Bool, spendKind: String = "playground", profileId: String? = nil, sampleId: String? = nil,
+        modelOverride: String? = nil
     ) async -> PlaygroundResult {
         let text = segments.joined(separator: "\n\n")
         let input = toolInputJSON.flatMap { try? JSONValue.parse($0) } ?? .object([:])
@@ -70,6 +71,7 @@ extension DecisionEngine {
             model = kept.isEmpty ? nil : (kept.last(where: { $0.model != nil })?.model ?? defaults.model)
             result.model = model
         }
+        if let modelOverride, model != nil { model = modelOverride }
         guard let model else {
             if matched.isEmpty { result.note = "No rule matches this content, so a session would forward it unchanged." }
             else if !matched.contains(where: \.isRedaction) || redaction == nil { result.note = "The classifier didn't say yes, so a session would leave this unchanged." }

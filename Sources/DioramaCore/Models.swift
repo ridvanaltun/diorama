@@ -613,11 +613,16 @@ public struct PlaygroundRequest: Codable, Sendable {
     public var stage: RuleStage?
     /// False: only check which rules match (no API call, no cost).
     public var rewrite: Bool
+    /// With `rewrite`: run the same rewrite on each of these models (at most 4) to compare them.
+    public var models: [String]?
+
+    public static let maxComparedModels = 4
 
     public init(
         profile: Profile? = nil, profileRef: String? = nil, prompt: SessionPrompt? = nil, toolUseId: String? = nil, text: String? = nil,
-        toolName: String? = nil, toolInput: String? = nil, stage: RuleStage? = nil, rewrite: Bool = false
+        toolName: String? = nil, toolInput: String? = nil, stage: RuleStage? = nil, rewrite: Bool = false, models: [String]? = nil
     ) {
+        self.models = models
         self.profile = profile
         self.profileRef = profileRef
         self.prompt = prompt
@@ -678,6 +683,8 @@ public struct PlaygroundResult: Codable, Sendable, Hashable {
     /// Why no rewrite was attempted, when `rewrite` was requested but skipped.
     public var note: String?
     public var rewrite: PlaygroundRewrite?
+    /// Model comparison: one rewrite per requested model, in the order asked.
+    public var comparisons: [PlaygroundRewrite]?
 
     public init(toolName: String, toolInput: String?, stage: RuleStage, originalText: String, checks: [RuleCheck], model: String?, note: String? = nil, rewrite: PlaygroundRewrite? = nil) {
         self.toolName = toolName

@@ -347,19 +347,45 @@ public final class DioramaDaemon: @unchecked Sendable {
         if req.rewrite, let why = engine.budgetBlock(profileId: profileId, profileBudget: defaults.dailyBudgetUSD) {
             throw StoreError("rewrite budget reached: \(why). Raise it in Settings or the profile's defaults, or wait until tomorrow")
         }
+        // What to run on: a recorded tool result or pasted text.
+        let toolName: String, input: String?, segments: [String], isError: Bool, stage: RuleStage, sampleId: String?
         if let id = req.toolUseId, !id.isEmpty {
             guard let d = try store.decision(toolUseId: id) else { throw StoreError("no tool result \(id)") }
             let session = try store.session(id: d.sessionId)
-            let stage: RuleStage = req.stage ?? Self.stage(ofDecision: id)
-            return await engine.playground(
-                rules: rules, defaults: defaults, toolName: (d.toolName ?? "tool").replacingOccurrences(of: " (page)", with: ""), toolInputJSON: d.toolInput,
-                segments: playgroundSegments(d, via: session?.via ?? .gateway), isError: d.isError, stage: stage, rewrite: req.rewrite, profileId: profileId,
-                sampleId: d.toolUseId)
+            (toolName, input) = ((d.toolName ?? "tool").replacingOccurrences(of: " (page)", with: ""), d.toolInput)
+            (segments, isError, stage, sampleId) = (playgroundSegments(d, via: session?.via ?? .gateway), d.isError, req.stage ?? Self.stage(ofDecision: id), d.toolUseId)
+        } else {
+            guard let text = req.text, !text.isEmpty else { throw StoreError("give a past tool result (toolUseId) or text to test on") }
+            (toolName, input) = (req.toolName.flatMap { $0.isEmpty ? nil : $0 } ?? "WebFetch", req.toolInput)
+            (segments, isError, stage, sampleId) = ([text], false, req.stage ?? .result, nil)
         }
-        guard let text = req.text, !text.isEmpty else { throw StoreError("give a past tool result (toolUseId) or text to test on") }
-        return await engine.playground(
-            rules: rules, defaults: defaults, toolName: req.toolName.flatMap { $0.isEmpty ? nil : $0 } ?? "WebFetch", toolInputJSON: req.toolInput,
-            segments: [text], stage: req.stage ?? .result, rewrite: req.rewrite, profileId: profileId)
+        let (engine, spendProfile) = (self.engine, profileId)
+        let run: @Sendable (String?) async -> PlaygroundResult = { model in
+            await engine.playground(rules: rules, defaults: defaults, toolName: toolName, toolInputJSON: input, segments: segments, isError: isError,
+                                    stage: stage, rewrite: req.rewrite, profileId: spendProfile, sampleId: sampleId, modelOverride: model)
+        }
+        var models: [String] = []
+        for m in (req.models ?? []).map({ $0.trimmingCharacters(in: .whitespaces) }) where !m.isEmpty && !models.contains(m) { models.append(m) }
+        guard req.rewrite, !models.isEmpty else { return await run(nil) }
+        guard models.count <= PlaygroundRequest.maxComparedModels else { throw StoreError("compare at most \(PlaygroundRequest.maxComparedModels) models at a time") }
+        // Model comparison: the same rewrite on each model, concurrently.
+        let results = await withTaskGroup(of: (Int, PlaygroundResult).self) { group in
+            for (i, m) in models.enumerated() { group.addTask { (i, await run(m)) } }
+            var out: [(Int, PlaygroundResult)] = []
+            for await r in group { out.append(r) }
+            return out.sorted { $0.0 < $1.0 }.map(\.1)
+        }
+        var first = results[0]
+        if results.contains(where: { $0.rewrite != nil }) {
+            // Labeled by the model asked for (the served id can carry a date suffix or a fallback).
+            first.comparisons = zip(models, results).map { m, r in
+                var rw = r.rewrite ?? PlaygroundRewrite(status: .skipped, replacementText: nil, explanation: nil, edits: [], error: r.note, model: m, costUSD: nil, latencyMs: 0)
+                if rw.model != m, rw.model != "local redaction" { rw.model = m }
+                return rw
+            }
+            first.rewrite = first.comparisons?.first
+        }
+        return first
     }
 
     // MARK: What-if replay

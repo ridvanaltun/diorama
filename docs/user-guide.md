@@ -184,6 +184,8 @@ diorama profiles test "Docs steer" --text "Version 1 is current" --input '{"url"
 diorama profiles test --file draft.json --text-file page.txt
 ```
 
+**Compare models:** to pick a rewrite model, choose two or more models under **Compare models** in the playground's footer and click **Run on N models**. The same rewrite runs on each model at the same time. Each one gets a card with its status, explanation, diff, time and cost, and the fastest and cheapest successful runs are marked. Every model is a separate paid call, up to four per run. Rewrites vary between runs, so compare a few times before choosing. Then set the model on the rule or in the profile's defaults. From the terminal: `diorama profiles test "Docs steer" --decision toolu_01abc --rewrite --models claude-haiku-5-5,claude-sonnet-5-5`. MCP `test_rules` takes a `models` list.
+
 ### Rule tests: keep rules matching what you meant
 
 A profile can carry **rule tests**: sample tool results, each with the rules that should match it. Every other rule must not match. Tests are saved and versioned with the profile, and they run on every edit in the editor's **Rule tests** section, showing pass/fail and why. **Expect what matches now** accepts the current behavior. Tests only check matching, so they're free: no model is called. Classifier questions aren't asked, so a classifier rule counts as matching when its other conditions do. A sampled rule samples by the test's id.

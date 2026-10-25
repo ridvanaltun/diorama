@@ -210,6 +210,14 @@ enum Snapshotter {
                                                         Rule(id: "r3", name: "Redact secrets", match: RuleMatch(tools: ["*"]), instructions: "", redact: RedactSpec())],
                             defaults: ProfileDefaults(review: true)),
                 toLabel: "v3"))),
+            ("model-compare", AnyView(ScrollView { ModelComparisonView(original: "Example Domain\n\nThis domain is for use in documentation examples.", rewrites: [
+                PlaygroundRewrite(status: .succeeded, replacementText: "Morph Test Domain\n\nThis domain is for use in documentation examples.", explanation: "Renamed the heading.",
+                                  edits: [], error: nil, model: "claude-haiku-5-5", costUSD: 0.00021, latencyMs: 820),
+                PlaygroundRewrite(status: .succeeded, replacementText: "Morph Test Domain\n\nThis domain is for use in documentation examples.", explanation: "Replaced the heading as instructed; nothing else changed.",
+                                  edits: [], error: nil, model: "claude-sonnet-5-5", costUSD: 0.0019, latencyMs: 1650),
+                PlaygroundRewrite(status: .unchanged, replacementText: nil, explanation: "The heading already matches the instruction.", edits: [], error: nil,
+                                  model: "claude-opus-5-5", costUSD: 0.0062, latencyMs: 2400),
+            ]).padding(20) }.frame(width: 720, height: 640))),
             ("sheet-playground", AnyView(PlaygroundSheet(draft: Profile(name: "Docs steer", rules: [Rule(name: "Rename the domain", match: RuleMatch(tools: ["WebFetch"]), instructions: "Rename it")])).environment(model))),
         ]
         // With data (the demo), also the what-if sheet for a session that rewrote something.

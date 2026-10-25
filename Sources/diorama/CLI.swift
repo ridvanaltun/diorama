@@ -830,12 +830,14 @@ struct Profiles: AsyncParsableCommand {
         @Option(help: "The tool input as JSON (rules can match on its fields).") var input: String?
         @Option(help: "Test the page stage (WebFetch raw page) instead of tool results.") var stage: RuleStage?
         @Flag(help: "Also run the rewrite agent (small cost).") var rewrite = false
+        @Option(help: "With --rewrite: compare these models (comma-separated, at most 4; one paid call each).") var models: String?
         @Flag var json = false
 
         func run() async throws {
             var req = PlaygroundRequest(profileRef: profile, prompt: prompt.map { SessionPrompt(text: $0, tools: ["*"]) }, toolUseId: decision,
                                         toolName: tool, toolInput: input, stage: stage, rewrite: rewrite)
             if let file { req.profile = try readJSONFile(file, as: Profile.self) }
+            if let models { req.models = models.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } }
             if let textFile { req.text = try String(contentsOfFile: (textFile as NSString).expandingTildeInPath, encoding: .utf8) } else { req.text = text }
             guard req.profile != nil || profile != nil || prompt != nil else { throw ValidationError("give a profile, --file or --prompt") }
             guard decision != nil || req.text != nil else { throw ValidationError("give --decision, --text or --text-file") }
@@ -844,7 +846,15 @@ struct Profiles: AsyncParsableCommand {
             print("\(r.toolName) \(r.stage == .page ? "page" : "result"), \(r.originalText.count) characters")
             for c in r.checks { print("  \(c.matches ? "✓" : "·") \(c.name): \(c.reason)") }
             if let note = r.note { print("\n\(note)") }
-            if let rw = r.rewrite {
+            if let all = r.comparisons {
+                print("\nModel comparison (\(all.count) models, total \(money(all.compactMap(\.costUSD).reduce(0, +)))):")
+                for rw in all {
+                    print("\n◆ \(rw.model): \(rw.status.rawValue), \(Int(rw.latencyMs)) ms, \(money(rw.costUSD))")
+                    if let e = rw.explanation { print("  \(e)") }
+                    if let err = rw.error { print("  error: \(err)") }
+                    for e in rw.edits { print("  “\(short(e.find, 60))” → “\(short(e.replace, 60))”") }
+                }
+            } else if let rw = r.rewrite {
                 print("\nRewrite: \(rw.status.rawValue) — \(rw.model), \(Int(rw.latencyMs)) ms, \(money(rw.costUSD))")
                 if let e = rw.explanation { print("  \(e)") }
                 if let err = rw.error { print("  error: \(err)") }

@@ -380,6 +380,7 @@ enum MCPTools {
                 "tool_name": string("The tool the text comes from (default WebFetch)."),
                 "tool_input": ["type": "object", "description": "The tool input (rules can match on its fields), e.g. {\"url\": \"https://…\"}."],
                 "rewrite": ["type": "boolean", "description": "Also run the rewrite agent (default false)."],
+                "models": ["type": "array", "items": ["type": "string"], "description": "With rewrite=true: run it on each of these models (at most 4, one paid call each) to compare them."],
             ]),
             readOnly: true, openWorld: true
         ) { s, a in
@@ -390,12 +391,18 @@ enum MCPTools {
             if let input = a["tool_input"], JSONSerialization.isValidJSONObject(input) {
                 req.toolInput = String(decoding: try JSONSerialization.data(withJSONObject: input), as: UTF8.self)
             }
+            if let models = a["models"] as? [String], !models.isEmpty { req.models = models }
             if req.rewrite, s.readOnly { throw MCPServer.ToolError("this server is read-only: rewrite=true calls the paid rewrite agent; use rewrite=false") }
             let r = try await s.daemon().playground(req)
             var out = ["\(r.toolName) \(r.stage.rawValue), \(r.originalText.count) characters"]
             out += r.checks.map { "- \($0.matches ? "MATCH" : "no match") \($0.name): \($0.reason)" }
             if let note = r.note { out.append(note) }
-            if let rw = r.rewrite {
+            if let all = r.comparisons {
+                for rw in all {
+                    out.append("Model \(rw.model): \(rw.status.rawValue), \(Int(rw.latencyMs)) ms\(rw.costUSD.map { String(format: ", $%.4f", $0) } ?? ""): \(rw.explanation ?? rw.error ?? "")")
+                    out += rw.edits.map { "  edit: “\($0.find)” → “\($0.replace)”" }
+                }
+            } else if let rw = r.rewrite {
                 out.append("Rewrite \(rw.status.rawValue) with \(rw.model), \(Int(rw.latencyMs)) ms\(rw.costUSD.map { String(format: ", $%.4f", $0) } ?? ""): \(rw.explanation ?? rw.error ?? "")")
                 out += rw.edits.map { "  edit: “\($0.find)” → “\($0.replace)”" }
                 if let t = rw.replacementText { out.append("What Claude would see:\n" + clip(t)) }

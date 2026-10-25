@@ -47,3 +47,23 @@ import Testing
         }
     }
 }
+
+@Suite struct ModelComparisonTests {
+    @Test func runsTheSameRewriteOnEachModel() async throws {
+        let env = try await TestEnv.start()
+        defer { Task { await env.stop() } }
+        _ = try await env.client.createProfile(Profile(name: "web", rules: [Rule(name: "Rename", match: RuleMatch(tools: ["WebFetch"]), instructions: "rename")]))
+        let models = ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"]
+        let r = try await env.client.playground(PlaygroundRequest(profileRef: "web", text: "Example Domain", toolName: "WebFetch", rewrite: true, models: models))
+        let all = try #require(r.comparisons)
+        #expect(all.map(\.model) == ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"], "in order, duplicates removed")
+        #expect(all.allSatisfy { $0.status == .succeeded && $0.replacementText == "Morph Test Domain" })
+        #expect(r.rewrite?.model == "claude-haiku-5-5")
+
+        let none = try await env.client.playground(PlaygroundRequest(profileRef: "web", text: "x", toolName: "Bash", rewrite: true, models: ["a", "b"]))
+        #expect(none.comparisons == nil && none.note != nil, "nothing matches: no calls")
+        await #expect(throws: ClientError.self) {
+            try await env.client.playground(PlaygroundRequest(profileRef: "web", text: "Example", toolName: "WebFetch", rewrite: true, models: ["a", "b", "c", "d", "e"]))
+        }
+    }
+}
