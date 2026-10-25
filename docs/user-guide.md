@@ -196,6 +196,10 @@ Turn on **Review rewrites before Claude sees them** in a profile's defaults (`"d
 
 The decision records the outcome: "not rewritten: rewrite rejected in review" or "no review in time". The rewrite agent's attempt and cost are kept either way.
 
+### Sharing profiles
+
+**Export…** in the profile editor saves the profile's saved version as a `.diorama-profile.json` file. **Import Profile…** in the Profiles toolbar, or dropping `.json` files on the profile list, adds each one as a new profile at version 1. If the name is taken, a number is appended, for example "Docs steer (2)". The files are plain JSON in the same format as `diorama profiles export` and `diorama profiles create --file`, so they work in git, in pull requests or on another Mac. They hold only rules and defaults, never keys.
+
 ### Comparing profile versions
 
 Every save makes a new version. In the editor's **Version history**, **Compare with vN** shows what changed from an older version to the current one. While you have unsaved edits, **Show Changes…** compares them with the saved version. Rules are matched by id, so each one shows as added, removed, changed (each field, old → new, with a word diff for instructions) or moved. Changes to the name, description and defaults are listed too.

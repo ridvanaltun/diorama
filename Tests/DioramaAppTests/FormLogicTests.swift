@@ -63,3 +63,22 @@ import Testing
         #expect(FormLogic.experimentDefinition(f).variants[1].prompt == nil)
     }
 }
+
+@Suite struct ProfileImportTests {
+    @Test func importsExportedProfilesAndSavedVersions() throws {
+        let p = Profile(name: "Docs steer", rules: [Rule(name: "Rename", match: RuleMatch(tools: ["WebFetch"]), instructions: "rename")])
+        let exported = try DioramaCoding.prettyEncoder.encode(p)
+        #expect(try FormLogic.importedProfile(exported, existingNames: []) == p)
+        let version = try DioramaCoding.encoder.encode(ProfileVersionInfo(id: "pv_1", profileId: "prof", number: 3, createdAt: Date(), profile: p))
+        #expect(try FormLogic.importedProfile(version, existingNames: []).rules == p.rules)
+    }
+
+    @Test func renamesOnClashAndRejectsOtherJSON() throws {
+        let data = try DioramaCoding.encoder.encode(Profile(name: "Docs steer"))
+        #expect(try FormLogic.importedProfile(data, existingNames: ["Docs steer"]).name == "Docs steer (2)")
+        #expect(try FormLogic.importedProfile(data, existingNames: ["Docs steer", "Docs steer (2)"]).name == "Docs steer (3)")
+        #expect(throws: FormLogic.ImportError.self) { try FormLogic.importedProfile(Data(#"{"hello":1}"#.utf8), existingNames: []) }
+        #expect(throws: FormLogic.ImportError.self) { try FormLogic.importedProfile(Data("not json".utf8), existingNames: []) }
+        #expect(FormLogic.exportFileName("a/b: c") == "a-b- c.diorama-profile.json")
+    }
+}

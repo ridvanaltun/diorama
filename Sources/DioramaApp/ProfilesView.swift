@@ -1,5 +1,7 @@
+import AppKit
 import DioramaCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ProfilesView: View {
     @Environment(AppModel.self) private var model
@@ -17,6 +19,10 @@ struct ProfilesView: View {
                 .tag(p.id)
             }
             .frame(minWidth: 220, idealWidth: 260, maxWidth: 340)
+            .dropDestination(for: URL.self) { urls, _ in
+                Task { for url in urls where url.pathExtension.lowercased() == "json" { await importProfile(from: url) } }
+                return urls.contains { $0.pathExtension.lowercased() == "json" }
+            }
             .overlay {
                 if model.profiles.isEmpty {
                     ContentUnavailableView {
@@ -40,6 +46,10 @@ struct ProfilesView: View {
         }
         .toolbar {
             ToolbarItem {
+                Button { chooseImport() } label: { Label("Import Profile…", systemImage: "square.and.arrow.down") }
+                    .help("Import a profile from a .json file (you can also drop files on the list)")
+            }
+            ToolbarItem {
                 Button { showTemplates = true } label: { Label("New Profile", systemImage: "plus") }
             }
         }
@@ -52,6 +62,28 @@ struct ProfilesView: View {
         }
         .navigationTitle("Profiles")
         .task { if model.snapshotDir != nil, selection == nil { selection = model.profiles.first?.id } }
+    }
+
+    func chooseImport() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = true
+        panel.prompt = "Import"
+        guard panel.runModal() == .OK else { return }
+        Task { for url in panel.urls { await importProfile(from: url) } }
+    }
+
+    /// Imports as a new profile (version 1); a taken name gets a number appended.
+    func importProfile(from url: URL) async {
+        do {
+            let data = try Data(contentsOf: url)
+            let profile = try FormLogic.importedProfile(data, existingNames: Set(model.profiles.map(\.name)))
+            guard let created = await model.perform({ try await $0.createProfile(profile) }) else { return }
+            await model.refreshProfiles()
+            selection = created.profileId
+        } catch {
+            model.report(error)
+        }
     }
 }
 
@@ -132,6 +164,8 @@ struct ProfileEditor: View {
                             .help(detail.current.id)
                     }
                     Spacer()
+                    Button { export(detail.current) } label: { Label("Export…", systemImage: "square.and.arrow.up") }
+                        .help(dirty ? "Save the profile's saved version (v\(detail.current.number)) as a .json file; unsaved edits aren't included" : "Save this profile as a .json file to share or import elsewhere")
                     Button { showPlayground = true } label: { Label("Test Rules…", systemImage: "testtube.2") }
                         .help("Try these rules (including unsaved changes) on a past tool result or pasted text")
                     if dirty {
@@ -228,6 +262,14 @@ struct ProfileEditor: View {
         } else {
             ProgressView().task { await load() }
         }
+    }
+
+    func export(_ version: ProfileVersionInfo) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = FormLogic.exportFileName(version.profile.name)
+        panel.allowedContentTypes = [.json]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try DioramaCoding.prettyEncoder.encode(version.profile).write(to: url) } catch { model.report(error) }
     }
 
     func load() async {

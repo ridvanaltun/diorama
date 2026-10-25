@@ -119,3 +119,39 @@ enum FormLogic {
         return out
     }
 }
+
+extension FormLogic {
+    struct ImportError: Error, CustomStringConvertible {
+        let description: String
+    }
+
+    /// A profile from a file: what `Export…` and `diorama profiles export` write, or any JSON object
+    /// with a `profile` field (a saved version). A taken name gets " (2)", " (3)", … appended.
+    static func importedProfile(_ data: Data, existingNames: Set<String>) throws -> Profile {
+        let decoder = DioramaCoding.decoder
+        var profile: Profile
+        if let p = try? decoder.decode(Profile.self, from: data), !p.name.isEmpty {
+            profile = p
+        } else if let wrapped = try? decoder.decode(Wrapped.self, from: data) {
+            profile = wrapped.profile
+        } else {
+            throw ImportError(description: "This file isn't a Diorama profile (expected JSON with a name and rules, as written by Export…).")
+        }
+        profile.name = uniqueName(profile.name.trimmingCharacters(in: .whitespaces), existingNames)
+        return profile
+    }
+
+    private struct Wrapped: Decodable { var profile: Profile }
+
+    static func uniqueName(_ name: String, _ taken: Set<String>) -> String {
+        guard taken.contains(name) else { return name }
+        var n = 2
+        while taken.contains("\(name) (\(n))") { n += 1 }
+        return "\(name) (\(n))"
+    }
+
+    static func exportFileName(_ profileName: String) -> String {
+        let safe = profileName.map { "/:\\".contains($0) ? "-" : $0 }
+        return "\(String(safe)).diorama-profile.json"
+    }
+}
