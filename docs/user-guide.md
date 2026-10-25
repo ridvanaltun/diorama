@@ -289,6 +289,17 @@ After you click a tool result, ↑ and ↓ move to the previous or next one, and
 - **CLI:** `diorama session show <id>`, `diorama session decision <tool_use_id>`, and `diorama session watch [<id>]` for live events.
 - **Raw capture:** full request and response bodies are kept for `retentionDays` (14 by default) and are available through the control API (`GET /api/v1/exchanges/<id>/raw`). Credentials are never stored.
 
+### Archiving sessions
+
+Right-click an ended session and choose **Archive** to hide it from the list, or use **Archive → Archive ended sessions older than** 7, 30 or 90 days in the Sessions toolbar. Nothing is deleted: archived sessions keep their records, stay in search and data exports, and can still be compared. **Archive → Show Archived Sessions** lists them, and right-click → **Unarchive** brings one back. Running sessions can't be archived.
+
+```bash
+diorama session archive ses_abc
+diorama session archive --older-than 30
+diorama sessions --archived
+diorama session unarchive ses_abc
+```
+
 ### Comparing two sessions
 
 **Compare…** in a session's header lists recent sessions, with ones from the same folder first. Pick one to see the two side by side:

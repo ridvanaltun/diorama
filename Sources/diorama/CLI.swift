@@ -247,11 +247,12 @@ struct Sessions: AsyncParsableCommand {
     @OptionGroup var global: GlobalOptions
     @Option(help: "Filter by kind: interactive or trial.") var kind: SessionKind?
     @Option(help: "Only sessions with this tag.") var tag: String?
+    @Flag(help: "List archived sessions instead.") var archived = false
     @Option(help: "Maximum number of sessions.") var limit = 50
     @Flag(help: "Print JSON.") var json = false
 
     func run() async throws {
-        let list = try await global.client().sessions(kind: kind, tag: tag, limit: limit)
+        let list = try await global.client().sessions(kind: kind, tag: tag, archived: archived ? "only" : "hide", limit: limit)
         if json { return try printJSON(list) }
         if list.isEmpty { return print("No sessions yet. Start one with `diorama run`.") }
         table(["ID", "NAME", "STATUS", "PROFILE", "REQS", "RESULTS", "REWRITES", "FAILS", "STARTED", "TAGS"], list.map { s in
@@ -263,7 +264,7 @@ struct Sessions: AsyncParsableCommand {
 }
 
 struct Session: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Inspect a session.", subcommands: [Show.self, Decision.self, Watch.self, End.self, Pause.self, Resume.self, WhatIf.self, ToExperiment.self, Report.self, Note.self, Tag.self, Rename.self, Compare.self])
+    static let configuration = CommandConfiguration(abstract: "Inspect a session.", subcommands: [Show.self, Decision.self, Watch.self, End.self, Pause.self, Resume.self, WhatIf.self, ToExperiment.self, Report.self, Note.self, Tag.self, Rename.self, Compare.self, Archive.self, Unarchive.self])
 
     struct Show: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Show a session's timeline.")
@@ -364,6 +365,35 @@ struct Session: AsyncParsableCommand {
             for try await e in c.eventStream(session: id) {
                 print("\(e.createdAt.formatted(date: .omitted, time: .standard)) \(e.sessionId ?? "-") \(e.kind.rawValue): \(e.message)")
             }
+        }
+    }
+
+    struct Archive: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Archive sessions: hide them from the list (nothing is deleted; search and exports still include them).",
+            discussion: """
+                  diorama session archive ses_abc ses_def
+                  diorama session archive --older-than 30          # every ended session started more than 30 days ago
+                Running sessions are skipped. List archived ones with `diorama sessions --archived`.
+                """)
+        @OptionGroup var global: GlobalOptions
+        @Argument(help: "Session ids.") var ids: [String] = []
+        @Option(help: "Also archive every ended session started more than this many days ago.") var olderThan: Int?
+        @Option(help: "With --older-than: only interactive sessions or only trials.") var kind: SessionKind?
+        func run() async throws {
+            guard !ids.isEmpty || olderThan != nil else { throw ValidationError("give session ids or --older-than DAYS") }
+            let n = try await global.client().archiveSessions(ArchiveRequest(sessionIds: ids, olderThanDays: olderThan, kind: kind))
+            print("✓ Archived \(n) session(s).")
+        }
+    }
+
+    struct Unarchive: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Show archived sessions in the list again.")
+        @OptionGroup var global: GlobalOptions
+        @Argument(help: "Session ids.") var ids: [String]
+        func run() async throws {
+            let n = try await global.client().archiveSessions(ArchiveRequest(sessionIds: ids, archived: false))
+            print("✓ Unarchived \(n) session(s).")
         }
     }
 

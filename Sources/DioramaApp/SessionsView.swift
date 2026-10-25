@@ -12,6 +12,8 @@ struct SessionsView: View {
     @State private var kindFilter: SessionKind? = .interactive
     @State private var tagFilter: String?
     @State private var query = ""
+    @State private var showArchived = false
+    @State private var archivedSessions: [SessionInfo] = []
 
     var allTags: [String] {
         // Tags differing only in case are one tag (the filter ignores case too).
@@ -21,7 +23,7 @@ struct SessionsView: View {
     }
 
     var filtered: [SessionInfo] {
-        model.sessions.filter { s in
+        (showArchived ? archivedSessions : model.sessions).filter { s in
             (kindFilter == nil || s.kind == kindFilter) && (tagFilter.map { t in (s.tags ?? []).contains { $0.caseInsensitiveCompare(t) == .orderedSame } } ?? true)
         }
     }
@@ -57,8 +59,19 @@ struct SessionsView: View {
                             }
                             .padding(.horizontal, 8).padding(.bottom, 6)
                         }
+                        if showArchived {
+                            Label("Archived sessions", systemImage: "archivebox").font(.caption).foregroundStyle(.secondary)
+                                .padding(.horizontal, 10).padding(.bottom, 4)
+                        }
                         List(filtered, selection: $selection) { s in
                             SessionRow(session: s).tag(s.id)
+                                .contextMenu {
+                                    if s.isArchived {
+                                        Button("Unarchive") { Task { await archive([s.id], false) } }
+                                    } else {
+                                        Button("Archive") { Task { await archive([s.id], true) } }.disabled(s.status == .active)
+                                    }
+                                }
                         }
                         .overlay {
                             if filtered.isEmpty {
@@ -87,6 +100,18 @@ struct SessionsView: View {
                     .help("Start Claude Code in Terminal, routed through Diorama")
             }
             ToolbarItem {
+                Menu {
+                    Toggle("Show Archived Sessions", isOn: $showArchived)
+                    Divider()
+                    Section("Archive ended sessions older than") {
+                        ForEach([7, 30, 90], id: \.self) { days in
+                            Button("\(days) days") { Task { await archiveOld(days) } }
+                        }
+                    }
+                } label: { Label("Archive", systemImage: "archivebox") }
+                .help("Hide old sessions from the list (nothing is deleted)")
+            }
+            ToolbarItem {
                 Button { showExport = true } label: { Label("Export Data…", systemImage: "tablecells") }
                     .help("Export decided tool results across sessions as CSV or JSON Lines")
             }
@@ -96,6 +121,9 @@ struct SessionsView: View {
         }
         .sheet(isPresented: $showNew) { NewSessionSheet() }
         .sheet(isPresented: $showExport) { ExportDataSheet() }
+        .task(id: "\(showArchived)/\(model.eventTick / 5)") {
+            if showArchived { archivedSessions = (try? await model.client?.sessions(archived: "only", limit: 500)) ?? [] }
+        }
         .navigationTitle("Sessions")
         .searchable(text: $query, placement: .toolbar, prompt: "Search results, rewrites, replies")
         .onChange(of: model.wantsNewSession, initial: true) { _, wants in
@@ -286,6 +314,21 @@ struct SearchHitRow: View {
 
 // MARK: - Session list
 
+extension SessionsView {
+    func archive(_ ids: [String], _ archived: Bool) async {
+        _ = await model.perform { try await $0.archiveSessions(ArchiveRequest(sessionIds: ids, archived: archived)) }
+        if let sel = selection, ids.contains(sel) { selection = nil }
+        await model.refreshSessions()
+        if showArchived { archivedSessions = (try? await model.client?.sessions(archived: "only", limit: 500)) ?? [] }
+    }
+
+    func archiveOld(_ days: Int) async {
+        guard let n = await model.perform({ try await $0.archiveSessions(ArchiveRequest(olderThanDays: days)) }) else { return }
+        await model.refreshSessions()
+        model.lastError = n == 0 ? "No ended sessions older than \(days) days." : "Archived \(n) session(s). Show them again from Archive → Show Archived Sessions."
+    }
+}
+
 struct SessionRow: View {
     let session: SessionInfo
 
@@ -302,6 +345,7 @@ struct SessionRow: View {
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             HStack(spacing: 6) {
                 if session.isPaused { Badge(text: "paused", color: .orange) }
+                if session.isArchived { Badge(text: "archived", color: .secondary) }
                 if session.isHook { Badge(text: "hook", color: .teal).help("Hook mode: tool results only") }
                 if session.stats.rewrites > 0 { Badge(text: Fmt.plural(session.stats.rewrites, "rewrite"), color: .purple) }
                 if session.stats.failures > 0 { Badge(text: Fmt.plural(session.stats.failures, "failure"), color: .red) }

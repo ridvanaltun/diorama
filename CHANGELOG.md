@@ -6,6 +6,7 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 ## Unreleased
 
 ### New
+- **Archive sessions.** Hide ended sessions from the list, one at a time (right-click) or all older than 7/30/90 days, and show them again from the toolbar. Nothing is deleted. Also `diorama session archive|unarchive` and `diorama sessions --archived`.
 - **Keyboard navigation.** After selecting a tool result in a timeline, ↑/↓ move between results and Esc closes the audit record.
 - **Compare two sessions.** **Compare…** in the session header (or `diorama session compare`, MCP `compare_sessions`) shows two sessions side by side: counts, cost, duration and tokens with differences, tool results per tool, rules that rewrote, and both final answers (optionally diffed).
 - The session header's actions moved to their own row, so long names and the id no longer get cut off.

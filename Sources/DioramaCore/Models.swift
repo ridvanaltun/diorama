@@ -486,13 +486,17 @@ public struct SessionInfo: Codable, Sendable, Hashable, Identifiable {
     /// The user's own notes and tags (nil from older daemons).
     public var notes: String?
     public var tags: [String]?
+    /// Hidden from the session list (nil from older daemons).
+    public var archived: Bool?
+    public var isArchived: Bool { archived == true }
 
     public init(
         id: String, name: String, cwd: String, kind: SessionKind, status: SessionStatus, createdAt: Date, endedAt: Date?,
         profileId: String?, profileName: String?, profileVersionId: String?, profileVersionNumber: Int?,
         prompt: SessionPrompt?, lockdown: LockdownPreset, trialId: String?, claudeSessionIds: [String], flags: [String],
-        stats: SessionStats, via: SessionVia? = nil, paused: Bool? = nil, notes: String? = nil, tags: [String]? = nil
+        stats: SessionStats, via: SessionVia? = nil, paused: Bool? = nil, notes: String? = nil, tags: [String]? = nil, archived: Bool? = nil
     ) {
+        self.archived = archived
         self.paused = paused
         self.notes = notes
         self.tags = tags
@@ -1519,5 +1523,20 @@ public struct AddRuleTestRequest: Codable, Sendable {
     public init(decisionId: String, name: String? = nil) {
         self.decisionId = decisionId
         self.name = name
+    }
+}
+
+/// Archive or unarchive sessions: by id, or every ended session older than `olderThanDays`.
+public struct ArchiveRequest: Codable, Sendable {
+    public var sessionIds: [String]
+    public var olderThanDays: Int?
+    public var kind: SessionKind?
+    public var archived: Bool
+
+    public init(sessionIds: [String] = [], olderThanDays: Int? = nil, kind: SessionKind? = nil, archived: Bool = true) {
+        self.sessionIds = sessionIds
+        self.olderThanDays = olderThanDays
+        self.kind = kind
+        self.archived = archived
     }
 }

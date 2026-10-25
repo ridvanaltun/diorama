@@ -27,6 +27,7 @@ public struct SessionRecord: Sendable, Hashable {
     public var paused = false
     public var notes = ""
     public var tags: [String] = []
+    public var archived = false
 }
 
 extension Store {
@@ -77,7 +78,8 @@ extension Store {
             claudeSessionIds: decode([String].self, r.string("claude_session_ids")) ?? [],
             flags: decode([String].self, r.string("flags")) ?? [],
             via: SessionVia(rawValue: r.string("via") ?? "") ?? .gateway, transcriptPath: r.string("transcript_path"),
-            paused: (r.int("paused") ?? 0) != 0, notes: r.string("notes") ?? "", tags: decode([String].self, r.string("tags")) ?? [])
+            paused: (r.int("paused") ?? 0) != 0, notes: r.string("notes") ?? "", tags: decode([String].self, r.string("tags")) ?? [],
+            archived: (r.int("archived") ?? 0) != 0)
     }
 
     public func session(id: String) throws -> SessionRecord? {
@@ -88,9 +90,16 @@ extension Store {
         try db.query("SELECT * FROM sessions WHERE token_hash = ?", [.text(tokenHash)]).first.map(sessionRecord)
     }
 
-    public func sessions(kind: SessionKind? = nil, tag: String? = nil, limit: Int = 200) throws -> [SessionRecord] {
+    public enum ArchiveFilter: String, Sendable { case hide, only, all }
+
+    public func sessions(kind: SessionKind? = nil, tag: String? = nil, archived: ArchiveFilter = .hide, limit: Int = 200) throws -> [SessionRecord] {
         var clauses = ["1 = 1"]
         var params: [SQLValue] = []
+        switch archived {
+        case .hide: clauses.append("archived = 0")
+        case .only: clauses.append("archived = 1")
+        case .all: break
+        }
         if let kind { clauses.append("kind = ?"); params.append(.text(kind.rawValue)) }
         if let tag { clauses.append("EXISTS (SELECT 1 FROM json_each(sessions.tags) j WHERE lower(j.value) = lower(?))"); params.append(.text(tag)) }
         params.append(.int(Int64(limit)))
@@ -130,6 +139,28 @@ extension Store {
         // Tags differing only in case are one tag.
         let rows = try db.query("SELECT MIN(j.value) AS tag, COUNT(*) AS n FROM sessions s, json_each(s.tags) j GROUP BY lower(j.value) ORDER BY n DESC, lower(j.value)")
         return rows.compactMap { $0.string("tag") }
+    }
+
+    /// Archives or unarchives sessions. Running sessions can't be archived. Returns how many changed.
+    @discardableResult
+    public func setArchived(sessionIds: [String], _ archived: Bool) throws -> Int {
+        var n = 0
+        try db.transaction {
+            for id in sessionIds {
+                try db.run("UPDATE sessions SET archived = ? WHERE id = ? AND archived != ?" + (archived ? " AND status != 'active'" : ""),
+                           [.int(archived ? 1 : 0), .text(id), .int(archived ? 1 : 0)])
+                n += db.changes
+            }
+        }
+        return n
+    }
+
+    /// Ids of ended, unarchived sessions that started before `date` (bulk archiving).
+    public func endedSessions(before date: Date, kind: SessionKind? = nil) throws -> [String] {
+        var sql = "SELECT id FROM sessions WHERE archived = 0 AND status != 'active' AND created_at < ?"
+        var params: [SQLValue] = [.date(date)]
+        if let kind { sql += " AND kind = ?"; params.append(.text(kind.rawValue)) }
+        return try db.query(sql, params).compactMap { $0.string("id") }
     }
 
     public func isPaused(sessionId: String) -> Bool {
@@ -181,7 +212,7 @@ extension Store {
             profileId: r.profileId, profileName: r.profileVersion?.profile.name, profileVersionId: r.profileVersion?.id,
             profileVersionNumber: r.profileVersion?.number, prompt: r.prompt, lockdown: r.lockdown, trialId: r.trialId,
             claudeSessionIds: r.claudeSessionIds, flags: r.flags, stats: try stats(sessionId: r.id), via: r.via, paused: r.paused,
-            notes: r.notes, tags: r.tags)
+            notes: r.notes, tags: r.tags, archived: r.archived)
     }
 
     /// Marks sessions left `active` by a previous daemon whose Claude process is gone.

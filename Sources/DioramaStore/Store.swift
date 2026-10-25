@@ -100,6 +100,10 @@ public final class Store: @unchecked Sendable {
         """
         ALTER TABLE decisions ADD COLUMN shadow_blob TEXT;
         """,
+        // v9: archiving sessions (hidden from the list, kept otherwise)
+        """
+        ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
+        """,
     ]
 
     public static var schemaVersion: Int { migrations.count }

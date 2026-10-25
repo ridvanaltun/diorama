@@ -142,7 +142,18 @@ struct ControlAPI: Sendable {
         if Self.match(method, route, "GET", "sessions") != nil {
             let kind = req.query["kind"].flatMap(SessionKind.init(rawValue:))
             let tag = req.query["tag"].flatMap { $0.isEmpty ? nil : $0 }
-            return try ok(try store.sessions(kind: kind, tag: tag, limit: Int(req.query["limit"] ?? "") ?? 200).map(store.info))
+            let archived = req.query["archived"].flatMap(Store.ArchiveFilter.init(rawValue:)) ?? .hide
+            return try ok(try store.sessions(kind: kind, tag: tag, archived: archived, limit: Int(req.query["limit"] ?? "") ?? 200).map(store.info))
+        }
+        if Self.match(method, route, "POST", "sessions/archive") != nil {
+            let r = try decode(ArchiveRequest.self, req)
+            var ids = r.sessionIds
+            if let days = r.olderThanDays, r.archived, let cutoff = Calendar.current.date(byAdding: .day, value: -max(days, 0), to: Date()) {
+                ids += try store.endedSessions(before: cutoff, kind: r.kind)
+            }
+            let changed = try store.setArchived(sessionIds: ids, r.archived)
+            if changed > 0 { store.addEvent(sessionId: nil, kind: .sessionEnded, message: "\(r.archived ? "Archived" : "Unarchived") \(changed) session(s)") }
+            return try ok(["changed": changed])
         }
         if Self.match(method, route, "GET", "session-tags") != nil {
             return try ok(try store.sessionTags())

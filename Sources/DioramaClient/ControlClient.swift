@@ -132,11 +132,18 @@ public struct ControlClient: Sendable {
     public func updateProfile(_ id: String, _ p: Profile) async throws -> ProfileDetail { try await request("PUT", "profiles/\(id.urlPathEscaped)", body: p) }
     public func archiveProfile(_ id: String) async throws { let _: [String: String] = try await request("DELETE", "profiles/\(id.urlPathEscaped)") }
 
-    public func sessions(kind: SessionKind? = nil, tag: String? = nil, limit: Int = 200) async throws -> [SessionInfo] {
-        var q = ["limit": String(limit)]
+    /// `archived`: "hide" (default), "only" or "all".
+    public func sessions(kind: SessionKind? = nil, tag: String? = nil, archived: String = "hide", limit: Int = 200) async throws -> [SessionInfo] {
+        var q = ["limit": String(limit), "archived": archived]
         if let kind { q["kind"] = kind.rawValue }
         if let tag { q["tag"] = tag }
         return try await request("GET", "sessions", query: q)
+    }
+    /// Archives (or unarchives) sessions; returns how many changed. Running sessions are skipped.
+    @discardableResult
+    public func archiveSessions(_ r: ArchiveRequest) async throws -> Int {
+        let out: [String: Int] = try await request("POST", "sessions/archive", body: r)
+        return out["changed"] ?? 0
     }
     /// Renames a session or sets its notes or tags (nil fields stay as they are).
     public func annotate(_ id: String, _ a: SessionAnnotations) async throws -> SessionInfo { try await request("PUT", "sessions/\(id)/annotations", body: a) }
