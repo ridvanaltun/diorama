@@ -35,6 +35,7 @@ struct SettingsView: View {
                 TextField("Default rewrite model", text: $draft.defaultModel)
                 Stepper("Keep raw request/response capture for \(draft.retentionDays) days", value: $draft.retentionDays, in: 1...3650)
                 Toggle("Capture raw request and response bodies", isOn: $draft.captureRawBodies)
+                TextField("Ollama URL (for ollama: models)", text: $draft.ollamaURL)
                 TextField("claude executable (blank = auto-detect)", text: Binding(get: { draft.claudePath ?? "" }, set: { draft.claudePath = $0.isEmpty ? nil : $0 }))
                 HStack {
                     Button("Save settings") { Task { if let s = await model.perform({ try await $0.saveSettings(draft) }) { model.settings = s } } }

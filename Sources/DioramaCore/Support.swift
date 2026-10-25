@@ -192,6 +192,7 @@ public enum Pricing {
 
     /// Cost in USD for one request's usage, or nil if the model isn't in the table.
     public static func cost(model: String, usage: TokenUsage) -> Double? {
+        if model.hasPrefix("ollama:") { return 0 }  // local model
         guard let p = price(for: model) else { return nil }
         let prompt = usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
         let long = p.longContextThreshold.map { prompt > $0 } ?? false

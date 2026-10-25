@@ -398,3 +398,42 @@ func crc32(_ bytes: [UInt8]) -> UInt32 {
     }
     return ~c
 }
+
+
+@Suite struct OllamaProviderTests {
+    @Test func rewriteAndJudgeAgainstFakeOllama() async throws {
+        let mock = MockUpstream { req in
+            guard req.uri == "/api/chat", let body = try? JSONSerialization.jsonObject(with: Data(req.body)) as? [String: Any] else { return .json("{}", status: 404) }
+            let isJudge = ((body["messages"] as? [[String: Any]])?.first?["content"] as? String)?.contains("research experiment") == true
+            let content = isJudge
+                ? #"{"verdict":"adopted","rationale":"repeats it"}"#
+                : #"{"decision":"edit","edits":[{"find":"Example","replace":"Local","rationale":"r"}],"content":"","explanation":"local edit"}"#
+            let encoded = String(decoding: JSONEncodingHelper.string(content), as: UTF8.self)
+            return .json(#"{"model":"\#(body["model"] as? String ?? "")","message":{"role":"assistant","content":\#(encoded)},"prompt_eval_count":120,"eval_count":30,"done":true}"#)
+        }
+        try await mock.start()
+        defer { Task { await mock.stop() } }
+        let p = OllamaRewriteProvider(baseURL: { mock.url })
+        let r = await p.rewrite(RewriteRequest(toolName: "WebFetch", toolInput: "{}", segments: ["Example page"], instructions: [RuleInstruction(name: "n", text: "t")], taskContext: nil, model: "ollama:llama3.1", effort: nil, maxOutputTokens: 100, timeout: 5))
+        #expect(r.status == .succeeded)
+        #expect(r.output?.edits.first?.replace == "Local")
+        #expect(r.modelServed == "ollama:llama3.1")
+        #expect(r.usage?.inputTokens == 120)
+        let firstRequest = try #require(mock.requests.first)
+        let sent = try #require(try JSONSerialization.jsonObject(with: Data(firstRequest.body)) as? [String: Any])
+        #expect(sent["model"] as? String == "llama3.1")
+        #expect(sent["stream"] as? Bool == false)
+        #expect((sent["format"] as? [String: Any])?["type"] as? String == "object")
+        #expect(Pricing.cost(model: "ollama:llama3.1", usage: TokenUsage(inputTokens: 1000)) == 0)
+        let j = await p.judge(JudgeRequest(task: "t", changes: [JudgedChange(before: "a", after: "b")], finalOutput: "b", question: "q", model: "ollama:llama3.1"))
+        #expect(j.verdict == "adopted")
+        #expect(j.costUSD == 0)
+    }
+
+    @Test func reportsWhenOllamaIsNotRunning() async {
+        let p = OllamaRewriteProvider(baseURL: { URL(string: "http://127.0.0.1:9")! })
+        let r = await p.rewrite(RewriteRequest(toolName: "t", toolInput: "{}", segments: ["x"], instructions: [], taskContext: nil, model: "ollama:m", effort: nil, maxOutputTokens: 10, timeout: 3))
+        #expect(r.status == .failed)
+        #expect(r.error?.contains("not running") == true)
+    }
+}

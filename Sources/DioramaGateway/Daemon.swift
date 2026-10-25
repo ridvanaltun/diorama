@@ -57,6 +57,8 @@ public final class DioramaDaemon: @unchecked Sendable {
         sessions = SessionCache(store: store)
         let secrets = options.secrets ?? LayeredSecretStore(override: EnvironmentSecretStore(environment: options.environment), primary: KeychainSecretStore())
         self.secrets = secrets
+        let store = self.store
+        let ollama = OllamaRewriteProvider(baseURL: { URL(string: store.settings().ollamaURL) ?? URL(string: DioramaSettings.defaultOllamaURL)! })
         let provider: RewriteProvider
         if let o = options.providerOverride {
             provider = o
@@ -70,13 +72,16 @@ public final class DioramaDaemon: @unchecked Sendable {
                 }
             }
         }
-        engine = DecisionEngine(store: store) { (_: String) in provider }
+        let routesOllama = options.providerOverride == nil && options.provider == .anthropic
+        engine = DecisionEngine(store: store) { (model: String) in
+            routesOllama && OllamaRewriteProvider.isOllama(model) ? ollama : provider
+        }
         server = HTTPServer(maxBodyBytes: options.maxBodyBytes)
         let factory = SessionFactoryBox()
         runner = ExperimentRunner(
             store: store, paths: options.paths, environment: options.environment,
             claudePath: { [store] in ClaudeLocator.find(configured: store.settings().claudePath, environment: options.environment) },
-            judge: options.judgeOverride ?? AnthropicJudge(baseURL: options.rewriteBaseURL, apiKey: { secrets.get() }),
+            judge: options.judgeOverride ?? RoutingJudge(anthropic: AnthropicJudge(baseURL: options.rewriteBaseURL, apiKey: { secrets.get() }), ollama: ollama),
             makeSession: { spec in
                 guard let make = factory.make else { throw RunnerError("daemon is shutting down") }
                 return try make(spec)
@@ -218,6 +223,23 @@ public final class DioramaDaemon: @unchecked Sendable {
                 checks.append(DoctorCheck(name: "Claude Code credentials", status: .ok, detail: "\(path) configures a credential; Diorama forwards it unchanged"))
             }
         }
+        // Ollama is optional: only `ollama:` models need it.
+        let ollamaURL = settings.ollamaURL
+        var ollamaUp = false
+        if let url = URL(string: ollamaURL + "/api/tags") {
+            var req = URLRequest(url: url)
+            req.timeoutInterval = 1.5
+            let sem = DispatchSemaphore(value: 0)
+            final class Flag: @unchecked Sendable { var up = false }
+            let flag = Flag()
+            URLSession.shared.dataTask(with: req) { _, resp, _ in
+                flag.up = (resp as? HTTPURLResponse)?.statusCode == 200
+                sem.signal()
+            }.resume()
+            _ = sem.wait(timeout: .now() + 2)
+            ollamaUp = flag.up
+        }
+        checks.append(DoctorCheck(name: "Ollama (optional)", status: .ok, detail: ollamaUp ? "reachable at \(ollamaURL); use models like ollama:llama3.1" : "not running at \(ollamaURL) — only needed for ollama: models"))
         checks.append(DoctorCheck(name: "Gateway", status: .ok, detail: "listening on 127.0.0.1:\(port), upstream \(options.upstream.absoluteString)"))
         return DoctorReport(checks: checks)
     }

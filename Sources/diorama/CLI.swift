@@ -508,7 +508,7 @@ struct Settings: AsyncParsableCommand {
     }
 
     struct SetValue: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(commandName: "set", abstract: "Set defaultModel, retentionDays, captureRawBodies or claudePath.")
+        static let configuration = CommandConfiguration(commandName: "set", abstract: "Set defaultModel, retentionDays, captureRawBodies, claudePath or ollamaURL.")
         @OptionGroup var global: GlobalOptions
         @Argument var key: String
         @Argument var value: String
@@ -522,6 +522,9 @@ struct Settings: AsyncParsableCommand {
                 s.retentionDays = d
             case "captureRawBodies": s.captureRawBodies = ["1", "true", "yes", "on"].contains(value.lowercased())
             case "claudePath": s.claudePath = value.isEmpty ? nil : (value as NSString).expandingTildeInPath
+            case "ollamaURL":
+                guard URL(string: value)?.scheme?.hasPrefix("http") == true else { throw ValidationError("ollamaURL must be an http(s) URL") }
+                s.ollamaURL = value
             default: throw ValidationError("unknown setting \(key)")
             }
             try printJSON(try await c.saveSettings(s))

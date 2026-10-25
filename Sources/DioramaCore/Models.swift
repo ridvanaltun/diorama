@@ -647,8 +647,13 @@ public struct DioramaSettings: Codable, Sendable, Hashable {
     public var retentionDays: Int
     public var captureRawBodies: Bool
     public var claudePath: String?
+    /// Ollama server for `ollama:` models.
+    public var ollamaURL: String
 
-    public init(defaultModel: String = ProfileDefaults.defaultModel, retentionDays: Int = 14, captureRawBodies: Bool = true, claudePath: String? = nil) {
+    public static let defaultOllamaURL = "http://127.0.0.1:11434"
+
+    public init(defaultModel: String = ProfileDefaults.defaultModel, retentionDays: Int = 14, captureRawBodies: Bool = true, claudePath: String? = nil, ollamaURL: String = DioramaSettings.defaultOllamaURL) {
+        self.ollamaURL = ollamaURL
         self.defaultModel = defaultModel
         self.retentionDays = retentionDays
         self.captureRawBodies = captureRawBodies
@@ -662,6 +667,7 @@ public struct DioramaSettings: Codable, Sendable, Hashable {
         retentionDays = try c.decodeIfPresent(Int.self, forKey: .retentionDays) ?? d.retentionDays
         captureRawBodies = try c.decodeIfPresent(Bool.self, forKey: .captureRawBodies) ?? d.captureRawBodies
         claudePath = try c.decodeIfPresent(String.self, forKey: .claudePath)
+        ollamaURL = try c.decodeIfPresent(String.self, forKey: .ollamaURL) ?? DioramaSettings.defaultOllamaURL
     }
 }
 
