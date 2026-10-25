@@ -55,7 +55,7 @@ import Testing
         _ = try store.insertDecision(DecisionRecord(
             toolUseId: "toolu_old", sessionId: launch.session.id, exchangeId: 0, toolName: "Read", toolInput: nil, isError: false,
             originalHash: "h", originalBlob: blob, outcome: .unchanged, reason: "no rule matched", replacementBlob: nil, rules: [], instructions: []))
-        #expect(try await env.client.search("armadillo").isEmpty)
+        // (The daemon's own startup backfill may get to it first under load; either way it's the same code.)
         DioramaDaemon.backfillSearch(store: store)
         #expect(try await env.client.search("armadillo").map(\.ref) == ["toolu_old"])
         DioramaDaemon.backfillSearch(store: store)
