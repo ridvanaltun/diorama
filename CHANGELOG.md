@@ -5,6 +5,8 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+## 1.2.0 — 2026-10-25
+
 ### New
 - **Claude desktop support (hook mode).** `diorama hook install` (or **New Session → Claude desktop & IDEs** in the app) connects a project through Claude Code hooks. Sessions in the Claude desktop app's Code tab, and in IDEs, then have their tool results rewritten and recorded with the same profiles and prompts. They appear with a "hook mode" badge. Hook mode doesn't capture model traffic or do pre-extraction; `diorama run` remains the full mode and runs experiments.
 - **AI control (MCP).** One click on **Connect to Claude…** (sidebar, menu bar or Settings) in the app, or `diorama mcp install --claude-code` / `--claude-desktop`, lets Claude list sessions, read audit records, write profiles, connect projects for hook mode, and run experiments. Starting a run needs the cost estimate's confirmation token. `--read-only` exposes inspection tools only.
