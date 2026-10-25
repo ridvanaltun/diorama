@@ -96,6 +96,10 @@ public struct ControlClient: Sendable {
     public func playground(_ r: PlaygroundRequest) async throws -> PlaygroundResult { try await request("POST", "playground", body: r) }
     public func whatIf(_ r: WhatIfRequest) async throws -> WhatIfResult { try await request("POST", "whatif", body: r) }
     public func spend() async throws -> SpendSummary { try await request("GET", "spend") }
+    /// Runs a profile's rule tests (matching only, free): a saved profile by name or id, or an unsaved one.
+    public func runProfileTests(_ ref: String? = nil, profile: Profile? = nil) async throws -> [ProfileTestResult] {
+        try await request("POST", "profile-tests", body: ProfileTestRequest(profileRef: ref, profile: profile))
+    }
     /// Project folders with a default profile.
     public func folderDefaults() async throws -> [FolderDefault] { try await request("GET", "folders") }
     /// The default that applies to `path` (its own or the nearest parent's), if any.

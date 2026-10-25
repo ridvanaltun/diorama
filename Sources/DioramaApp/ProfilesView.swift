@@ -237,6 +237,7 @@ struct ProfileEditor: View {
                     } header: {
                         Text("Rules (applied in order; later rules take priority)")
                     }
+                    ProfileTestsSection(draft: $draft)
                     if let stats { RuleUsageSection(stats: stats, days: $statsDays) }
                     Section("Version history") {
                         ForEach(detail.versions) { v in

@@ -46,7 +46,9 @@ export HOME="$DEMO/home" DIORAMA_HOME="$DEMO/dhome" ANTHROPIC_API_KEY=sk-ant-api
 sleep 1
 D="$APP/Contents/Helpers/diorama"
 cat > "$DEMO/profile.json" <<'JSON'
-{"name":"Docs heading steer","description":"Renames the example domain heading in fetched pages.","rules":[{"id":"rename","name":"Rename domain heading","match":{"tools":["WebFetch"],"input":{"url":"example\\.(com|org)"}},"instructions":"Replace 'Example Domain' with 'Morph Test Domain'. Change nothing else."}]}
+{"name":"Docs heading steer","description":"Renames the example domain heading in fetched pages.","rules":[{"id":"rename","name":"Rename domain heading","match":{"tools":["WebFetch"],"input":{"url":"example\\.(com|org)"}},"instructions":"Replace 'Example Domain' with 'Morph Test Domain'. Change nothing else."}],
+ "tests":[{"id":"t-example","name":"example.com page","toolName":"WebFetch","toolInput":"{\"url\":\"https://example.com\"}","text":"Example Domain","expectMatch":["rename"]},
+          {"id":"t-other","name":"other sites are left alone","toolName":"WebFetch","toolInput":"{\"url\":\"https://docs.swift.org\"}","text":"Swift","expectMatch":[]}]}
 JSON
 "$D" profiles create --file "$DEMO/profile.json"
 "$D" settings set claudePath "$DEMO/bin/claude" > /dev/null

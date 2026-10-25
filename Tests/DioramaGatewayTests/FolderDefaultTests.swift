@@ -39,3 +39,20 @@ import Testing
         #expect(try await env.client.folderDefaults().isEmpty)
     }
 }
+
+@Suite struct ProfileTestsAPITests {
+    @Test func runsSavedAndUnsavedProfiles() async throws {
+        let env = try await TestEnv.start()
+        defer { Task { await env.stop() } }
+        let rule = Rule(id: "r", name: "Rename", match: RuleMatch(tools: ["WebFetch"]), instructions: "x")
+        let test = ProfileTestCase(id: "t", name: "fetch", text: "Example", expectMatch: ["r"])
+        _ = try await env.client.createProfile(Profile(name: "web", rules: [rule], tests: [test]))
+        #expect(try await env.client.runProfileTests("web").map(\.passed) == [true])
+        var draft = Profile(name: "web", rules: [rule], tests: [test])
+        draft.rules[0].match.tools = ["Bash"]
+        let r = try await env.client.runProfileTests(profile: draft)
+        #expect(r.first?.passed == false && r.first?.problems.first?.contains("should match") == true)
+        #expect(try await env.client.profile("web").current.profile.tests?.count == 1, "tests are saved with the profile")
+        await #expect(throws: ClientError.self) { try await env.client.runProfileTests("missing") }
+    }
+}

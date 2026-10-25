@@ -6,6 +6,7 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 ## Unreleased
 
 ### New
+- **Rule tests.** Profiles can carry test cases (a sample tool result and the rules that should match it), checked live in the editor and with `diorama profiles check` (exit 1 on failure, works on a JSON file for CI) or MCP `run_profile_tests`. Matching only: free.
 - **Folder defaults.** Give a project folder a default profile (`diorama folders set`, New Session, Settings → Folder defaults); `diorama run` in that folder or below uses it unless you pass `--profile`, `--prompt` or `--no-folder-default`.
 - **More templates.** New starting points for shadow mode, review mode, sampling, a classifier rule and an input rule (appended, so `--template N` numbers are unchanged).
 - **Spending history.** Settings → Spending charts rewrite-agent spending per day over 30 or 90 days, split into sessions, experiment trials and playground/what-if, with a per-profile breakdown. Also `diorama spend --days N` and MCP `get_spend_history`.

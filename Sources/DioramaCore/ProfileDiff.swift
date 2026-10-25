@@ -29,6 +29,10 @@ public struct ProfileComparison: Codable, Sendable, Hashable {
     public static func compare(_ a: Profile, _ b: Profile) -> ProfileComparison {
         var fields = diff(flatten(["name": a.name, "description": a.description]), flatten(["name": b.name, "description": b.description]))
         fields += diff(flatten(encoded(a.defaults), prefix: "defaults"), flatten(encoded(b.defaults), prefix: "defaults"))
+        if (a.tests ?? []) != (b.tests ?? []) {
+            func label(_ t: [ProfileTestCase]?) -> String { "\((t ?? []).count) test(s): " + (t ?? []).map(\.name).joined(separator: ", ") }
+            fields.append(FieldChange(path: "tests", old: label(a.tests), new: label(b.tests)))
+        }
 
         let old = Dictionary(a.rules.map { ($0.id, $0) }, uniquingKeysWith: { x, _ in x })
         let new = Dictionary(b.rules.map { ($0.id, $0) }, uniquingKeysWith: { x, _ in x })

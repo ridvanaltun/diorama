@@ -542,7 +542,7 @@ struct Session: AsyncParsableCommand {
 struct Profiles: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Manage profiles (versioned sets of global rules).",
-        subcommands: [List.self, Show.self, Create.self, Update.self, Export.self, Delete.self, Templates.self, Test.self, Stats.self, Diff.self], defaultSubcommand: List.self)
+        subcommands: [List.self, Show.self, Create.self, Update.self, Export.self, Delete.self, Templates.self, Test.self, Stats.self, Diff.self, Check.self], defaultSubcommand: List.self)
 
     struct List: AsyncParsableCommand {
         @OptionGroup var global: GlobalOptions
@@ -627,6 +627,38 @@ struct Profiles: AsyncParsableCommand {
         func run() async throws {
             try await global.client().archiveProfile(id)
             print("Archived.")
+        }
+    }
+
+    struct Check: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Run a profile's rule tests (matching only, free). Exits 1 if any fails.",
+            discussion: """
+                Rule tests live in the profile ("tests": sample tool results and the rules that should match them). \
+                Add them in the profile editor's Tests section, or in the JSON. Useful in CI on a checked-in profile:
+                  diorama profiles check --file profiles/docs-steer.json
+                  diorama profiles check "Docs steer"
+                """)
+        @OptionGroup var global: GlobalOptions
+        @Argument(help: "Saved profile name or id.") var profile: String?
+        @Option(help: "A profile JSON file to check instead.") var file: String?
+        @Flag var json = false
+
+        func run() async throws {
+            let client = try await global.client()
+            let results: [ProfileTestResult]
+            let name: String
+            if let file {
+                let p = try readJSONFile(file, as: Profile.self)
+                results = try await client.runProfileTests(profile: p)
+                name = p.name
+            } else {
+                guard let profile else { throw ValidationError("give a profile or --file") }
+                results = try await client.runProfileTests(profile)
+                name = profile
+            }
+            if json { try printJSON(results) } else { print(ProfileTestsText.render(results, profileName: name)) }
+            if results.contains(where: { !$0.passed }) { throw ExitCode(1) }
         }
     }
 

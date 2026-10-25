@@ -273,6 +273,14 @@ enum MCPTools {
             return "Profile \(d.current.profileId), version \(d.current.number) (\(d.current.id)):\n" + (try json(d.current.profile))
         },
         .init(
+            name: "run_profile_tests",
+            description: "Run a profile's rule tests (sample tool results and which rules should match them). Matching only: free, no model calls. Use after changing rules.",
+            schema: schema(["profile": string("Profile name or id.")], required: ["profile"]), readOnly: true
+        ) { s, a in
+            let ref = try arg(a, "profile")
+            return ProfileTestsText.render(try await s.daemon().runProfileTests(ref), profileName: ref)
+        },
+        .init(
             name: "get_spend_history",
             description: "Rewrite-agent spending per day (sessions, experiment trials, playground/what-if previews, calls) and per profile, for the last N days.",
             schema: schema(["days": ["type": "integer", "minimum": 1, "maximum": 366, "description": "Days to cover, today included (default 30)."]]),

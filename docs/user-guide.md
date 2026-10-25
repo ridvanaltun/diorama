@@ -184,6 +184,17 @@ diorama profiles test "Docs steer" --text "Version 1 is current" --input '{"url"
 diorama profiles test --file draft.json --text-file page.txt
 ```
 
+### Rule tests: keep rules matching what you meant
+
+A profile can carry **rule tests**: sample tool results, each with the rules that should match it. Every other rule must not match. Tests are saved and versioned with the profile, and they run on every edit in the editor's **Rule tests** section, showing pass/fail and why. **Expect what matches now** accepts the current behavior. Tests only check matching, so they're free: no model is called. Classifier questions aren't asked, so a classifier rule counts as matching when its other conditions do. A sampled rule samples by the test's id.
+
+```json
+"tests": [{"name": "docs page", "toolName": "WebFetch", "toolInput": "{\"url\":\"https://docs.example.com\"}",
+           "text": "Version 2 is current.", "expectMatch": ["rename-version"]}]
+```
+
+`diorama profiles check "Docs steer"` or `diorama profiles check --file profile.json` runs them and exits with status 1 if any fails, so a checked-in profile can be tested in CI. The MCP tool `run_profile_tests` runs them too.
+
 ### What-if replay: compare rules on a past session
 
 **What if…** in a session's header re-runs that session's recorded tool results (their originals) through other rules: another profile, a specific earlier or later version, your session prompt, or an unsaved draft (CLI/MCP). It compares the outcome with what the session actually did.

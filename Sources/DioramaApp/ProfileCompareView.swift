@@ -109,7 +109,7 @@ struct ProfileCompareSheet: View {
         let names = ["match.tools": "Tools", "match.content": "Content regex", "match.stage": "Applies to", "match.requestClass": "Request class",
                      "match.classifier.question": "Classifier question", "match.classifier.model": "Classifier model", "instructions": "Instructions",
                      "enabled": "Enabled", "model": "Rewrite model", "effort": "Effort", "context": "Context", "name": "Name", "description": "Description",
-                     "redact.presets": "Redact presets", "redact.patterns": "Redact patterns"]
+                     "redact.presets": "Redact presets", "redact.patterns": "Redact patterns", "tests": "Rule tests", "match.sample": "Sample"]
         if let n = names[path] { return n }
         if path.hasPrefix("match.input.") { return "Input pattern: " + path.dropFirst("match.input.".count) }
         if path.hasPrefix("defaults.") { return "Default: " + path.dropFirst("defaults.".count) }

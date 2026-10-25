@@ -243,12 +243,16 @@ public struct Profile: Codable, Sendable, Hashable {
     public var description: String
     public var rules: [Rule]
     public var defaults: ProfileDefaults
+    /// Rule tests: sample tool results and which rules should match them. Versioned with the
+    /// profile. Nil when there are none (so profiles without tests keep their exact JSON).
+    public var tests: [ProfileTestCase]?
 
-    public init(name: String, description: String = "", rules: [Rule] = [], defaults: ProfileDefaults = .init()) {
+    public init(name: String, description: String = "", rules: [Rule] = [], defaults: ProfileDefaults = .init(), tests: [ProfileTestCase]? = nil) {
         self.name = name
         self.description = description
         self.rules = rules
         self.defaults = defaults
+        self.tests = tests?.isEmpty == true ? nil : tests
     }
 
     public init(from decoder: Decoder) throws {
@@ -257,6 +261,66 @@ public struct Profile: Codable, Sendable, Hashable {
         description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
         rules = try c.decodeIfPresent([Rule].self, forKey: .rules) ?? []
         defaults = try c.decodeIfPresent(ProfileDefaults.self, forKey: .defaults) ?? .init()
+        tests = try c.decodeIfPresent([ProfileTestCase].self, forKey: .tests).flatMap { $0.isEmpty ? nil : $0 }
+    }
+}
+
+/// One rule test: a sample tool result (or tool input, or raw page) and the rules that should
+/// match it. Every other rule is expected not to match. Checked without calling any model.
+public struct ProfileTestCase: Codable, Sendable, Hashable, Identifiable {
+    public var id: String
+    public var name: String
+    public var toolName: String
+    /// Tool input JSON (rules can match on its fields).
+    public var toolInput: String?
+    public var text: String
+    public var stage: RuleStage
+    public var isError: Bool
+    /// Ids of the rules that should match.
+    public var expectMatch: [String]
+
+    public init(id: String = "test-" + UUID().uuidString.prefix(8).lowercased(), name: String, toolName: String = "WebFetch", toolInput: String? = nil,
+                text: String, stage: RuleStage = .result, isError: Bool = false, expectMatch: [String]) {
+        self.id = id
+        self.name = name
+        self.toolName = toolName
+        self.toolInput = toolInput
+        self.text = text
+        self.stage = stage
+        self.isError = isError
+        self.expectMatch = expectMatch
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? "test-" + UUID().uuidString.prefix(8).lowercased()
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Test"
+        toolName = try c.decodeIfPresent(String.self, forKey: .toolName) ?? "WebFetch"
+        toolInput = try c.decodeIfPresent(String.self, forKey: .toolInput)
+        text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+        stage = try c.decodeIfPresent(RuleStage.self, forKey: .stage) ?? .result
+        isError = try c.decodeIfPresent(Bool.self, forKey: .isError) ?? false
+        expectMatch = try c.decodeIfPresent([String].self, forKey: .expectMatch) ?? []
+    }
+}
+
+/// The outcome of one rule test.
+public struct ProfileTestResult: Codable, Sendable, Hashable, Identifiable {
+    public var caseId: String
+    public var name: String
+    public var passed: Bool
+    /// One line per rule that behaved differently than expected, with the matcher's reason.
+    public var problems: [String]
+    /// Rules that matched (by name), for display.
+    public var matched: [String]
+    public var id: String { caseId }
+
+    public init(caseId: String, name: String, passed: Bool, problems: [String], matched: [String]) {
+        self.caseId = caseId
+        self.name = name
+        self.passed = passed
+        self.problems = problems
+        self.matched = matched
     }
 }
 
@@ -1434,4 +1498,15 @@ public struct SpendHistory: Codable, Sendable, Hashable {
     public var totalUSD: Double { days.reduce(0) { $0 + $1.totalUSD } }
 
     public init(days: [Day]) { self.days = days }
+}
+
+/// Run a profile's rule tests: a saved profile by name or id, or an unsaved one.
+public struct ProfileTestRequest: Codable, Sendable {
+    public var profileRef: String?
+    public var profile: Profile?
+
+    public init(profileRef: String? = nil, profile: Profile? = nil) {
+        self.profileRef = profileRef
+        self.profile = profile
+    }
 }

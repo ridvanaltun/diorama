@@ -168,6 +168,12 @@ struct ControlAPI: Sendable {
             let rows = try store.exportDecisions(filter)
             return try ok(DecisionExport(format: format, rows: rows.count, content: DataExport.render(rows, format: format, includeTexts: filter.includeTexts)))
         }
+        if Self.match(method, route, "POST", "profile-tests") != nil {
+            let r = try decode(ProfileTestRequest.self, req)
+            if let p = r.profile { return try ok(ProfileTests.run(p)) }
+            guard let ref = r.profileRef, let v = try store.resolveProfile(ref) else { throw notFound("profile") }
+            return try ok(ProfileTests.run(v.profile))
+        }
         if Self.match(method, route, "GET", "folders") != nil {
             if let path = req.query["path"], !path.isEmpty { return try ok(store.settings().folderDefault(for: path).map { [$0] } ?? []) }
             return try ok(store.settings().folderProfiles.map { FolderDefault(path: $0.key, profile: $0.value) }.sorted { $0.path < $1.path })
