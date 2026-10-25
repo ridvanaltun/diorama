@@ -281,6 +281,9 @@ public struct TrialFacts: Codable, Sendable, Hashable {
     public var numTurns: Int?
     public var toolCalls: [String: Int]
     public var rewritesApplied: Int
+    /// Rewrites taken from the frozen-treatment cache instead of generated for this trial.
+    /// Optional so records written by earlier versions still decode.
+    public var rewritesReused: Int?
     public var rewriteFailures: Int
     public var usage: TokenUsage
     /// Cost reported by Claude Code (`total_cost_usd`); notional on subscription plans.
@@ -291,8 +294,9 @@ public struct TrialFacts: Codable, Sendable, Hashable {
     public init(
         finalOutput: String, isError: Bool, exitCode: Int32?, durationMs: Double, numTurns: Int?, toolCalls: [String: Int],
         rewritesApplied: Int, rewriteFailures: Int, usage: TokenUsage, claudeCostUSD: Double?, rewriteCostUSD: Double,
-        filesChanged: [String]
+        filesChanged: [String], rewritesReused: Int? = nil
     ) {
+        self.rewritesReused = rewritesReused
         self.finalOutput = finalOutput
         self.isError = isError
         self.exitCode = exitCode

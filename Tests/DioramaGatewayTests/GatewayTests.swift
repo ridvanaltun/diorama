@@ -317,6 +317,28 @@ func sampleBody(results: [(id: String, text: String)] = [("toolu_x", "Example Do
         #expect(env.mock.requests.map(\.uri) == ["/api/hello", "/v1/models?limit=1000"])
     }
 
+    @Test func stopReturnsPromptlyWithOpenConnectionsAndEventStreams() async throws {
+        let env = try await TestEnv.start()
+        let launch = try await env.client.createSession(SessionSpec(name: "stop", cwd: "/tmp"))
+        _ = try await env.post(launch.token, body: sampleBody())          // leaves a keep-alive connection open
+        let events = env.client.eventStream()                                // long-lived SSE connection
+        let reader = Task { for try await _ in events {} }
+        try await Task.sleep(for: .milliseconds(300))
+        let started = Date()
+        await env.daemon.stop()
+        let finished = await withTaskGroup(of: Bool.self) { g in
+            g.addTask { await env.serveTask.value; return true }
+            g.addTask { try? await Task.sleep(for: .seconds(5)); return false }
+            let first = await g.next()!
+            g.cancelAll()
+            return first
+        }
+        reader.cancel()
+        #expect(finished, "run() must return after stop() even with open connections")
+        #expect(Date().timeIntervalSince(started) < 5)
+        await env.mock.stop()
+    }
+
     @Test func passThroughAddsLittleLatency() async throws {
         let env = try await TestEnv.start()
         defer { Task { await env.stop() } }

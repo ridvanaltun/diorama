@@ -93,6 +93,7 @@ Key fields:
 - `variants`: two or more. Exactly one with no `profile` and no `prompt` is the **control**.
 - `trialsPerVariant`, `concurrency`, `seed`.
 - `treatment`: `frozen` (default) reuses one rewrite for identical tool results across trials. `fresh` rewrites in every trial, which also measures the rewrite agent's variability.
+  Reuse needs byte-identical tool results. WebFetch summarizes pages with a model, so its output usually differs between trials, and each trial then gets its own rewrite. The comparison says so when that happens. Read, Bash, Grep and most MCP tools return deterministic output and are reused.
 
 `diorama experiment run exp.json` shows an estimate for Claude Code usage and the rewrite agent, then asks you to type `yes`. The control API also refuses to start a run without the estimate's confirmation token. Trials run in blocked random order: every variant once per round, shuffled by the seed.
 

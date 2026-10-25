@@ -37,7 +37,14 @@ Each run used about **$0.62 of notional usage**, most of it writing Claude Code'
 - **Base-URL path prefix and hint headers:** both work as designed.
 - **Network lockdown:** `--settings` `permissions.deny` refuses `Bash(curl:*)`.
 
-## Still unverified (needs a live session or account)
-- WebSearch and MCP result shapes through a real model.
+## Live verification (2026-10-25, real Anthropic API, Claude Code 2.1.296 on Haiku 5.5, Max sign-in)
+- **Real rewrites work end to end.** The rewrite agent (`claude-haiku-5-5`, the user's key) returned structured edits for both WebFetch results, and Claude Code reported "Morph Test Domain" for both pages. Each rewrite took about 2–3 s and cost about $0.0002, both recorded.
+- **The API accepts rewritten history, and replay keeps the cache warm.** The second main turn read 38,767 cache tokens. The third read 38,880, which includes the replayed rewritten turn, and wrote only 113. There were no 4xx errors.
+- **WebSearch is reachable.** Claude Code runs the search as an *auxiliary* request (the server-side web search tool), then sends the main conversation a `tool_result` whose content is a **string**: `Web search results for query: "…"` followed by a JSON list of links. It's rewritable like any text result.
+- **The experiment runner works live.** A 2×2 pilot on Haiku completed every trial. Both steered trials repeated the rewritten heading; the controls didn't.
+- **Frozen treatment needs identical inputs.** WebFetch passes pages through a summarizing model, so its tool results differ between trials and each trial got its own rewrite. Comparisons now flag this (TrialFacts.rewritesReused, plus a caveat).
+
+## Still unverified
+- MCP tool-result shapes through a real model.
 - Whether Claude Code clears or edits old tool results itself in very long sessions. Diorama detects this case (`client-modified`) either way.
-- The preserved-thinking check on an account created on or after 2026-08-31, where it is enforced, with stable replay.
+- The preserved-thinking check on an account created on or after 2026-08-31 (enforced). The live test ran on an older account.

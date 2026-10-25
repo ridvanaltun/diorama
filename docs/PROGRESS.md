@@ -4,7 +4,9 @@ This file is kept current while work is in progress, so that progress survives r
 
 ## Current state (2026-10-25)
 - **Every phase is implemented.** Automated verification is complete for everything that can be tested without credentials or live usage. The phase-by-phase status is in [implementation-plan.md](implementation-plan.md#phase-log).
-- **Test suite:** `swift test`, **61 tests in 12 suites, all passing**. Five of them are contract tests with the real Claude Code CLI 2.1.296. There are 0 compiler warnings.
+- **Test suite:** `swift test`, **63 tests in 12 suites, all passing**. Five of them are contract tests with the real Claude Code CLI 2.1.296. There are 0 compiler warnings.
+- **CI:** GitHub Actions on a self-hosted macOS runner (LaunchAgent `actions.runner.ridvanaltun-diorama.diorama-mac`) runs build, tests and bundle on every push to `main`. It's green.
+- **Live verification is done** (see poc-findings): a real rewrite, cache hits on replay, the WebSearch shape, and a live 2×2 pilot experiment. It cost about $0.001 on the user's API key plus a few cents of notional Max plan usage.
 - **Release bundle:** `./scripts/bundle-app.sh` produces `dist/Diorama.app` and a zip, ad-hoc signed, passing `codesign --verify --deep --strict`.
 
 ## Completed work
@@ -20,6 +22,8 @@ This file is kept current while work is in progress, so that progress survives r
 | Docs | README, user guide, security, troubleshooting, release, architecture (updated to as built), decisions D1–D28, CONTRIBUTING, notices, changelog, examples, CI |
 
 ## Discoveries and decisions made during implementation
+- **Shutdown hang (fixed).** With open keep-alive or event-stream connections, `stop()` never returned, and SIGTERM left the process running. The cause was shutting the event loops down before closing child connections. A second race let `exit()` run before cleanup finished. Both are fixed, with a regression test plus a manual SIGTERM test against a real process.
+- **WebFetch output isn't deterministic** (its summarizing model), so frozen treatments can't be reused across trials for WebFetch. This is now reported.
 - **Deep recursion crashed the parser.** A recursive JSON parse overflowed a test thread's stack (SIGBUS), so the parser is now iterative.
 - **Case-insensitive file systems caused two collisions.** The `Diorama` and `diorama` products collided at link time, and later `MacOS/diorama` overwrote `MacOS/Diorama` inside the bundle. The CLI and daemon now live in `Contents/Helpers`, and the bundle script guards against a regression (D20).
 - **The control API runs on loopback with a bearer token** (D21). System SQLite and URLSession replace GRDB and async-http-client (D23).
@@ -31,10 +35,11 @@ This file is kept current while work is in progress, so that progress survives r
 - **Claude Code's auto-mode billing notice** appears with custom base URLs. It's harmless, and documented in troubleshooting.
 
 ## Blockers (need the maintainer)
-- **Live verification** with real Anthropic usage (D22): a real rewrite, cache-hit numbers, WebSearch and MCP shapes, and the preserved-thinking check on an enforced account.
+- **The running daemon and app still use the old binary.** They were started from `dist/` before the shutdown fix. Quit the app and run `diorama daemon stop`, then reopen the app. The first time the new build reads the Keychain item, macOS may ask; choose "Always Allow".
+- **Remaining live checks:** the MCP result shape, and the preserved-thinking check on an enforced (post-2026-08-31) account.
 - **Distribution:** Developer ID signing, notarization, a trademark search, the final bundle ID and GitHub owner, pushing, and publishing.
 
 ## Next actions
-1. The maintainer reviews the repository, and makes the initial commit if happy with it.
-2. A live smoke test on the maintainer's own account (`docs/release.md` step 3).
-3. Push to GitHub to run CI. Then sign, notarize and publish.
+1. Restart the app and daemon so they run the fixed build.
+2. Optional: a larger pilot on a real project (10+ trials per variant) to collect a meaningful sample.
+3. Release: Developer ID signing, notarization, trademark search, then publishing.

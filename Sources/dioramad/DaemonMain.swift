@@ -85,7 +85,16 @@ struct Main {
             let src = DispatchSource.makeSignalSource(signal: sig, queue: .main)
             src.setEventHandler {
                 log("received signal \(sig), shutting down")
-                Task { await daemon.stop() }
+                // Hard limit: never linger after a termination signal.
+                DispatchQueue.global().asyncAfter(deadline: .now() + 10) {
+                    log("shutdown took longer than 10s; exiting")
+                    exit(0)
+                }
+                Task {
+                    await daemon.stop()
+                    log("stopped")
+                    exit(0)
+                }
             }
             src.resume()
             return src

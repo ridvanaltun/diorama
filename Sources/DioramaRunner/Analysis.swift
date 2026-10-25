@@ -164,6 +164,13 @@ public enum Comparison {
             }
             let invalid = all.filter { $0.status == .invalid || $0.status == .failed }.count
             if invalid > 0 { caveats.append("Variant '\(v.key)': \(invalid) trial(s) failed or were invalidated and are excluded from the facts.") }
+            if !v.isControl, definition.treatment == .frozen, valid.count > 1 {
+                let rewritten = valid.filter { ($0.facts?.rewritesApplied ?? 0) > 0 }
+                let reused = rewritten.reduce(0) { $0 + ($1.facts?.rewritesReused ?? 0) }
+                if rewritten.count > 1, reused == 0 {
+                    caveats.append("Variant '\(v.key)': no rewrite could be reused across trials because the original tool results differed between trials (for example, WebFetch summarizes pages with a model, so its output varies). Each trial received its own rewrite, so the treatment was not perfectly identical.")
+                }
+            }
             if !v.isControl, valid.contains(where: { ($0.facts?.rewritesApplied ?? 0) == 0 }) {
                 caveats.append("Some '\(v.key)' trials received no rewrites, so they did not experience the treatment.")
             }

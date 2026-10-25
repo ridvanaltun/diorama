@@ -2,6 +2,12 @@
 
 ## 1.0.0 — unreleased
 
+### Since the initial commit
+- Fixed: the daemon didn't exit on SIGTERM or `diorama daemon stop` while client connections or event streams were open. Shutdown now closes connections before stopping the event loops, and all callers wait for one shared shutdown.
+- Added: `rewritesReused` in trial facts, and a comparison caveat when a frozen treatment couldn't be reused because tool results differed between trials.
+- CI runs on a self-hosted macOS runner, using actions v7 (Node 24).
+- Verified against the real Anthropic API: rewrites, replay with warm cache, WebSearch result shape, and a live pilot experiment.
+
 The first complete version.
 
 ### Gateway

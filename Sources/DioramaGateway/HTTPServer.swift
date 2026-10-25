@@ -60,6 +60,9 @@ final class HTTPServer: @unchecked Sendable {
     let maxBodyBytes: Int
     private var channel: NIOAsyncChannel<NIOAsyncChannel<HTTPServerRequestPart, HTTPServerResponsePart>, Never>?
     private(set) var port: Int = 0
+    private let lock = NSLock()
+    private var connections: [ObjectIdentifier: Channel] = [:]
+    private var serving = false
 
     init(threads: Int = System.coreCount, maxBodyBytes: Int) {
         group = MultiThreadedEventLoopGroup(numberOfThreads: max(2, min(threads, 8)))
@@ -94,6 +97,8 @@ final class HTTPServer: @unchecked Sendable {
 
     func serve(_ handler: HTTPHandler) async throws {
         guard let channel else { return }
+        lock.withLock { serving = true }
+        defer { lock.withLock { serving = false } }
         try await channel.executeThenClose { inbound in
             try await withThrowingDiscardingTaskGroup { group in
                 for try await connection in inbound {
@@ -107,6 +112,9 @@ final class HTTPServer: @unchecked Sendable {
 
     private func handleConnection(_ connection: NIOAsyncChannel<HTTPServerRequestPart, HTTPServerResponsePart>, _ handler: HTTPHandler) async {
         let allocator = connection.channel.allocator
+        let key = ObjectIdentifier(connection.channel)
+        lock.withLock { connections[key] = connection.channel }
+        defer { lock.withLock { _ = connections.removeValue(forKey: key) } }
         do {
             try await connection.executeThenClose { inbound, outbound in
                 var head: HTTPRequestHead?
@@ -148,8 +156,17 @@ final class HTTPServer: @unchecked Sendable {
         }
     }
 
+    /// Stops accepting, closes every open client connection (keep-alive and event streams),
+    /// waits for the serve loop to finish, and only then shuts the event loops down. Shutting
+    /// the loops down first would leave connection tasks waiting forever.
     func shutdown() async {
         try? await channel?.channel.close()
+        let open = lock.withLock { Array(connections.values) }
+        for ch in open { ch.close(promise: nil) }
+        let deadline = Date().addingTimeInterval(5)
+        while lock.withLock({ serving }), Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
         try? await group.shutdownGracefully()
     }
 

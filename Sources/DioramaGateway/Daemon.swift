@@ -46,7 +46,7 @@ public final class DioramaDaemon: @unchecked Sendable {
     private var lockFD: Int32 = -1
     private var background: [Task<Void, Never>] = []
     private let stopLock = NSLock()
-    private var stopped = false
+    private var stopTask: Task<Void, Never>?
 
     public init(options: Options) throws {
         self.options = options
@@ -120,13 +120,19 @@ public final class DioramaDaemon: @unchecked Sendable {
         try await server.serve(Router(daemon: self))
     }
 
+    /// Idempotent: every caller awaits the same single shutdown, so nobody (for example the
+    /// main path after `run()` returns) can exit the process while cleanup is still running.
     public func stop() async {
-        let first = stopLock.withLock { () -> Bool in
-            if stopped { return false }
-            stopped = true
-            return true
+        let task = stopLock.withLock { () -> Task<Void, Never> in
+            if let t = stopTask { return t }
+            let t = Task { await self.performStop() }
+            stopTask = t
+            return t
         }
-        guard first else { return }
+        await task.value
+    }
+
+    private func performStop() async {
         for id in runner.activeRunIds { try? runner.cancel(runId: id) }
         for t in background { t.cancel() }
         hub.finishAll()
@@ -139,6 +145,7 @@ public final class DioramaDaemon: @unchecked Sendable {
             if lockFD >= 0 {
                 flock(lockFD, LOCK_UN)
                 close(lockFD)
+                lockFD = -1
             }
         }
     }

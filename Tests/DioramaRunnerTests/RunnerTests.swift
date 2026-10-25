@@ -119,6 +119,19 @@ import Testing
         #expect(c.caveats.contains { $0.contains("invalidated") })
     }
 
+    @Test func comparisonFlagsFrozenTreatmentThatCouldNotBeReused() {
+        let def = ExperimentDefinition(name: "x", task: "t", projectPath: "/tmp", variants: [ExperimentVariant(key: "control", name: "c"), ExperimentVariant(key: "s", name: "s", prompt: SessionPrompt(text: "p"))], trialsPerVariant: 2, treatment: .frozen)
+        func trial(_ id: String, _ variant: String, rewrites: Int, reused: Int?) -> TrialInfo {
+            let f = TrialFacts(finalOutput: "o", isError: false, exitCode: 0, durationMs: 1, numTurns: 1, toolCalls: [:], rewritesApplied: rewrites, rewriteFailures: 0, usage: TokenUsage(), claudeCostUSD: 0, rewriteCostUSD: 0, filesChanged: [], rewritesReused: reused)
+            return TrialInfo(id: id, runId: "r", variantKey: variant, index: 0, order: 0, status: .succeeded, sessionId: nil, workdir: nil, startedAt: nil, finishedAt: nil, manifest: nil, facts: f, signals: nil, error: nil)
+        }
+        let run = RunSummary(id: "r", experimentId: "e", status: .completed, createdAt: Date(), startedAt: nil, finishedAt: nil, seed: 1, trialsTotal: 4, trialsDone: 4, estimate: nil)
+        let fresh = Comparison.compare(run: run, definition: def, trials: [trial("1", "control", rewrites: 0, reused: 0), trial("2", "control", rewrites: 0, reused: 0), trial("3", "s", rewrites: 1, reused: 0), trial("4", "s", rewrites: 1, reused: 0)])
+        #expect(fresh.caveats.contains { $0.contains("could be reused") })
+        let frozen = Comparison.compare(run: run, definition: def, trials: [trial("1", "control", rewrites: 0, reused: 0), trial("2", "control", rewrites: 0, reused: 0), trial("3", "s", rewrites: 1, reused: 0), trial("4", "s", rewrites: 1, reused: 1)])
+        #expect(!frozen.caveats.contains { $0.contains("could be reused") })
+    }
+
     @Test func seededOrderIsReproducible() {
         var a = SeededGenerator(seed: 42), b = SeededGenerator(seed: 42)
         var x = Array(0..<20), y = Array(0..<20)

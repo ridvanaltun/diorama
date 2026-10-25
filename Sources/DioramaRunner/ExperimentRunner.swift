@@ -269,7 +269,8 @@ public final class ExperimentRunner: @unchecked Sendable {
             durationMs: transcript.durationMs ?? Date().timeIntervalSince(started) * 1000, numTurns: transcript.numTurns,
             toolCalls: transcript.toolCalls, rewritesApplied: decisions.filter { $0.outcome == .rewritten }.count,
             rewriteFailures: decisions.filter { $0.outcome == .failed }.count, usage: transcript.usage, claudeCostUSD: transcript.costUSD,
-            rewriteCostUSD: rewriteCost, filesChanged: Array(changed.prefix(200)))
+            rewriteCostUSD: rewriteCost, filesChanged: Array(changed.prefix(200)),
+            rewritesReused: decisions.filter { $0.outcome == .rewritten && $0.reason == "frozen treatment reused" }.count)
         let signals = Heuristics.signals(transcript: transcript, decisions: decisions, store: store)
         let flags = (try? store.session(id: launch.session.id))?.flags ?? []
         let status: TrialStatus
