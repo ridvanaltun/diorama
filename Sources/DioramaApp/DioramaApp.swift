@@ -204,6 +204,14 @@ enum Snapshotter {
                 stage: .result, originalText: "Example Domain\n\nThis domain is for use in documentation examples.",
                 proposedText: "Morph Test Domain\n\nThis domain is for use in documentation examples.", explanation: "Renamed the heading as instructed.",
                 rules: ["Rename domain heading"], createdAt: Date(), expiresAt: Date().addingTimeInterval(52))]).environment(model))),
+            ("sheet-profile-compare", AnyView(ProfileCompareSheet(
+                from: Profile(name: "Docs steer", rules: [Rule(id: "r1", name: "Rename the domain", match: RuleMatch(tools: ["WebFetch"]), instructions: "Replace 'Example Domain' with 'Morph Test Domain'."),
+                                                          Rule(id: "r2", name: "Old search steer", match: RuleMatch(tools: ["WebSearch"]), instructions: "Prefer v2 docs.")]),
+                fromLabel: "v2",
+                to: Profile(name: "Docs steer", rules: [Rule(id: "r1", name: "Rename the domain", match: RuleMatch(tools: ["WebFetch", "Read"]), instructions: "Replace 'Example Domain' with 'Morph Test Domain' in headings only."),
+                                                        Rule(id: "r3", name: "Redact secrets", match: RuleMatch(tools: ["*"]), instructions: "", redact: RedactSpec())],
+                            defaults: ProfileDefaults(review: true)),
+                toLabel: "v3"))),
             ("sheet-playground", AnyView(PlaygroundSheet(draft: Profile(name: "Docs steer", rules: [Rule(name: "Rename the domain", match: RuleMatch(tools: ["WebFetch"]), instructions: "Rename it")])).environment(model))),
         ]
         // With data (the demo), also the what-if sheet for a session that rewrote something.

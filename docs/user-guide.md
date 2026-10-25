@@ -196,6 +196,17 @@ Turn on **Review rewrites before Claude sees them** in a profile's defaults (`"d
 
 The decision records the outcome: "not rewritten: rewrite rejected in review" or "no review in time". The rewrite agent's attempt and cost are kept either way.
 
+### Comparing profile versions
+
+Every save makes a new version. In the editor's **Version history**, **Compare with vN** shows what changed from an older version to the current one. While you have unsaved edits, **Show Changes…** compares them with the saved version. Rules are matched by id, so each one shows as added, removed, changed (each field, old → new, with a word diff for instructions) or moved. Changes to the name, description and defaults are listed too.
+
+```bash
+diorama profiles diff "Docs steer"                 # the previous version vs the current one
+diorama profiles diff "Docs steer" --from 1 --to 3 --json
+```
+
+The MCP tool `compare_profile_versions` returns the same list.
+
 ### Rule usage: which rules fire, and what they cost
 
 The **Usage** section of the profile editor lists each rule with how many tool results it matched, how many of those were rewritten, left unchanged or failed, classifier answers, the sessions involved and the rewrite-agent cost. Choose 7, 30 or 90 days, or all time. Each rule's row in the rule list also shows its count, and rules that matched nothing are marked **never matched**, so you can fix or remove them. Counts cover every version of the profile, and rules removed in later versions are listed as **older version**. A tool result that several rules matched counts, with its cost, for each of them. Experiment trials are left out.

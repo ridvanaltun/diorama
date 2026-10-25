@@ -111,6 +111,12 @@ struct ProfileEditor: View {
     @State private var selectedRule: String?
     @State private var showPlayground = false
     @State private var stats: ProfileRuleStats?
+    @State private var comparing: Comparing?
+
+    struct Comparing: Identifiable {
+        var from: Profile, fromLabel: String, to: Profile, toLabel: String
+        var id: String { fromLabel + toLabel }
+    }
     @AppStorage("ruleStatsDays") private var statsDays = 30
 
     var dirty: Bool { detail.map { $0.current.profile != draft } ?? false }
@@ -129,6 +135,7 @@ struct ProfileEditor: View {
                     Button { showPlayground = true } label: { Label("Test Rules…", systemImage: "testtube.2") }
                         .help("Try these rules (including unsaved changes) on a past tool result or pasted text")
                     if dirty {
+                        Button("Show Changes…") { comparing = Comparing(from: detail.current.profile, fromLabel: "v\(detail.current.number)", to: draft, toLabel: "unsaved edits") }
                         Button("Revert") { draft = detail.current.profile }
                         Button("Save as v\(detail.current.number + 1)") { Task { await save() } }.keyboardShortcut("s").buttonStyle(.borderedProminent)
                     }
@@ -202,6 +209,10 @@ struct ProfileEditor: View {
                                 if v.id == detail.current.id {
                                     Badge(text: "current", color: .green)
                                 } else {
+                                    Button("Compare with v\(detail.current.number)") {
+                                        comparing = Comparing(from: v.profile, fromLabel: "v\(v.number)", to: detail.current.profile, toLabel: "v\(detail.current.number)")
+                                    }
+                                    .buttonStyle(.borderless)
                                     Button("Load into editor") { draft = v.profile }.buttonStyle(.borderless)
                                 }
                             }
@@ -212,6 +223,7 @@ struct ProfileEditor: View {
                 .formStyle(.grouped)
             }
             .sheet(isPresented: $showPlayground) { PlaygroundSheet(draft: draft) }
+            .sheet(item: $comparing) { c in ProfileCompareSheet(from: c.from, fromLabel: c.fromLabel, to: c.to, toLabel: c.toLabel) }
             .task(id: "\(statsDays)/\(detail.current.id)") { stats = await model.perform { try await $0.ruleStats(profileId, days: statsDays) } }
         } else {
             ProgressView().task { await load() }

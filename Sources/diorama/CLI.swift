@@ -481,7 +481,7 @@ struct Session: AsyncParsableCommand {
 struct Profiles: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Manage profiles (versioned sets of global rules).",
-        subcommands: [List.self, Show.self, Create.self, Update.self, Export.self, Delete.self, Templates.self, Test.self, Stats.self], defaultSubcommand: List.self)
+        subcommands: [List.self, Show.self, Create.self, Update.self, Export.self, Delete.self, Templates.self, Test.self, Stats.self, Diff.self], defaultSubcommand: List.self)
 
     struct List: AsyncParsableCommand {
         @OptionGroup var global: GlobalOptions
@@ -566,6 +566,29 @@ struct Profiles: AsyncParsableCommand {
         func run() async throws {
             try await global.client().archiveProfile(id)
             print("Archived.")
+        }
+    }
+
+    struct Diff: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Show what changed between two versions of a profile, rule by rule.",
+            discussion: """
+                Examples:
+                  diorama profiles diff "Docs steer"              # the previous version vs the current one
+                  diorama profiles diff "Docs steer" --from 1 --to 3
+                """)
+        @OptionGroup var global: GlobalOptions
+        @Argument(help: "Profile name or id.") var profile: String
+        @Option(help: "Older version number (default: the one before --to).") var from: Int?
+        @Option(help: "Newer version number (default: the current one).") var to: Int?
+        @Flag var json = false
+
+        func run() async throws {
+            let detail = try await global.client().profile(profile)
+            let (a, b) = try ProfileComparison.versions(detail, from: from, to: to)
+            let c = ProfileComparison.compare(a.profile, b.profile)
+            if json { return try printJSON(c) }
+            print(c.text(from: "v\(a.number)", to: "v\(b.number)"))
         }
     }
 

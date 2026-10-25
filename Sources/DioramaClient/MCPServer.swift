@@ -270,6 +270,19 @@ enum MCPTools {
             return "Profile \(d.current.profileId), version \(d.current.number) (\(d.current.id)):\n" + (try json(d.current.profile))
         },
         .init(
+            name: "compare_profile_versions",
+            description: "What changed between two versions of a profile: name, description, defaults, and per rule whether it was added, removed, changed (which fields, old → new) or moved.",
+            schema: schema(["profile": string("Profile name or id."), "from": ["type": "integer", "description": "Older version number (default: the one before 'to')."],
+                            "to": ["type": "integer", "description": "Newer version number (default: the current one)."]], required: ["profile"]),
+            readOnly: true
+        ) { s, a in
+            func int(_ k: String) -> Int? { (a[k] as? Int) ?? (a[k] as? Double).map { Int($0) } }
+            let detail = try await s.daemon().profile(try arg(a, "profile"))
+            let (x, y): (ProfileVersionInfo, ProfileVersionInfo)
+            do { (x, y) = try ProfileComparison.versions(detail, from: int("from"), to: int("to")) } catch { throw MCPServer.ToolError("\(error)") }
+            return ProfileComparison.compare(x.profile, y.profile).text(from: "v\(x.number)", to: "v\(y.number)")
+        },
+        .init(
             name: "list_pending_reviews",
             description: "Rewrites waiting for the user's approval (profiles with review mode on). Read-only: only the user approves or rejects rewrites, in the Diorama app or with `diorama review`.",
             schema: schema(), readOnly: true

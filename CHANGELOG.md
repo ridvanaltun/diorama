@@ -6,6 +6,7 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 ## Unreleased
 
 ### New
+- **Compare profile versions.** **Compare with vN** in a profile's version history, and **Show Changes…** for unsaved edits, list rules added, removed, changed (field by field, with a word diff for instructions) or moved, plus changed defaults. Also `diorama profiles diff` and MCP `compare_profile_versions`.
 - **Review mode.** A profile can hold each AI rewrite for your approval: Claude waits while Diorama shows the word diff (sheet, banner, menu bar, notification); approve to send it, reject or let the wait (15–120 s) run out to send the original. Also `diorama review`; MCP can list pending reviews but not answer them. Trials and input rules are exempt.
 - **Rule usage.** The profile editor shows, per rule, how many tool results it matched and what came of them (rewritten, unchanged, failed), classifier answers, sessions and cost over 7, 30 or 90 days or all time, and flags rules that never matched. Also `diorama profiles stats` and MCP `get_rule_stats`.
 - **Pause steering.** Stop Diorama changing anything, for one session (**Pause** in its header, `diorama session pause`) or everywhere (menu bar, Settings, `diorama pause`), without restarting Claude. Paused results pass through unchanged; redaction still applies and experiment runs aren't affected. Also MCP `set_steering_paused`.
