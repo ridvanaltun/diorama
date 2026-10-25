@@ -5,6 +5,8 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+## 1.5.0 — 2026-10-25
+
 ### New
 - **Audit bundles.** Export a session as one zip (reports, decisions with texts, the profile version used, metadata, and a SHA-256 manifest) from **Export → Audit bundle** or `diorama session bundle`.
 - **Switch single rules off per session.** **Rules** in a running session's header (or `diorama session rule … --off|--on`, MCP `set_session_rule`) turns one rule or the session prompt off for that session only, without a new profile version.
