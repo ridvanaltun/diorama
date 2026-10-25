@@ -6,7 +6,7 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 ## Unreleased
 
 ### New
-- **Refreshed icon.** The diorama box has rounded corners and a deeper back wall, and the dot casts a shadow. The menu bar icon is the same open box seen at a slight angle, drawn with even line widths so it stays legible at 16 px.
+- **New icon.** The app icon and the menu bar icon are now the same open box, seen at a slight angle, with the yellow dot inside. Every edge has the same width, so the menu bar version stays legible at 16 px. In the menu bar, the dot fills while a session is running.
 - **Menu bar icon.** Diorama lives in the menu bar: running sessions, New Session, Open Diorama, Quit. Closing the window keeps the app running there (no Dock icon) instead of quitting. You can turn this off in Settings → App.
 
 ### Fixed
