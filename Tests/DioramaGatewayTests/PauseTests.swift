@@ -59,3 +59,31 @@ import Testing
         #expect(try await env.client.decision("toolu_g2").summary.outcome == .rewritten)
     }
 }
+
+@Suite struct SessionRuleSwitchTests {
+    @Test func switchingOneRuleOffSkipsItForNewResultsOnly() async throws {
+        let env = try await TestEnv.start()
+        defer { Task { await env.stop() } }
+        let rename = Rule(id: "rename", name: "Rename", match: RuleMatch(tools: ["WebFetch"]), instructions: "rename")
+        _ = try await env.client.createProfile(Profile(name: "web", rules: [rename]))
+        let launch = try await env.client.createSession(SessionSpec(name: "s", cwd: "/tmp", profile: "web"))
+        _ = try await env.post(launch.token, body: sampleBody(results: [("toolu_sw1", "Example Domain page")]))
+
+        let off = try await env.client.setSessionRule(launch.session.id, rule: "Rename", enabled: false)
+        #expect(off.disabledRules == ["rename"])
+        _ = try await env.post(launch.token, body: sampleBody(results: [("toolu_sw1", "Example Domain page"), ("toolu_sw2", "Example Domain again")]))
+        #expect(try await env.client.decision("toolu_sw1").summary.outcome == .rewritten, "decided results keep their decision")
+        let d2 = try await env.client.decision("toolu_sw2")
+        #expect(d2.summary.outcome == .unchanged && d2.summary.reason == "not rewritten: “Rename” switched off for this session")
+        #expect(try await env.client.timeline(launch.session.id).events.contains { $0.message == "Rule “Rename” switched off for this session" })
+
+        _ = try await env.client.setSessionRule(launch.session.id, rule: "rename", enabled: true)
+        _ = try await env.post(launch.token, body: sampleBody(results: [("toolu_sw3", "Example Domain three")]))
+        #expect(try await env.client.decision("toolu_sw3").summary.outcome == .rewritten)
+        #expect(try await env.client.profile("web").current.number == 1, "the profile isn't changed")
+
+        await #expect(throws: ClientError.self) { try await env.client.setSessionRule(launch.session.id, rule: "nope", enabled: false) }
+        let trial = try await env.client.createSession(SessionSpec(name: "t", cwd: "/tmp", profile: "web", kind: .trial, trialId: "tri_sw"))
+        await #expect(throws: ClientError.self) { try await env.client.setSessionRule(trial.session.id, rule: "Rename", enabled: false) }
+    }
+}

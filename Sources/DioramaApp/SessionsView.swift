@@ -469,6 +469,35 @@ struct TimelineView: View {
     }
 }
 
+/// Switch single rules off for one running session (the profile isn't changed).
+struct SessionRulesMenu: View {
+    @Environment(AppModel.self) private var model
+    let session: SessionInfo
+    let rules: [Rule]
+
+    var off: Set<String> { Set(session.disabledRules ?? []) }
+
+    var body: some View {
+        Menu {
+            Section("Rules in this session") {
+                ForEach(rules) { r in toggle(r.id, r.name.isEmpty ? "Untitled rule" : r.name) }
+                if session.prompt != nil { toggle("session-prompt", "Session prompt") }
+            }
+            Text("Switching a rule off affects new tool results only; the profile isn't changed.")
+        } label: {
+            Label(off.isEmpty ? "Rules" : "Rules (\(off.count) off)", systemImage: "switch.2")
+        }
+        .controlSize(.small).fixedSize()
+        .help("Switch single rules off for this session without editing the profile")
+    }
+
+    func toggle(_ id: String, _ name: String) -> some View {
+        Toggle(name, isOn: Binding(
+            get: { !off.contains(id) },
+            set: { on in Task { _ = await model.perform { try await $0.setSessionRule(session.id, rule: id, enabled: on) }; await model.refreshSessions() } }))
+    }
+}
+
 struct SessionHeader: View {
     @Environment(AppModel.self) private var model
     let session: SessionInfo
@@ -476,6 +505,8 @@ struct SessionHeader: View {
     @State private var draft: ExperimentDraft?
     @State private var renaming: String?
     @State private var compareWith: String?
+    /// The rules of the profile version this session uses (for the Rules menu).
+    @State private var sessionRules: [Rule] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -529,6 +560,9 @@ struct SessionHeader: View {
                 }
                 .controlSize(.small)
                 .fixedSize()
+                if session.status == .active, session.kind == .interactive, !sessionRules.isEmpty || session.prompt != nil {
+                    SessionRulesMenu(session: session, rules: sessionRules)
+                }
                 CompareWithMenu(session: session, other: $compareWith)
                 Button { Task { draft = await model.perform { try await $0.experimentDraft(sessionId: session.id) } } } label: {
                     Label("Experiment…", systemImage: "flask")
@@ -577,6 +611,10 @@ struct SessionHeader: View {
             }
         }
         .padding(14)
+        .task(id: session.profileVersionId) {
+            guard let pid = session.profileId, let vid = session.profileVersionId else { return sessionRules = [] }
+            sessionRules = (await model.perform { try await $0.profile(pid) })?.versions.first { $0.id == vid }?.profile.rules ?? []
+        }
     }
 }
 

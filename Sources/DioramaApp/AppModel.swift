@@ -145,7 +145,7 @@ final class AppModel {
             // Time-critical: open the review sheet right away if Diorama is in front.
             if ev.kind == .reviewRequested, NSApp.isActive, snapshotDir == nil { showReviews = true }
             if pendingReviews.isEmpty { showReviews = false }
-        case .warning where ev.message.hasPrefix("Steering"):
+        case .warning where ev.message.hasPrefix("Steering") || ev.message.hasPrefix("Rule "):
             // Paused or resumed from the CLI, MCP or another window.
             await refreshSessions()
             await refreshSettings()

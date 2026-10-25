@@ -521,6 +521,17 @@ enum MCPTools {
             return "Saved “\(info.name)” (\(info.id))" + ((info.tags ?? []).isEmpty ? "." : ", tags: \((info.tags ?? []).joined(separator: ", ")).")
         },
         .init(
+            name: "set_session_rule",
+            description: "Switch one rule off (or back on) for one running session, without editing the profile. New tool results skip it; decided ones keep their decision. Use set_steering_paused to stop everything.",
+            schema: schema(["session_id": string("Session id."), "rule": string("Rule name or id, or 'session-prompt'."),
+                            "enabled": ["type": "boolean", "description": "false switches it off, true back on."]], required: ["session_id", "rule", "enabled"]),
+            readOnly: false
+        ) { s, a in
+            guard let enabled = a["enabled"] as? Bool else { throw MCPServer.ToolError("missing argument 'enabled'") }
+            let info = try await s.daemon().setSessionRule(try arg(a, "session_id"), rule: try arg(a, "rule"), enabled: enabled)
+            return "Rule \(enabled ? "on" : "off") in “\(info.name)”; switched off now: \((info.disabledRules ?? []).isEmpty ? "none" : (info.disabledRules ?? []).joined(separator: ", "))."
+        },
+        .init(
             name: "end_session", description: "Mark a session as ended (it stops appearing as running; its records stay).",
             schema: schema(["session_id": string("Session id.")], required: ["session_id"]), readOnly: false
         ) { s, a in

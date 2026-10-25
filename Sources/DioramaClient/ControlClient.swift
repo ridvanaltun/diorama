@@ -139,6 +139,11 @@ public struct ControlClient: Sendable {
         if let tag { q["tag"] = tag }
         return try await request("GET", "sessions", query: q)
     }
+    /// Switches a rule (id, name, or "session-prompt") off or back on for one session.
+    @discardableResult
+    public func setSessionRule(_ sessionId: String, rule: String, enabled: Bool) async throws -> SessionInfo {
+        try await request("POST", "sessions/\(sessionId)/rules/\(rule.urlPathEscaped)/\(enabled ? "on" : "off")")
+    }
     /// Archives (or unarchives) sessions; returns how many changed. Running sessions are skipped.
     @discardableResult
     public func archiveSessions(_ r: ArchiveRequest) async throws -> Int {

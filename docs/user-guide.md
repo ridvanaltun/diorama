@@ -446,6 +446,8 @@ To see what Claude does with the real results, pause steering instead of ending 
 - **One session:** **Pause** in the session header, `diorama session pause <id>` (and `resume`), or the MCP tool `set_steering_paused` with a `session_id`.
 - **Everywhere:** **Pause All Steering** in the menu bar, **Settings → Steering**, `diorama pause` / `diorama resume`, or `set_steering_paused` without a session.
 
+To stop just one rule, use **Rules** in a running session's header and untick it, or run `diorama session rule <id> "Rule name" --off` (`--on` switches it back). The MCP tool for this is `set_session_rule`. New tool results skip that rule and record "not rewritten: “Rule” switched off for this session". The profile isn't changed and other sessions aren't affected. `session-prompt` stands for the session prompt. Experiment trials always run their full configuration.
+
 While paused, tool results reach Claude unchanged with the reason "not rewritten: steering is paused …", and input rules don't change tool calls. Redaction rules keep running, so secrets stay hidden. Results already decided keep their decision (D9), so pausing affects new tool results only. Experiment runs aren't affected. Paused sessions show a **paused** badge; the pause survives daemon restarts.
 
 ### Spending history

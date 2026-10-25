@@ -264,7 +264,7 @@ struct Sessions: AsyncParsableCommand {
 }
 
 struct Session: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Inspect a session.", subcommands: [Show.self, Decision.self, Watch.self, End.self, Pause.self, Resume.self, WhatIf.self, ToExperiment.self, Report.self, Note.self, Tag.self, Rename.self, Compare.self, Archive.self, Unarchive.self])
+    static let configuration = CommandConfiguration(abstract: "Inspect a session.", subcommands: [Show.self, Decision.self, Watch.self, End.self, Pause.self, Resume.self, WhatIf.self, ToExperiment.self, Report.self, Note.self, Tag.self, Rename.self, Compare.self, Archive.self, Unarchive.self, RuleSwitch.self])
 
     struct Show: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Show a session's timeline.")
@@ -365,6 +365,29 @@ struct Session: AsyncParsableCommand {
             for try await e in c.eventStream(session: id) {
                 print("\(e.createdAt.formatted(date: .omitted, time: .standard)) \(e.sessionId ?? "-") \(e.kind.rawValue): \(e.message)")
             }
+        }
+    }
+
+    struct RuleSwitch: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "rule",
+            abstract: "Switch one rule off (or back on) for a running session, without editing the profile.",
+            discussion: """
+                  diorama session rule ses_abc "Rename domain" --off
+                  diorama session rule ses_abc session-prompt --off
+                  diorama session rule ses_abc "Rename domain" --on
+                Results already decided keep their decision; new ones skip the rule. Experiment trials can't be changed.
+                """)
+        @OptionGroup var global: GlobalOptions
+        @Argument var id: String
+        @Argument(help: "Rule name or id, or session-prompt.") var rule: String
+        @Flag(help: "Switch it off.") var off = false
+        @Flag(help: "Switch it back on.") var on = false
+        func run() async throws {
+            guard off != on else { throw ValidationError("give --off or --on") }
+            let s = try await global.client().setSessionRule(id, rule: rule, enabled: on)
+            let n = s.disabledRules?.count ?? 0
+            print((on ? "✓ Switched back on" : "⏸ Switched off") + " in “\(s.name)”." + (n > 0 ? " \(n) rule(s) off in this session." : ""))
         }
     }
 

@@ -28,6 +28,8 @@ public struct SessionRecord: Sendable, Hashable {
     public var notes = ""
     public var tags: [String] = []
     public var archived = false
+    /// Profile rule ids (or "session-prompt") switched off for this session only.
+    public var disabledRules: [String] = []
 }
 
 extension Store {
@@ -79,7 +81,7 @@ extension Store {
             flags: decode([String].self, r.string("flags")) ?? [],
             via: SessionVia(rawValue: r.string("via") ?? "") ?? .gateway, transcriptPath: r.string("transcript_path"),
             paused: (r.int("paused") ?? 0) != 0, notes: r.string("notes") ?? "", tags: decode([String].self, r.string("tags")) ?? [],
-            archived: (r.int("archived") ?? 0) != 0)
+            archived: (r.int("archived") ?? 0) != 0, disabledRules: decode([String].self, r.string("disabled_rules")) ?? [])
     }
 
     public func session(id: String) throws -> SessionRecord? {
@@ -163,6 +165,23 @@ extension Store {
         return try db.query(sql, params).compactMap { $0.string("id") }
     }
 
+    /// Switches one rule off (or back on) for one session. Emits a warning event so the timeline shows it.
+    public func setRuleDisabled(sessionId: String, ruleId: String, _ disabled: Bool) throws {
+        guard let s = try session(id: sessionId) else { throw StoreError("no session \(sessionId)") }
+        var ids = s.disabledRules.filter { $0 != ruleId }
+        if disabled { ids.append(ruleId) }
+        guard ids != s.disabledRules else { return }
+        try db.run("UPDATE sessions SET disabled_rules = ? WHERE id = ?", [.text(json(ids)), .text(sessionId)])
+        let name = ruleId == "session-prompt" ? "the session prompt" : "“" + (s.profileVersion?.profile.rules.first { $0.id == ruleId }?.name ?? ruleId) + "”"
+        addEvent(sessionId: sessionId, kind: .warning, message: disabled ? "Rule \(name) switched off for this session" : "Rule \(name) switched back on", refId: sessionId)
+    }
+
+    /// Current disabled rules (read fresh, since a session's record is loaded once per request).
+    public func disabledRules(sessionId: String) -> [String] {
+        let row = try? db.query("SELECT disabled_rules FROM sessions WHERE id = ?", [.text(sessionId)]).first
+        return row.flatMap { decode([String].self, $0.string("disabled_rules")) } ?? []
+    }
+
     public func isPaused(sessionId: String) -> Bool {
         ((try? db.query("SELECT paused FROM sessions WHERE id = ?", [.text(sessionId)]).first?.int("paused")) ?? 0) != 0
     }
@@ -212,7 +231,7 @@ extension Store {
             profileId: r.profileId, profileName: r.profileVersion?.profile.name, profileVersionId: r.profileVersion?.id,
             profileVersionNumber: r.profileVersion?.number, prompt: r.prompt, lockdown: r.lockdown, trialId: r.trialId,
             claudeSessionIds: r.claudeSessionIds, flags: r.flags, stats: try stats(sessionId: r.id), via: r.via, paused: r.paused,
-            notes: r.notes, tags: r.tags, archived: r.archived)
+            notes: r.notes, tags: r.tags, archived: r.archived, disabledRules: r.disabledRules)
     }
 
     /// Marks sessions left `active` by a previous daemon whose Claude process is gone.

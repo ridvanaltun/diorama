@@ -489,14 +489,17 @@ public struct SessionInfo: Codable, Sendable, Hashable, Identifiable {
     /// Hidden from the session list (nil from older daemons).
     public var archived: Bool?
     public var isArchived: Bool { archived == true }
+    /// Rule ids switched off for this session only (nil from older daemons).
+    public var disabledRules: [String]?
 
     public init(
         id: String, name: String, cwd: String, kind: SessionKind, status: SessionStatus, createdAt: Date, endedAt: Date?,
         profileId: String?, profileName: String?, profileVersionId: String?, profileVersionNumber: Int?,
         prompt: SessionPrompt?, lockdown: LockdownPreset, trialId: String?, claudeSessionIds: [String], flags: [String],
-        stats: SessionStats, via: SessionVia? = nil, paused: Bool? = nil, notes: String? = nil, tags: [String]? = nil, archived: Bool? = nil
+        stats: SessionStats, via: SessionVia? = nil, paused: Bool? = nil, notes: String? = nil, tags: [String]? = nil, archived: Bool? = nil, disabledRules: [String]? = nil
     ) {
         self.archived = archived
+        self.disabledRules = disabledRules
         self.paused = paused
         self.notes = notes
         self.tags = tags

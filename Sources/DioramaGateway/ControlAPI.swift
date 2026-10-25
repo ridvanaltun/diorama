@@ -145,6 +145,17 @@ struct ControlAPI: Sendable {
             let archived = req.query["archived"].flatMap(Store.ArchiveFilter.init(rawValue:)) ?? .hide
             return try ok(try store.sessions(kind: kind, tag: tag, archived: archived, limit: Int(req.query["limit"] ?? "") ?? 200).map(store.info))
         }
+        if let c = Self.match(method, route, "POST", "sessions/:id/rules/:rule/off") ?? Self.match(method, route, "POST", "sessions/:id/rules/:rule/on") {
+            guard let s = try store.session(id: c[0]) else { throw notFound("session") }
+            guard s.trialId == nil else { throw Failure(status: 400, message: "experiment trials always run their full configuration") }
+            // By id, by name, or "session-prompt".
+            let rules = s.profileVersion?.profile.rules ?? []
+            guard let id = c[1] == "session-prompt" && s.prompt != nil ? "session-prompt" : (rules.first { $0.id == c[1] } ?? rules.first { $0.name == c[1] })?.id else {
+                throw Failure(status: 404, message: "this session has no rule '\(c[1])'")
+            }
+            try store.setRuleDisabled(sessionId: s.id, ruleId: id, route.last == "off")
+            return try ok(try store.info(try store.session(id: s.id)!))
+        }
         if Self.match(method, route, "POST", "sessions/archive") != nil {
             let r = try decode(ArchiveRequest.self, req)
             var ids = r.sessionIds

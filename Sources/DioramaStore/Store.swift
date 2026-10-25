@@ -104,6 +104,10 @@ public final class Store: @unchecked Sendable {
         """
         ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
         """,
+        // v10: rules switched off for one session
+        """
+        ALTER TABLE sessions ADD COLUMN disabled_rules TEXT NOT NULL DEFAULT '[]';
+        """,
     ]
 
     public static var schemaVersion: Int { migrations.count }

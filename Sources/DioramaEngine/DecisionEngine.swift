@@ -207,11 +207,13 @@ public final class DecisionEngine: Sendable {
         let defaults = session.profileVersion?.profile.defaults ?? ProfileDefaults(model: store.settings().defaultModel)
         var rules: [Rule] = []
         var refs: [RuleRef] = []
-        for r in session.profileVersion?.profile.rules ?? [] where RuleMatcher.matches(r, ctx) {
+        // Rules switched off for this session (trials always run their full configuration).
+        let off = session.trialId == nil ? Set(store.disabledRules(sessionId: session.id)) : []
+        for r in session.profileVersion?.profile.rules ?? [] where !off.contains(r.id) && RuleMatcher.matches(r, ctx) {
             rules.append(r)
             refs.append(RuleRef(ruleId: r.id, name: r.name, ruleHash: RuleMatcher.ruleHash(r), profileVersionId: session.profileVersion?.id))
         }
-        if let prompt = session.prompt {
+        if let prompt = session.prompt, !off.contains("session-prompt") {
             let rule = prompt.asRule(id: "session-prompt")
             if RuleMatcher.matches(rule, ctx) {
                 rules.append(rule)
@@ -300,11 +302,17 @@ public final class DecisionEngine: Sendable {
             // Rules that match except for their sample: say so, so the audit shows sampling at work.
             var unsampled = ctx
             unsampled.sampleId = nil
+            let off = session.trialId == nil ? Set(store.disabledRules(sessionId: session.id)) : []
             let skipped = (session.profileVersion?.profile.rules ?? []).filter { r in
-                (r.match.sample ?? 1) < 1 && !RuleMatcher.matches(r, ctx) && RuleMatcher.matches(r, unsampled)
+                !off.contains(r.id) && (r.match.sample ?? 1) < 1 && !RuleMatcher.matches(r, ctx) && RuleMatcher.matches(r, unsampled)
             }
             if !skipped.isEmpty {
                 return record(.unchanged, "not in the sample of " + skipped.map { "“\($0.name)” (\(RuleMatcher.percent($0.match.sample ?? 1)))" }.joined(separator: ", "))
+            }
+            let switchedOff = (session.profileVersion?.profile.rules ?? []).filter { off.contains($0.id) && RuleMatcher.matches($0, ctx) }
+                + (off.contains("session-prompt") && session.prompt.map { RuleMatcher.matches($0.asRule(id: "session-prompt"), ctx) } == true ? [session.prompt!.asRule(id: "session-prompt")] : [])
+            if !switchedOff.isEmpty {
+                return record(.unchanged, "not rewritten: " + switchedOff.map { "“\($0.name)”" }.joined(separator: ", ") + " switched off for this session")
             }
             return record(.unchanged, hasRules ? "no rule matched" : "no rules configured")
         }
