@@ -5,6 +5,8 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+## 1.3.0 — 2026-10-25
+
 ### New
 - **Input rules.** `"stage": "input"` rules change a tool call's arguments before it runs: redirect a WebFetch URL, steer a WebSearch query, change a Read path. The agent may change values but not add or remove parameters. Claude Code always asks you to approve a changed call (`claude -p` denies it and tells the model why). Works in hook mode and `diorama run` (a PreToolUse hook is added automatically); not in experiment trials. Existing hook installs need `diorama hook install` again.
 - **Redaction rules.** A rule can redact instead of rewrite: secrets (API keys, tokens, JWTs, private keys), optionally email and IP addresses, and custom regexes become `[REDACTED:kind]` before Claude sees the result. Local, free, no AI; runs before AI rewrites (so the rewrite agent never sees secrets) and still applies when the budget is used up or a rewrite fails. New template "Privacy: redact secrets"; the playground previews it for free.
