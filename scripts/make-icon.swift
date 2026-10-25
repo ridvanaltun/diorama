@@ -50,10 +50,8 @@ ctx.move(to: backCorner)
 ctx.addLine(to: CGPoint(x: front.maxX, y: backCorner.y))
 ctx.strokePath()
 
-// A spotlight dot inside: the agent being observed, with a soft shadow below it.
+// A spotlight dot inside: the agent being observed.
 let dot = CGRect(origin: pt(7.3, 5.7), size: CGSize(width: 3.4 * k, height: 3.4 * k))
-ctx.setFillColor(NSColor(calibratedWhite: 0, alpha: 0.25).cgColor)
-ctx.fillEllipse(in: CGRect(x: dot.midX - 62, y: backCorner.y - 4, width: 124, height: 30))
 ctx.setFillColor(NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.35, alpha: 1).cgColor)
 ctx.fillEllipse(in: dot)
 
