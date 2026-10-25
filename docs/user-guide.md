@@ -203,6 +203,21 @@ Local models never send content off your Mac and cost nothing, but they follow t
 - **CLI:** `diorama session show <id>`, `diorama session decision <tool_use_id>`, and `diorama session watch [<id>]` for live events.
 - **Raw capture:** full request and response bodies are kept for `retentionDays` (14 by default) and are available through the control API (`GET /api/v1/exchanges/<id>/raw`). Credentials are never stored.
 
+### Session reports
+
+**Export** in a session's header saves the session's audit trail as **Markdown** or **self-contained HTML**, or opens the HTML in your browser. The report has:
+- the configuration (mode, folder, steering with its profile version);
+- a summary;
+- notices;
+- each change Diorama made: word-level diff, reason, rules, rewrite-agent attempts and cost, and what Claude did next;
+- a table of the results it left unchanged.
+
+```bash
+diorama session report ses_123 --format html --output report.html
+```
+
+Through MCP the tool is `get_session_report`. Tool results can contain private data (file contents, pages, command output), so review a report before sharing it. The HTML escapes all captured content.
+
 ### Search
 
 The search field on the Sessions screen searches every session, with the best matches first:

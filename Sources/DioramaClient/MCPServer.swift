@@ -250,6 +250,13 @@ enum MCPTools {
                 return "- \(h.sessionName) (\(h.sessionId)), \(DateFormatting.string(h.createdAt)): \(what)\n  \(h.snippet.replacingOccurrences(of: "\n", with: " "))"
             }.joined(separator: "\n")
         },
+        .init(
+            name: "get_session_report",
+            description: "A session's audit trail as Markdown: configuration, summary, notices, every change Diorama made (word diff, rules, rewrite agent, what Claude did next), and what it left unchanged. Good for summarizing or sharing a session.",
+            schema: schema(["session_id": string("Session id (ses_…).")], required: ["session_id"]), readOnly: true
+        ) { s, a in
+            clip(try await s.daemon().sessionReport(try arg(a, "session_id"), format: "md"), 20000)
+        },
         .init(name: "list_profiles", description: "Profiles: versioned sets of rules that say which tool results to rewrite and how.", schema: schema(), readOnly: true) { s, _ in
             let ps = try await s.daemon().profiles()
             guard !ps.isEmpty else { return "No profiles yet. See list_rule_templates and create_profile." }

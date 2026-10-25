@@ -137,6 +137,12 @@ struct ControlAPI: Sendable {
             try store.endSession(id: id)
             return try ok(try store.info(try store.session(id: id)!))
         }
+        if let c = Self.match(method, route, "GET", "sessions/:id/report") {
+            let report = try SessionReport.build(sessionId: c[0], store: store)
+            let format = req.query["format"] ?? "md"
+            guard format == "md" || format == "html" else { throw Failure(status: 400, message: "unknown report format '\(format)' (use md or html)") }
+            return try ok(["format": format, "content": format == "html" ? report.html() : report.markdown()])
+        }
         if let c = Self.match(method, route, "GET", "sessions/:id/experiment-draft") {
             return try ok(try daemon.experimentDraft(sessionId: c[0], trialsPerVariant: Int(req.query["trials"] ?? "") ?? 5))
         }

@@ -2,6 +2,7 @@ import AppKit
 import DioramaClient
 import DioramaCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SessionsView: View {
     @Environment(AppModel.self) private var model
@@ -387,6 +388,16 @@ struct SessionHeader: View {
                     .controlSize(.small)
                     .disabled(session.stats.toolResults == 0)
                     .help("Re-run this session's tool results through other rules and compare")
+                Menu {
+                    Button("Markdown report…") { Task { await export("md") } }
+                    Button("HTML report…") { Task { await export("html") } }
+                    Divider()
+                    Button("Open HTML report in browser") { Task { await openHTML() } }
+                } label: {
+                    Label("Export", systemImage: "square.and.arrow.up")
+                }
+                .controlSize(.small)
+                .fixedSize()
                 Button { Task { draft = await model.perform { try await $0.experimentDraft(sessionId: session.id) } } } label: {
                     Label("Experiment…", systemImage: "flask")
                 }
@@ -430,6 +441,28 @@ struct SessionHeader: View {
             }
         }
         .padding(14)
+    }
+}
+
+extension SessionHeader {
+    func export(_ format: String) async {
+        guard let text = await model.perform({ try await $0.sessionReport(session.id, format: format) }) else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "diorama-\(session.name.replacingOccurrences(of: "/", with: "-"))-\(session.id).\(format)"
+        panel.allowedContentTypes = [format == "md" ? UTType(filenameExtension: "md") ?? .plainText : .html]
+        if panel.runModal() == .OK, let url = panel.url {
+            do { try text.write(to: url, atomically: true, encoding: .utf8) } catch { model.report(error) }
+        }
+    }
+
+    /// Writes the HTML report to a temporary file and opens it in the default browser.
+    func openHTML() async {
+        guard let text = await model.perform({ try await $0.sessionReport(session.id, format: "html") }) else { return }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("diorama-report-\(session.id).html")
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            NSWorkspace.shared.open(url)
+        } catch { model.report(error) }
     }
 }
 

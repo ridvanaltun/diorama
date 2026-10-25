@@ -117,6 +117,11 @@ public struct ControlClient: Sendable {
     public func session(_ id: String) async throws -> SessionInfo { try await request("GET", "sessions/\(id)") }
     public func endSession(_ id: String) async throws -> SessionInfo { try await request("POST", "sessions/\(id)/end") }
     public func timeline(_ id: String) async throws -> Timeline { try await request("GET", "sessions/\(id)/timeline") }
+    /// A session's audit trail as a document: "md" or "html".
+    public func sessionReport(_ sessionId: String, format: String = "md") async throws -> String {
+        let r: [String: String] = try await request("GET", "sessions/\(sessionId)/report", query: ["format": format])
+        return r["content"] ?? ""
+    }
     public func experimentDraft(sessionId: String, trials: Int = 5) async throws -> ExperimentDraft {
         try await request("GET", "sessions/\(sessionId)/experiment-draft", query: ["trials": String(trials)])
     }

@@ -5,6 +5,9 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+### New
+- **Session reports.** Export a session's audit trail as Markdown or self-contained HTML (**Export** in the session header, `diorama session report`, MCP `get_session_report`): configuration, summary, notices, each change with a word diff, rules, rewrite-agent work and what Claude did next, and what was left unchanged.
+
 ## 1.3.0 — 2026-10-25
 
 ### New

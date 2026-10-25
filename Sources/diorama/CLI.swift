@@ -250,7 +250,7 @@ struct Sessions: AsyncParsableCommand {
 }
 
 struct Session: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Inspect a session.", subcommands: [Show.self, Decision.self, Watch.self, End.self, WhatIf.self, ToExperiment.self])
+    static let configuration = CommandConfiguration(abstract: "Inspect a session.", subcommands: [Show.self, Decision.self, Watch.self, End.self, WhatIf.self, ToExperiment.self, Report.self])
 
     struct Show: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Show a session's timeline.")
@@ -350,6 +350,26 @@ struct Session: AsyncParsableCommand {
             print("Watching \(id ?? "all sessions") — Ctrl-C to stop")
             for try await e in c.eventStream(session: id) {
                 print("\(e.createdAt.formatted(date: .omitted, time: .standard)) \(e.sessionId ?? "-") \(e.kind.rawValue): \(e.message)")
+            }
+        }
+    }
+
+    struct Report: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Export a session's audit trail as Markdown or self-contained HTML.",
+            discussion: "Includes what Diorama changed (diffs, rules, rewrite agent, what Claude did next), what it left unchanged, and notices.")
+        @OptionGroup var global: GlobalOptions
+        @Argument var id: String
+        @Option(help: "md or html.") var format = "md"
+        @Option(help: "Write to a file instead of printing.") var output: String?
+
+        func run() async throws {
+            let text = try await global.client().sessionReport(id, format: format)
+            if let output {
+                try text.write(toFile: (output as NSString).expandingTildeInPath, atomically: true, encoding: .utf8)
+                print("Wrote \(output)")
+            } else {
+                print(text)
             }
         }
     }
