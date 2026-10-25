@@ -37,11 +37,11 @@ jobs:
       BUNDLE_ID: ${{ vars.BUNDLE_ID || 'io.github.diorama.Diorama' }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Install Claude Code CLI (hosted runners only; used by contract tests, no account needed)
         if: runner.environment == 'github-hosted'
         run: npm install -g @anthropic-ai/claude-code
-        with:
-          fetch-depth: 0
 
       - name: Resolve version
         id: version
