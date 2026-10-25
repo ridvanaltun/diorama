@@ -66,6 +66,10 @@ public final class Store: @unchecked Sendable {
           transcript_blob TEXT);
         CREATE INDEX trials_run ON trials(run_id, ord);
         """,
+        // v2: hook-mode sessions (Claude desktop, IDEs)
+        """
+        ALTER TABLE sessions ADD COLUMN via TEXT NOT NULL DEFAULT 'gateway';
+        """,
     ]
 
     public static var schemaVersion: Int { migrations.count }

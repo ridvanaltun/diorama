@@ -35,7 +35,27 @@ diorama run --profile web -- --model sonnet   # anything after -- goes to Claude
 
 `diorama run` starts Claude Code in your terminal with two variables set for that process only: `ANTHROPIC_BASE_URL`, pointing at your session's gateway URL, and `CLAUDE_CODE_GATEWAY_HINT_HEADERS=1`, which labels each request as main, subagent, auxiliary and so on. It passes the same values through `--settings`, so they win over an `env` block in your own `~/.claude/settings.json`. No file is changed. If the daemon dies mid-session, `diorama run` restarts it on the same port.
 
-**Surfaces:** the terminal CLI is supported. The VS Code extension works if you set the printed variables in `claudeCode.environmentVariables`. The Claude Desktop Code tab is not supported, because it ignores `ANTHROPIC_BASE_URL`.
+**Surfaces:** `diorama run` covers the terminal CLI. The VS Code extension also works if you set the printed variables in `claudeCode.environmentVariables`. The Claude desktop app's Code tab sets its own `ANTHROPIC_BASE_URL` for every session and can't be routed through the gateway. Use hook mode for it, described next.
+
+## Claude desktop and IDEs (hook mode)
+
+Hook mode connects a project folder to Diorama through Claude Code's hooks instead of the gateway. It works wherever Claude Code reads the project's settings: the Claude desktop app's Code tab, IDE extensions, and the terminal.
+
+```bash
+cd ~/code/project
+diorama hook install --profile "Docs steer"           # or --prompt "…" --prompt-tools WebFetch,Read
+diorama hook status                                    # what's installed here
+diorama hook uninstall
+```
+
+`diorama hook install` adds three entries (`SessionStart`, `PostToolUse` and `SessionEnd`) to the project's `.claude/settings.local.json`. Claude Code keeps that file out of version control, and the install leaves your other settings and hooks as they are. In the app, use **New Session → Claude desktop & IDEs**. After each tool call, the hook (`diorama hook run`) sends the result to the daemon. The daemon applies the same profiles, prompts and rewrite agent, records the decision, and returns the rewritten text, which Claude Code shows the model in place of the original. Sessions appear in the app with a **hook mode** badge; desktop sessions are named `<folder> · Desktop`.
+
+- **Start a new session after installing.** Sessions that are already open don't pick up new hooks. A session's configuration is fixed when its first event arrives, and resuming it continues the same Diorama session.
+- **What hook mode doesn't see.** It has no model requests or responses, so no token usage, cache hits or latency, and no record of Claude's replies. Pre-extraction (`stage: page`) isn't available either, because WebFetch's summarizing call isn't visible to hooks. Experiments always use the gateway.
+- **Which results it can rewrite.** Read (text files), WebFetch, Bash, Grep (content mode), MCP tools that return text blocks, and best-effort WebSearch commentary. Other results are recorded as unchanged with the reason.
+- **It never blocks Claude Code.** If the daemon can't be reached, or anything else goes wrong, the hook prints nothing and the original result is used. Errors go to `logs/hook.log`.
+- **No double rewrites.** Sessions started with `diorama run` set `DIORAMA_SESSION`, and an installed hook ignores them, because the gateway already handles them.
+- `diorama hook install --user` installs into `~/.claude/settings.json` instead, so that every Claude Code session on your account reports to Diorama.
 
 ## Writing rules
 

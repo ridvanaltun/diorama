@@ -34,6 +34,14 @@ enum FormLogic {
         return parts.joined(separator: " ")
     }
 
+    /// Hook mode's configuration from the same form (hook mode has no page stage, name or lockdown).
+    static func hookConfig(_ f: SessionForm) -> HookConfig {
+        let prompt = f.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        return HookConfig(
+            profile: f.profile.isEmpty ? nil : f.profile,
+            prompt: prompt.isEmpty ? nil : SessionPrompt(text: f.prompt, tools: parseList(f.promptTools), context: f.taskContext ? .task : .none))
+    }
+
     static func shellQuote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 
     static func parseList(_ s: String) -> [String] {

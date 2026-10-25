@@ -30,6 +30,7 @@ diorama run ──▶ claude (your terminal)
 
 - **Precise:** Diorama edits outgoing requests by splicing bytes. Only the text of matching `tool_result` blocks changes, and every other byte is forwarded exactly. Responses stream back unbuffered.
 - **Reproducible:** the first decision for each tool result is frozen and replayed byte-for-byte on every later turn. The model's history stays consistent and the prompt cache stays warm.
+- **Claude desktop too:** the desktop app's Code tab can't be routed through a gateway, so `diorama hook install` connects a project through Claude Code hooks instead. Tool results are rewritten and recorded the same way; model traffic isn't captured.
 - **Separate credentials:** the rewrite agent uses **your own Anthropic API key**, stored in the macOS Keychain, behind a pluggable provider interface. It never reuses Claude Code's credentials.
 
 ## Requirements
@@ -65,6 +66,12 @@ diorama profiles create --template 1 --name web   # create a profile (versioned 
 cd ~/code/my-project
 diorama run --profile web                         # Claude Code, routed through Diorama
 diorama run --prompt "Say the library is deprecated" --prompt-tools WebFetch,WebSearch
+```
+
+Working in the Claude desktop app? Connect the project instead, then start a new Code session in that folder:
+
+```bash
+cd ~/code/my-project && diorama hook install --profile web
 ```
 
 Open **Diorama.app** to watch the live timeline. You can also inspect sessions from the terminal:

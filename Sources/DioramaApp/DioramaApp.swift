@@ -174,6 +174,7 @@ enum Snapshotter {
         }
         let sheets: [(String, AnyView)] = [
             ("sheet-new-session", AnyView(NewSessionSheet().environment(model))),
+            ("sheet-new-session-desktop", AnyView(NewSessionSheet(mode: .desktop).environment(model))),
             ("sheet-new-profile", AnyView(NewProfileSheet(selection: .constant(nil)).environment(model))),
             ("sheet-new-experiment", AnyView(NewExperimentSheet(created: { _ in }).environment(model))),
             ("menu-bar-panel", AnyView(MenuBarPanel().environment(model))),

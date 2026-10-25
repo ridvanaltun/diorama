@@ -20,6 +20,7 @@ public struct SessionRecord: Sendable, Hashable {
     public var treatmentScope: String?
     public var claudeSessionIds: [String]
     public var flags: [String]
+    public var via: SessionVia = .gateway
 }
 
 extension Store {
@@ -39,20 +40,21 @@ extension Store {
         try db.run(
             """
             INSERT INTO sessions(id, token_hash, name, cwd, kind, status, created_at, profile_id, profile_version_id,
-              prompt, lockdown, trial_id, on_failure, treatment_scope)
-            VALUES(?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?)
+              prompt, lockdown, trial_id, on_failure, treatment_scope, via)
+            VALUES(?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 .text(id), .text(tokenHash), .text(spec.name), .text(spec.cwd), .text(spec.kind.rawValue), .date(now),
                 .optional(version?.profileId), .optional(version?.id), spec.prompt.map { .text(json($0)) } ?? .null,
                 .text(spec.lockdown.rawValue), .optional(spec.trialId), .optional(spec.onFailure?.rawValue),
-                .optional(spec.treatmentScope),
+                .optional(spec.treatmentScope), .text((spec.via ?? .gateway).rawValue),
             ])
         addEvent(sessionId: id, kind: .sessionCreated, message: "Session '\(spec.name)' created", refId: id)
         return SessionRecord(
             id: id, name: spec.name, cwd: spec.cwd, kind: spec.kind, status: .active, createdAt: now, endedAt: nil,
             profileId: version?.profileId, profileVersion: version, prompt: spec.prompt, lockdown: spec.lockdown,
-            trialId: spec.trialId, onFailure: spec.onFailure, treatmentScope: spec.treatmentScope, claudeSessionIds: [], flags: [])
+            trialId: spec.trialId, onFailure: spec.onFailure, treatmentScope: spec.treatmentScope, claudeSessionIds: [], flags: [],
+            via: spec.via ?? .gateway)
     }
 
     func sessionRecord(_ r: Row) throws -> SessionRecord {
@@ -67,7 +69,8 @@ extension Store {
             onFailure: r.string("on_failure").flatMap(FailurePolicy.init(rawValue:)),
             treatmentScope: r.string("treatment_scope"),
             claudeSessionIds: decode([String].self, r.string("claude_session_ids")) ?? [],
-            flags: decode([String].self, r.string("flags")) ?? [])
+            flags: decode([String].self, r.string("flags")) ?? [],
+            via: SessionVia(rawValue: r.string("via") ?? "") ?? .gateway)
     }
 
     public func session(id: String) throws -> SessionRecord? {
@@ -88,6 +91,12 @@ extension Store {
     public func endSession(id: String) throws {
         try db.run("UPDATE sessions SET status = 'ended', ended_at = ? WHERE id = ? AND status = 'active'", [.date(Date()), .text(id)])
         if db.changes > 0 { addEvent(sessionId: id, kind: .sessionEnded, message: "Session ended", refId: id) }
+    }
+
+    /// Reactivates an ended session (a resumed hook-mode session).
+    public func reopenSession(id: String) throws {
+        try db.run("UPDATE sessions SET status = 'active', ended_at = NULL WHERE id = ? AND status = 'ended'", [.text(id)])
+        if db.changes > 0 { addEvent(sessionId: id, kind: .sessionCreated, message: "Session resumed", refId: id) }
     }
 
     public func recordClaudeSessionId(sessionId: String, claudeSessionId: String) throws {
@@ -124,7 +133,7 @@ extension Store {
             id: r.id, name: r.name, cwd: r.cwd, kind: r.kind, status: r.status, createdAt: r.createdAt, endedAt: r.endedAt,
             profileId: r.profileId, profileName: r.profileVersion?.profile.name, profileVersionId: r.profileVersion?.id,
             profileVersionNumber: r.profileVersion?.number, prompt: r.prompt, lockdown: r.lockdown, trialId: r.trialId,
-            claudeSessionIds: r.claudeSessionIds, flags: r.flags, stats: try stats(sessionId: r.id))
+            claudeSessionIds: r.claudeSessionIds, flags: r.flags, stats: try stats(sessionId: r.id), via: r.via)
     }
 
     /// Marks sessions left `active` by a previous daemon whose Claude process is gone.

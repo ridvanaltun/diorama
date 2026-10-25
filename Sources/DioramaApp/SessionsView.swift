@@ -1,4 +1,5 @@
 import AppKit
+import DioramaClient
 import DioramaCore
 import SwiftUI
 
@@ -69,6 +70,12 @@ struct SessionsView: View {
             model.focusSessionId = nil
         }
         .task(id: model.sessions.count) {
+            // Snapshot mode can be pointed at one session (DIORAMA_SNAPSHOT_SESSION) for docs screenshots.
+            if model.snapshotDir != nil, let id = ProcessInfo.processInfo.environment["DIORAMA_SNAPSHOT_SESSION"], model.sessions.contains(where: { $0.id == id }) {
+                kindFilter = nil
+                selection = id
+                return
+            }
             if selection == nil, let first = filtered.first(where: { $0.stats.rewrites > 0 }) ?? filtered.first, model.snapshotDir != nil || filtered.count == 1 {
                 selection = first.id
             }
@@ -97,7 +104,7 @@ struct GettingStartedView: View {
                              detail: "A profile is a versioned set of rules: which tool results to change, and how.",
                              action: ("Choose a template", { model.section = .profiles; model.wantsNewProfile = true }))
                     StepCard(number: 3, done: false, title: "Start a routed session",
-                             detail: "Opens Claude Code in Terminal through Diorama. Only that session is affected.",
+                             detail: "Open Claude Code in Terminal through Diorama, or connect a project so its Claude desktop sessions report to Diorama.",
                              action: ("New Session", onNewSession))
                 }
                 GroupBox {
@@ -178,10 +185,11 @@ struct SessionRow: View {
             Text(session.profileName.map { "\($0) · v\(session.profileVersionNumber ?? 0)" } ?? (session.prompt != nil ? "Session prompt" : "No rules (record only)"))
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             HStack(spacing: 6) {
+                if session.isHook { Badge(text: "hook", color: .teal).help("Hook mode: tool results only") }
                 if session.stats.rewrites > 0 { Badge(text: Fmt.plural(session.stats.rewrites, "rewrite"), color: .purple) }
                 if session.stats.failures > 0 { Badge(text: Fmt.plural(session.stats.failures, "failure"), color: .red) }
                 if session.stats.anomalies > 0 { Badge(text: Fmt.plural(session.stats.anomalies, "anomaly", "anomalies"), color: .orange) }
-                Text(Fmt.plural(session.stats.exchanges, "request")).font(.caption2).foregroundStyle(.tertiary)
+                Text(session.isHook ? Fmt.plural(session.stats.toolResults, "result") : Fmt.plural(session.stats.exchanges, "request")).font(.caption2).foregroundStyle(.tertiary)
             }
         }
         .padding(.vertical, 3)
@@ -205,6 +213,9 @@ struct TimelineView: View {
                     Divider()
                     let grouped = TimelineLogic.turns(t.exchanges)
                     let decisions = Dictionary(uniqueKeysWithValues: t.decisions.map { ($0.toolUseId, $0) })
+                    if t.session.isHook {
+                        HookTimeline(timeline: t, selection: $selectedDecision)
+                    } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 10) {
                             let notices = t.events.filter { $0.kind == .anomaly || $0.kind == .rewriteFailed }
@@ -229,6 +240,7 @@ struct TimelineView: View {
                         }
                         .padding(.horizontal, 12).padding(.vertical, 6)
                         .background(.bar)
+                    }
                     }
                 } else {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -259,6 +271,10 @@ struct SessionHeader: View {
                 Text(session.name).font(.title2.bold()).lineLimit(1)
                 Badge(text: session.status == .active ? "running" : "ended", color: session.status == .active ? .green : .secondary)
                 if session.kind == .trial { Badge(text: "trial", color: .blue) }
+                if session.isHook {
+                    Badge(text: "hook mode", color: .teal)
+                        .help("Connected through a Claude Code hook (Claude desktop, IDEs). Diorama sees tool results only: no model requests, token usage or Claude's replies.")
+                }
                 Spacer()
                 CopyableID(id: session.id)
             }
@@ -278,7 +294,7 @@ struct SessionHeader: View {
                 .help(p.stage == .page ? "Session prompt (WebFetch pages, before summarization)" : "Session prompt for: \(p.tools.joined(separator: ", "))")
             }
             HStack(spacing: 8) {
-                StatTile(value: "\(session.stats.exchanges)", label: "requests")
+                if !session.isHook { StatTile(value: "\(session.stats.exchanges)", label: "requests") }
                 StatTile(value: "\(session.stats.toolResults)", label: "tool results")
                 StatTile(value: "\(session.stats.rewrites)", label: "rewritten", tint: session.stats.rewrites > 0 ? .purple : nil)
                 StatTile(value: "\(session.stats.failures)", label: "failed", tint: session.stats.failures > 0 ? .red : nil)
@@ -419,6 +435,7 @@ struct ToolResultRow: View {
     let entry: ToolResultEntry
     let decision: DecisionSummary?
     let selected: Bool
+    var target: String? { Fmt.toolTarget(entry.toolName, decision?.toolInput) }
     let action: () -> Void
     @State private var hovering = false
 
@@ -429,6 +446,7 @@ struct ToolResultRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
                         Text(Fmt.toolName(entry.toolName)).font(.callout.weight(.medium))
+                        if let target { Text(target).font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
                         Badge(text: entry.handling.label, color: entry.handling.color)
                     }
                     if let reason = decision?.reason, entry.handling != .decidedUnchanged || !reason.hasPrefix("no rule") {
@@ -493,6 +511,66 @@ struct BackgroundRow: View {
                     selection = selection == tr.toolUseId ? nil : tr.toolUseId
                 }
             }
+        }
+    }
+}
+
+/// Hook-mode sessions have no model requests to group into turns: their timeline is the list
+/// of tool results Diorama decided, in order.
+struct HookTimeline: View {
+    let timeline: Timeline
+    @Binding var selection: String?
+    @State private var changedOnly = false
+
+    var decisions: [DecisionSummary] {
+        timeline.decisions.sorted { $0.createdAt < $1.createdAt }.filter { !changedOnly || $0.outcome != .unchanged }
+    }
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 6) {
+                Label("Hook mode records tool results only. Model requests, token usage and Claude's replies aren't captured; use a Terminal session for those.", systemImage: "info.circle")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.teal.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                let notices = timeline.events.filter { $0.kind == .anomaly || $0.kind == .rewriteFailed }
+                if !notices.isEmpty { NoticesCard(events: notices) }
+                if decisions.isEmpty {
+                    ContentUnavailableView(changedOnly ? "No changed results" : "Waiting for tool results", systemImage: "hourglass",
+                                           description: Text("Tool results appear here as Claude Code uses tools in this session."))
+                        .padding(.top, 40)
+                }
+                ForEach(decisions) { d in
+                    HStack(alignment: .center, spacing: 8) {
+                        Text(d.createdAt.formatted(date: .omitted, time: .standard)).font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
+                            .frame(width: 64, alignment: .leading)
+                        ToolResultRow(entry: ToolResultEntry(toolUseId: d.toolUseId, toolName: d.toolName, handling: d.outcome.newHandling), decision: d,
+                                      selected: selection == d.toolUseId) {
+                            selection = selection == d.toolUseId ? nil : d.toolUseId
+                        }
+                    }
+                }
+            }
+            .padding(12)
+        }
+        .safeAreaInset(edge: .bottom) {
+            HStack {
+                Toggle("Only changed results", isOn: $changedOnly).toggleStyle(.checkbox).font(.caption)
+                Spacer()
+                Text(Fmt.plural(timeline.decisions.count, "tool result")).font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .background(.bar)
+        }
+    }
+}
+
+extension DecisionOutcome {
+    var newHandling: ToolResultHandling {
+        switch self {
+        case .rewritten: .decidedRewritten
+        case .unchanged: .decidedUnchanged
+        case .failed: .decidedFailed
         }
     }
 }
@@ -649,8 +727,14 @@ struct AttemptRow: View {
 // MARK: - New session
 
 struct NewSessionSheet: View {
+    enum Mode: String, CaseIterable {
+        case terminal = "Terminal"
+        case desktop = "Claude desktop & IDEs"
+    }
+
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @State private var mode: Mode
     @State private var folder = FileManager.default.homeDirectoryForCurrentUser.path
     @State private var name = ""
     @State private var profile = ""
@@ -660,20 +744,32 @@ struct NewSessionSheet: View {
     @State private var pageStage = false
     @State private var lockdown = LockdownPreset.none
     @State private var claudeArgs = ""
+    /// The Diorama hook currently installed in `folder` (hook mode), re-read after changes.
+    @State private var installedHook: String?
+    @State private var justInstalled = false
 
-    var command: String {
-        FormLogic.sessionCommand(
-            FormLogic.SessionForm(
-                folder: folder, name: name, profile: profile, prompt: prompt, promptTools: promptTools, taskContext: taskContext,
-                pageStage: pageStage, lockdown: lockdown, claudeArgs: claudeArgs),
-            cli: model.cliPath)
+    init(mode: Mode = .terminal) { _mode = State(initialValue: mode) }
+
+    var form: FormLogic.SessionForm {
+        FormLogic.SessionForm(
+            folder: folder, name: name, profile: profile, prompt: prompt, promptTools: promptTools, taskContext: taskContext,
+            pageStage: mode == .terminal && pageStage, lockdown: lockdown, claudeArgs: claudeArgs)
     }
+
+    var command: String { FormLogic.sessionCommand(form, cli: model.cliPath) }
+    var settingsFile: URL { HookInstaller.projectSettings(folder) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("New routed session").font(.title2.bold())
-                Text("Starts Claude Code in Terminal through Diorama. Only this session is routed; your other Claude Code sessions and settings are untouched.")
+                Picker("Run in", selection: $mode) {
+                    ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
+                Text(mode == .terminal
+                     ? "Starts Claude Code in Terminal through Diorama's gateway: full capture, and the only mode experiments use. Your other sessions and settings are untouched."
+                     : "Adds a hook to this project's .claude/settings.local.json. Claude Code sessions in the folder, including the Claude desktop app's Code tab, then send their tool results to Diorama. Hook mode records tool results only: no model requests or token usage.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             .padding([.horizontal, .top], 20)
@@ -685,7 +781,13 @@ struct NewSessionSheet: View {
                             Button("Choose…") { if let f = chooseFolder() { folder = f } }
                         }
                     }
-                    TextField("Name", text: $name, prompt: Text("Optional"))
+                    if mode == .terminal {
+                        TextField("Name", text: $name, prompt: Text("Optional"))
+                    } else if let installedHook {
+                        Label("A Diorama hook is already installed here. Installing again replaces it.", systemImage: "link")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .help(installedHook)
+                    }
                 }
                 Section {
                     Picker("Profile", selection: $profile) {
@@ -700,22 +802,26 @@ struct NewSessionSheet: View {
                         Text("Optional. Instructions for this session only, applied after the profile's rules.").font(.caption).foregroundStyle(.secondary)
                     }
                     if !prompt.isEmpty {
-                        TextField("Applies to tools", text: $promptTools).disabled(pageStage)
-                        Toggle("Edit WebFetch pages before summarization", isOn: $pageStage)
+                        TextField("Applies to tools", text: $promptTools).disabled(mode == .terminal && pageStage)
+                        if mode == .terminal {
+                            Toggle("Edit WebFetch pages before summarization", isOn: $pageStage)
+                        }
                         Toggle("Share the session's task with the rewrite agent", isOn: $taskContext)
                     }
                 } header: {
                     Text("Steering")
                 }
-                Section("Advanced") {
-                    Picker("Lockdown", selection: $lockdown) {
-                        Text("None").tag(LockdownPreset.none)
-                        Text("Block shell network tools").tag(LockdownPreset.network)
+                if mode == .terminal {
+                    Section("Advanced") {
+                        Picker("Lockdown", selection: $lockdown) {
+                            Text("None").tag(LockdownPreset.none)
+                            Text("Block shell network tools").tag(LockdownPreset.network)
+                        }
+                        TextField("Extra Claude Code arguments", text: $claudeArgs, prompt: Text("e.g. --model sonnet"))
                     }
-                    TextField("Extra Claude Code arguments", text: $claudeArgs, prompt: Text("e.g. --model sonnet"))
-                }
-                Section("Command") {
-                    Text(command).font(.caption.monospaced()).textSelection(.enabled).lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
+                    Section("Command") {
+                        Text(command).font(.caption.monospaced()).textSelection(.enabled).lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
             }
             .formStyle(.grouped)
@@ -724,22 +830,54 @@ struct NewSessionSheet: View {
                 Label("No rewrite API key is configured; matching results will pass through unchanged. Add one in Settings.", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange).font(.caption).padding(.horizontal, 20)
             }
+            if justInstalled {
+                Label("Installed. Start a new Code session in this folder in Claude desktop (sessions already open keep running without it).", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green).font(.callout).padding(.horizontal, 20).padding(.top, 8)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack {
-                Button("Copy Command") { copyToPasteboard(command) }
-                Spacer()
-                Button("Cancel") { dismiss() }
-                Button("Open in Terminal") {
-                    do {
-                        try openInTerminal(command)
-                        dismiss()
-                    } catch { model.report(error) }
+                if mode == .terminal {
+                    Button("Copy Command") { copyToPasteboard(command) }
+                } else if installedHook != nil {
+                    Button("Remove Hook", role: .destructive) {
+                        do {
+                            try HookInstaller.uninstall(settings: settingsFile)
+                            justInstalled = false
+                            refreshInstalled()
+                        } catch { model.report(error) }
+                    }
                 }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                Spacer()
+                Button(justInstalled ? "Done" : "Cancel") { dismiss() }
+                if mode == .terminal {
+                    Button("Open in Terminal") {
+                        do {
+                            try openInTerminal(command)
+                            dismiss()
+                        } catch { model.report(error) }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                } else {
+                    Button(installedHook == nil ? "Install Hook" : "Update Hook") {
+                        do {
+                            let hook = try HookInstaller.command(cli: model.cliPath, config: FormLogic.hookConfig(form))
+                            try HookInstaller.install(command: hook, settings: settingsFile)
+                            justInstalled = true
+                            refreshInstalled()
+                        } catch { model.report(error) }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                }
             }
             .padding(20)
         }
         .frame(width: 620)
         .fixedSize(horizontal: false, vertical: true)
+        .onChange(of: folder, initial: true) { refreshInstalled() }
+        .onChange(of: mode) { justInstalled = false }
     }
+
+    func refreshInstalled() { installedHook = HookInstaller.installedCommand(settings: settingsFile) }
 }

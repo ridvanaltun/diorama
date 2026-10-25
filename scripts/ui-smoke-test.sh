@@ -15,7 +15,7 @@ trap cleanup EXIT
 
 "$APP/Contents/MacOS/Diorama" > "$WORK/app.log" 2>&1 &
 APP_PID=$!
-EXPECTED=(sessions experiments profiles settings sheet-new-session sheet-new-profile sheet-new-experiment menu-bar-panel)
+EXPECTED=(sessions experiments profiles settings sheet-new-session sheet-new-session-desktop sheet-new-profile sheet-new-experiment menu-bar-panel)
 for i in {1..90}; do
   sleep 1
   [[ -f "$DIORAMA_SNAPSHOT_DIR/menu-bar-panel.png" ]] && break

@@ -88,6 +88,7 @@ public struct ControlClient: Sendable {
     public func applyRetention() async throws -> MaintenanceResult { try await request("POST", "maintenance/retention") }
 
     public func templates() async throws -> [Profile] { try await request("GET", "templates") }
+    public func hook(_ event: HookEvent) async throws -> HookReply { try await request("POST", "hook", body: event) }
     public func profiles() async throws -> [ProfileSummary] { try await request("GET", "profiles") }
     public func profile(_ id: String) async throws -> ProfileDetail { try await request("GET", "profiles/\(id.urlPathEscaped)") }
     public func createProfile(_ p: Profile) async throws -> ProfileVersionInfo { try await request("POST", "profiles", body: p) }

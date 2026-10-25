@@ -261,6 +261,9 @@ public enum LockdownPreset: String, Codable, Sendable, CaseIterable {
 
 public enum SessionKind: String, Codable, Sendable { case interactive, trial }
 public enum SessionStatus: String, Codable, Sendable { case active, ended }
+/// How a session reaches Diorama: through the local gateway (`diorama run`, full capture) or
+/// through Claude Code hooks (Claude desktop, IDEs; tool results only, no model traffic).
+public enum SessionVia: String, Codable, Sendable { case gateway, hook }
 
 public struct SessionSpec: Codable, Sendable, Hashable {
     public var name: String
@@ -274,11 +277,15 @@ public struct SessionSpec: Codable, Sendable, Hashable {
     public var onFailure: FailurePolicy?
     /// Experiment runs set this so identical tool results reuse one rewrite across trials.
     public var treatmentScope: String?
+    /// Nil means `.gateway`.
+    public var via: SessionVia?
 
     public init(
         name: String, cwd: String, profile: String? = nil, prompt: SessionPrompt? = nil, lockdown: LockdownPreset = .none,
-        kind: SessionKind = .interactive, trialId: String? = nil, onFailure: FailurePolicy? = nil, treatmentScope: String? = nil
+        kind: SessionKind = .interactive, trialId: String? = nil, onFailure: FailurePolicy? = nil, treatmentScope: String? = nil,
+        via: SessionVia? = nil
     ) {
+        self.via = via
         self.name = name
         self.cwd = cwd
         self.profile = profile
@@ -319,13 +326,17 @@ public struct SessionInfo: Codable, Sendable, Hashable, Identifiable {
     public var claudeSessionIds: [String]
     public var flags: [String]
     public var stats: SessionStats
+    /// Nil (older daemons) means `.gateway`.
+    public var via: SessionVia?
+    public var isHook: Bool { via == .hook }
 
     public init(
         id: String, name: String, cwd: String, kind: SessionKind, status: SessionStatus, createdAt: Date, endedAt: Date?,
         profileId: String?, profileName: String?, profileVersionId: String?, profileVersionNumber: Int?,
         prompt: SessionPrompt?, lockdown: LockdownPreset, trialId: String?, claudeSessionIds: [String], flags: [String],
-        stats: SessionStats
+        stats: SessionStats, via: SessionVia? = nil
     ) {
+        self.via = via
         self.id = id
         self.name = name
         self.cwd = cwd
@@ -343,6 +354,69 @@ public struct SessionInfo: Codable, Sendable, Hashable, Identifiable {
         self.claudeSessionIds = claudeSessionIds
         self.flags = flags
         self.stats = stats
+    }
+}
+
+// MARK: - Hook mode
+
+/// What a hook-mode session applies, set when the hook is installed (the hook command's arguments).
+public struct HookConfig: Codable, Sendable, Hashable {
+    /// Profile id or name.
+    public var profile: String?
+    public var prompt: SessionPrompt?
+
+    public init(profile: String? = nil, prompt: SessionPrompt? = nil) {
+        self.profile = profile
+        self.prompt = prompt
+    }
+}
+
+/// One Claude Code hook event, forwarded by `diorama hook run` to the daemon.
+public struct HookEvent: Codable, Sendable {
+    /// `SessionStart`, `PostToolUse` or `SessionEnd`.
+    public var event: String
+    public var claudeSessionId: String
+    public var cwd: String
+    public var transcriptPath: String?
+    /// `CLAUDE_CODE_ENTRYPOINT` of the hooked session (e.g. `claude-desktop`, `cli`).
+    public var client: String?
+    public var toolName: String?
+    public var toolUseId: String?
+    /// Raw JSON of `tool_input`.
+    public var toolInput: String?
+    /// Raw JSON of `tool_response`.
+    public var toolResponse: String?
+    public var config: HookConfig
+
+    public init(
+        event: String, claudeSessionId: String, cwd: String, transcriptPath: String? = nil, client: String? = nil, toolName: String? = nil,
+        toolUseId: String? = nil, toolInput: String? = nil, toolResponse: String? = nil, config: HookConfig = HookConfig()
+    ) {
+        self.event = event
+        self.claudeSessionId = claudeSessionId
+        self.cwd = cwd
+        self.transcriptPath = transcriptPath
+        self.client = client
+        self.toolName = toolName
+        self.toolUseId = toolUseId
+        self.toolInput = toolInput
+        self.toolResponse = toolResponse
+        self.config = config
+    }
+}
+
+public struct HookReply: Codable, Sendable {
+    public var sessionId: String?
+    /// Raw JSON to return as `updatedToolOutput`; nil leaves the tool result unchanged.
+    public var updatedToolOutput: String?
+    public var outcome: DecisionOutcome?
+    public var reason: String?
+
+    public init(sessionId: String? = nil, updatedToolOutput: String? = nil, outcome: DecisionOutcome? = nil, reason: String? = nil) {
+        self.sessionId = sessionId
+        self.updatedToolOutput = updatedToolOutput
+        self.outcome = outcome
+        self.reason = reason
     }
 }
 
@@ -560,11 +634,14 @@ public struct DecisionSummary: Codable, Sendable, Hashable, Identifiable {
     public var createdAt: Date
     public var rules: [RuleRef]
     public var replayCount: Int
+    /// Raw JSON of the tool call's input (for showing what the call was about).
+    public var toolInput: String?
 
     public init(
         toolUseId: String, sessionId: String, exchangeId: Int64, toolName: String?, outcome: DecisionOutcome, reason: String,
-        createdAt: Date, rules: [RuleRef], replayCount: Int
+        createdAt: Date, rules: [RuleRef], replayCount: Int, toolInput: String? = nil
     ) {
+        self.toolInput = toolInput
         self.toolUseId = toolUseId
         self.sessionId = sessionId
         self.exchangeId = exchangeId

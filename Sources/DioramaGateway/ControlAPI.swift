@@ -143,6 +143,9 @@ struct ControlAPI: Sendable {
                 session: try store.info(s), exchanges: try store.exchanges(sessionId: id, afterId: after),
                 decisions: try store.decisions(sessionId: id).map(\.summary), events: try store.events(sessionId: id)))
         }
+        if Self.match(method, route, "POST", "hook") != nil {
+            return try ok(try await daemon.handleHook(try decode(HookEvent.self, req)))
+        }
         if let c = Self.match(method, route, "GET", "decisions/:id") {
             let id = c[0]
             guard let d = try store.decisionDetail(toolUseId: id) else { throw notFound("decision") }

@@ -21,6 +21,10 @@ A rewrite request contains the matching tool result, the tool's name and input, 
 - **Credentials.** `Authorization`, `x-api-key`, `cookie` and `set-cookie` headers are redacted before anything is written. The rewrite key lives only in the Keychain (or in `DIORAMA_ANTHROPIC_API_KEY`, if you choose that), and the app and CLI show only its last four characters.
 - **Limits.** Request bodies over 128 MB are rejected with `413`. The JSON scanner is iterative, so deeply nested input can't exhaust the stack.
 
+## Hook mode
+
+`diorama hook install` writes a command into a project's `.claude/settings.local.json`, or into `~/.claude/settings.json` with `--user`. Claude Code runs it after every tool call, with that tool call's input and output on stdin. The command is the bundled `diorama` CLI; it sends the event to the daemon over the authenticated control API and prints a replacement only when a rule rewrote the result. On any error it prints nothing, so the original result stands. Hook sessions are keyed by Claude Code's session id under a key that can never match a gateway URL token. Remove the hook with `diorama hook uninstall`.
+
 ## Captured data is sensitive
 
 Raw capture, on by default, stores full request and response bodies. These include your prompts, your code, files Claude read, and Claude Code's system prompt. They are kept for `retentionDays` (14 by default) and then deleted. Decision records (originals and rewrites) are kept until you delete the data directory. To stop raw capture, run `diorama settings set captureRawBodies false`.

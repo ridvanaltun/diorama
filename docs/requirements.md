@@ -33,7 +33,7 @@ Primary user: a developer or researcher studying how AI coding agents react to t
 - **FR-7** Sessions are started from the app or with `diorama run -- claude …`. Diorama never routes sessions it didn't start.
 - **FR-8** Each session has a name, working folder, profile (a set of global rules at a specific version), an optional session prompt, and optional tool lockdown. All of these are fixed before the first request.
 - **FR-9** Sessions are told apart by an unguessable token in the base URL path. Claude Code's own session, subagent and request-class headers are recorded.
-- **FR-10** Supported surfaces: the terminal CLI first, with the VS Code extension as a bonus. The Claude Desktop Code tab isn't supported, because it ignores `ANTHROPIC_BASE_URL`.
+- **FR-10** Supported surfaces: the terminal CLI first, with the VS Code extension as a bonus. The Claude desktop Code tab ignores `ANTHROPIC_BASE_URL`, so it is covered by hook mode (D36), which handles tool results only.
 
 ### 3.3 Rules, prompts and the rewrite agent
 - **FR-11** Global rules, grouped into profiles, plus a session-specific prompt. A rule decides when it fires with cheap deterministic conditions (tool name or wildcard pattern, input field patterns such as the URL's domain, content patterns, size limits, request class) and carries rewrite instructions.

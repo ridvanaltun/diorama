@@ -12,7 +12,7 @@ struct Diorama: AsyncParsableCommand {
         discussion: "Diorama routes Claude Code sessions you start with `diorama run` through a local gateway that can rewrite tool results according to your rules, records everything, and runs A/B experiments.",
         version: DioramaVersion.current,
         subcommands: [
-            Run.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
+            Run.self, Hook.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
         ])
 }
 

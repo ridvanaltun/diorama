@@ -179,7 +179,8 @@ public final class DioramaDaemon: @unchecked Sendable {
         let token = Hashing.randomToken()
         let record = try store.createSession(spec, tokenHash: Hashing.sha256Hex(token))
         let base = "\(baseURL)/s/\(token)"
-        let env = ["ANTHROPIC_BASE_URL": base, "CLAUDE_CODE_GATEWAY_HINT_HEADERS": "1"]
+        // DIORAMA_SESSION tells an installed Diorama hook that the gateway already handles this session.
+        let env = ["ANTHROPIC_BASE_URL": base, "CLAUDE_CODE_GATEWAY_HINT_HEADERS": "1", "DIORAMA_SESSION": record.id]
         // Passing the same env through --settings makes it win over an `env` block in the user's
         // own settings files (settings beat shell exports), without changing any file on disk.
         var settings: [String: Any] = ["env": env]
@@ -187,6 +188,84 @@ public final class DioramaDaemon: @unchecked Sendable {
         if !deny.isEmpty { settings["permissions"] = ["deny": deny] }
         let json = String(decoding: try JSONSerialization.data(withJSONObject: settings, options: [.sortedKeys, .withoutEscapingSlashes]), as: UTF8.self)
         return SessionLaunch(session: try store.info(record), token: token, baseURL: base, environment: env, claudeArguments: ["--settings", json])
+    }
+
+    // MARK: Hook mode
+
+    /// Handles one Claude Code hook event (hook mode: Claude desktop, IDEs). Sessions are keyed
+    /// by Claude's session id; their configuration is fixed when the first event arrives.
+    func handleHook(_ e: HookEvent) async throws -> HookReply {
+        guard !e.claudeSessionId.isEmpty else { throw RunnerError("hook event without a session id") }
+        guard let session = try hookSession(e) else { return HookReply() }
+        switch e.event {
+        case "SessionEnd":
+            try store.endSession(id: session.id)
+            return HookReply(sessionId: session.id)
+        case "PostToolUse":
+            guard let tool = e.toolName, let toolUseId = e.toolUseId, let response = e.toolResponse else { return HookReply(sessionId: session.id) }
+            let task = wantsTaskContext(session) ? e.transcriptPath.flatMap(Self.firstUserMessage) : nil
+            let (d, output) = await engine.decideHook(
+                session: session, toolUseId: toolUseId, toolName: tool, toolInputJSON: e.toolInput, responseJSON: response, taskText: task)
+            return HookReply(sessionId: session.id, updatedToolOutput: output.map { String(decoding: $0, as: UTF8.self) }, outcome: d?.outcome, reason: d?.reason)
+        default:
+            return HookReply(sessionId: session.id)
+        }
+    }
+
+    private let hookLock = NSLock()
+
+    /// Finds the session for a Claude session id, creating it on first contact. A resumed
+    /// Claude session (same id) reopens its Diorama session.
+    func hookSession(_ e: HookEvent) throws -> SessionRecord? {
+        // Not a SHA-256 hex digest, so no gateway URL token can ever map to a hook session.
+        let key = "hook:" + Hashing.sha256Hex(e.claudeSessionId)
+        return try hookLock.withLock {
+            if let existing = try store.session(tokenHash: key) {
+                if existing.status == .ended, e.event != "SessionEnd" {
+                    try store.reopenSession(id: existing.id)
+                    return try store.session(id: existing.id)
+                }
+                return existing
+            }
+            if e.event == "SessionEnd" { return nil }
+            let cwd = (e.cwd as NSString).expandingTildeInPath
+            let folder = (cwd as NSString).lastPathComponent
+            let name = e.client == "claude-desktop" ? "\(folder) · Desktop" : folder
+            var spec = SessionSpec(name: name, cwd: cwd, profile: e.config.profile, prompt: e.config.prompt, via: .hook)
+            let record: SessionRecord
+            do {
+                record = try store.createSession(spec, tokenHash: key)
+            } catch let err as StoreError {
+                // A bad hook configuration must not break the session: record it and apply nothing.
+                spec.profile = nil
+                spec.prompt = nil
+                record = try store.createSession(spec, tokenHash: key)
+                store.addEvent(sessionId: record.id, kind: .anomaly, message: "Hook configuration rejected (\(err.description)); no rules are applied in this session", refId: record.id)
+            }
+            try store.recordClaudeSessionId(sessionId: record.id, claudeSessionId: e.claudeSessionId)
+            return record
+        }
+    }
+
+    func wantsTaskContext(_ s: SessionRecord) -> Bool {
+        s.prompt?.context == .task || (s.profileVersion?.profile.rules.contains { $0.context == .task } ?? false)
+    }
+
+    /// The session's task: the first user message in Claude Code's transcript (JSONL).
+    static func firstUserMessage(transcriptPath: String) -> String? {
+        guard let handle = FileHandle(forReadingAtPath: (transcriptPath as NSString).expandingTildeInPath) else { return nil }
+        defer { try? handle.close() }
+        let data = (try? handle.read(upToCount: 2_000_000)) ?? Data()
+        for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
+            guard let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                  obj["type"] as? String == "user", let message = obj["message"] as? [String: Any] else { continue }
+            if let text = message["content"] as? String, !text.isEmpty { return text }
+            if let blocks = message["content"] as? [[String: Any]] {
+                let text = blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }.joined(separator: "\n")
+                if !text.isEmpty { return text }
+            }
+        }
+        return nil
     }
 
     func health() -> HealthInfo {

@@ -48,7 +48,7 @@ public struct DecisionRecord: Sendable, Hashable {
     public var summary: DecisionSummary {
         DecisionSummary(
             toolUseId: toolUseId, sessionId: sessionId, exchangeId: exchangeId, toolName: toolName, outcome: outcome,
-            reason: reason, createdAt: createdAt, rules: rules, replayCount: replayCount)
+            reason: reason, createdAt: createdAt, rules: rules, replayCount: replayCount, toolInput: toolInput)
     }
 }
 

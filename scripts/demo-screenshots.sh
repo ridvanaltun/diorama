@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Regenerates docs/assets/screenshot-*.png from a self-contained demo:
-#   - a scripted fake model (spikes/gateway-poc/mock-upstream.mjs) instead of the Claude API,
+#   - a scripted fake model (scripts/demo-mock-model.mjs) instead of the Claude API,
 #   - a fake rewrite endpoint instead of the Anthropic API,
 #   - the real `claude` CLI with a dummy key and a temporary HOME.
 # Nothing here contacts Anthropic or uses an account; WebFetch fetches example.com/.org.
@@ -35,9 +35,9 @@ JS
 
 # The app relaunches a missing daemon, so stop the app before the daemon.
 APP_PID=""
-cleanup() { { [[ -n "$APP_PID" ]] && kill "$APP_PID" 2> /dev/null; } || true; pkill -f "mock-upstream.mjs" || true; pkill -f "fake-rewrite.mjs" || true; pkill -f "dioramad --home $DEMO" || true; }
+cleanup() { { [[ -n "$APP_PID" ]] && kill "$APP_PID" 2> /dev/null; } || true; pkill -f "demo-mock-model.mjs" || true; pkill -f "fake-rewrite.mjs" || true; pkill -f "dioramad --home $DEMO" || true; }
 trap cleanup EXIT
-(cd "$DEMO" && PORT=8788 node "$ROOT/spikes/gateway-poc/mock-upstream.mjs" > mock.log 2>&1 &)
+(cd "$DEMO" && PORT=8788 node "$ROOT/scripts/demo-mock-model.mjs" > mock.log 2>&1 &)
 (cd "$DEMO" && node fake-rewrite.mjs > fake.log 2>&1 &)
 sleep 0.5
 export HOME="$DEMO/home" DIORAMA_HOME="$DEMO/dhome" ANTHROPIC_API_KEY=sk-ant-api03-dummy-demo CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
@@ -50,6 +50,10 @@ cat > "$DEMO/profile.json" <<'JSON'
 JSON
 "$D" profiles create --file "$DEMO/profile.json"
 "$D" settings set claudePath "$DEMO/bin/claude" > /dev/null
+# A hook-mode session (how Claude desktop sessions reach Diorama), made first so the gateway session is the newest.
+mkdir -p "$DEMO/desktop-project" && echo "# desktop demo" > "$DEMO/desktop-project/README.md"
+(cd "$DEMO/desktop-project" && "$D" hook install --profile "Docs heading steer" > /dev/null)
+(cd "$DEMO/desktop-project" && ANTHROPIC_BASE_URL=http://127.0.0.1:8788 CLAUDE_CODE_ENTRYPOINT=claude-desktop "$DEMO/bin/claude" -p "Fetch example.com and example.org" --allowedTools WebFetch > /dev/null 2>&1)
 (cd "$DEMO/project" && "$D" run --name "docs heading demo" --profile "Docs heading steer" --claude "$DEMO/bin/claude" -- -p "Fetch example.com and example.org" --allowedTools WebFetch > /dev/null 2>&1)
 cat > "$DEMO/exp.json" <<JSON
 {"name":"Heading steer pilot","task":"Fetch example.com and example.org and report their headings.","projectPath":"$DEMO/project",
