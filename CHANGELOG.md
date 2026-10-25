@@ -5,6 +5,8 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+## 1.4.0 — 2026-10-25
+
 ### New
 - **Shadow mode.** A profile can compute its AI rewrites without applying them: Claude gets the original, and each tool result records what would have changed (shown as a diff in its audit record, with a **shadow** badge). Trials ignore it.
 - **Rule sampling.** `match.sample` (or **Apply to a sample** in the editor) applies a rule to a share of its matching tool results, chosen deterministically per result id, so changed and unchanged results can be compared within one session; skipped results say "not in the sample of …".
