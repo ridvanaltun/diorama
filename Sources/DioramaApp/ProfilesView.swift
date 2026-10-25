@@ -9,22 +9,31 @@ struct ProfilesView: View {
     var body: some View {
         HSplitView {
             List(model.profiles, selection: $selection) { p in
-                VStack(alignment: .leading) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(p.name).font(.headline)
-                    Text("v\(p.currentVersionNumber) · \(p.ruleCount) rule\(p.ruleCount == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
-                }.tag(p.id)
+                    Text("v\(p.currentVersionNumber) · \(Fmt.plural(p.ruleCount, "rule"))").font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 2)
+                .tag(p.id)
             }
             .frame(minWidth: 220, idealWidth: 260, maxWidth: 340)
             .overlay {
                 if model.profiles.isEmpty {
-                    ContentUnavailableView("No profiles", systemImage: "slider.horizontal.3", description: Text("Profiles are versioned sets of global rules. Start from a template."))
+                    ContentUnavailableView {
+                        Label("No profiles", systemImage: "slider.horizontal.3")
+                    } description: {
+                        Text("A profile is a versioned set of rules: which tool results to change, and how.")
+                    } actions: {
+                        Button("Choose a template") { showTemplates = true }
+                    }
                 }
             }
             Group {
                 if let id = selection {
                     ProfileEditor(profileId: id).id(id)
                 } else {
-                    ContentUnavailableView("Select a profile", systemImage: "slider.horizontal.3")
+                    ContentUnavailableView("Select a profile", systemImage: "slider.horizontal.3",
+                                           description: Text("Every save creates a new immutable version, so sessions and experiments stay reproducible."))
                 }
             }
             .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
@@ -35,6 +44,12 @@ struct ProfilesView: View {
             }
         }
         .sheet(isPresented: $showTemplates) { NewProfileSheet(selection: $selection) }
+        .onChange(of: model.wantsNewProfile, initial: true) { _, wants in
+            if wants {
+                showTemplates = true
+                model.wantsNewProfile = false
+            }
+        }
         .navigationTitle("Profiles")
         .task { if model.snapshotDir != nil, selection == nil { selection = model.profiles.first?.id } }
     }
@@ -101,9 +116,11 @@ struct ProfileEditor: View {
         if let detail {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    VStack(alignment: .leading) {
+                    VStack(alignment: .leading, spacing: 2) {
                         TextField("Name", text: $draft.name).font(.title2.bold()).textFieldStyle(.plain)
-                        Text("Current: v\(detail.current.number) · \(detail.current.id)").font(.caption.monospaced()).foregroundStyle(.secondary)
+                        Text(dirty ? "Unsaved changes to v\(detail.current.number)" : "Version \(detail.current.number) · saved \(Fmt.relative(detail.current.createdAt))")
+                            .font(.caption).foregroundStyle(dirty ? .orange : .secondary)
+                            .help(detail.current.id)
                     }
                     Spacer()
                     if dirty {
@@ -114,7 +131,11 @@ struct ProfileEditor: View {
                 .padding(12)
                 Divider()
                 Form {
-                    Section("Description") { TextField("Description", text: $draft.description, axis: .vertical) }
+                    Section {
+                        TextField("Description", text: $draft.description, prompt: Text("What this profile is for"), axis: .vertical).labelsHidden()
+                    } header: {
+                        Text("Description")
+                    }
                     Section("Defaults") {
                         TextField("Rewrite model", text: $draft.defaults.model)
                         Picker("On rewrite failure", selection: $draft.defaults.onFailure) {
@@ -130,15 +151,22 @@ struct ProfileEditor: View {
                                 RuleEditor(rule: $rule)
                             } label: {
                                 HStack {
-                                    Toggle("", isOn: $rule.enabled).labelsHidden()
-                                    Text(rule.name.isEmpty ? "Untitled rule" : rule.name).bold()
+                                    Toggle("", isOn: $rule.enabled).labelsHidden().help(rule.enabled ? "Enabled" : "Disabled")
+                                    Text(rule.name.isEmpty ? "Untitled rule" : rule.name).bold().foregroundStyle(rule.enabled ? .primary : .secondary)
                                     Text(rule.match.tools.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary)
+                                    if rule.match.stage == .page { Badge(text: "page", color: .teal) }
+                                    if !FormLogic.ruleProblems(rule).isEmpty {
+                                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).help(FormLogic.ruleProblems(rule).joined(separator: "\n"))
+                                    }
                                     Spacer()
                                     Button(role: .destructive) { draft.rules.removeAll { $0.id == rule.id } } label: { Image(systemName: "trash") }.buttonStyle(.borderless)
                                 }
                             }
                         }
                         .onMove { draft.rules.move(fromOffsets: $0, toOffset: $1) }
+                        if draft.rules.isEmpty {
+                            Text("No rules yet: sessions using this profile are recorded but never changed.").font(.callout).foregroundStyle(.secondary)
+                        }
                         Button("Add rule") {
                             draft.rules.append(Rule(name: "New rule", match: RuleMatch(tools: ["WebFetch"]), instructions: ""))
                         }
@@ -148,15 +176,17 @@ struct ProfileEditor: View {
                     Section("Version history") {
                         ForEach(detail.versions) { v in
                             HStack {
-                                Text("v\(v.number)").bold()
+                                Text("v\(v.number)").bold().frame(width: 34, alignment: .leading)
                                 Text(v.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                Text("\(v.profile.rules.count) rules").foregroundStyle(.secondary)
+                                Text(Fmt.plural(v.profile.rules.count, "rule")).foregroundStyle(.secondary)
                                 Spacer()
-                                Text(v.id).font(.caption.monospaced()).foregroundStyle(.secondary)
-                                if v.id != detail.current.id {
-                                    Button("Load") { draft = v.profile }.buttonStyle(.borderless)
+                                if v.id == detail.current.id {
+                                    Badge(text: "current", color: .green)
+                                } else {
+                                    Button("Load into editor") { draft = v.profile }.buttonStyle(.borderless)
                                 }
                             }
+                            .help(v.id)
                         }
                     }
                 }
@@ -189,6 +219,7 @@ struct RuleEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            let problems = FormLogic.ruleProblems(rule)
             TextField("Name", text: $rule.name)
             TextField("Tools (comma-separated, * wildcard)", text: Binding(
                 get: { rule.match.tools.joined(separator: ", ") },
@@ -202,6 +233,9 @@ struct RuleEditor: View {
                 Text("WebFetch page, before summarization").tag(RuleStage.page)
             }
             Toggle("Also rewrite error results", isOn: $rule.match.includeErrors)
+            if rule.match.stage == .page && !rule.match.tools.allSatisfy({ $0 == "WebFetch" }) {
+                Text("Page-stage rules only apply to WebFetch.").font(.caption).foregroundStyle(.secondary)
+            }
             Text("Instructions for the rewrite agent").font(.caption)
             TextEditor(text: $rule.instructions).frame(minHeight: 80).overlay(RoundedRectangle(cornerRadius: 4).stroke(.quaternary))
             HStack {
@@ -211,7 +245,8 @@ struct RuleEditor: View {
                     Text("Include task").tag(ContextMode.task)
                 }
             }
-            Text("Rule id: \(rule.id)").font(.caption2.monospaced()).foregroundStyle(.tertiary)
+            ForEach(problems, id: \.self) { Label($0, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange) }
+            Text("Rule id: \(rule.id)").font(.caption2.monospaced()).foregroundStyle(.tertiary).textSelection(.enabled)
         }
         .padding(.vertical, 4)
     }

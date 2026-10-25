@@ -35,4 +35,4 @@ if (( FAIL )); then
   echo "--- app log"; tail -20 "$WORK/app.log"
   exit 1
 fi
-echo "✓ UI smoke test passed"
+echo "✓ UI smoke test passed (snapshots: $DIORAMA_SNAPSHOT_DIR)"

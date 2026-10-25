@@ -5,6 +5,13 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+### Improved
+- **Sessions timeline, redesigned.** Requests are grouped into turns: the tool results Claude received, what Diorama did to each, and Claude's response. Background requests (WebFetch's summarizer, token counts) fold under their turn. Each tool result shows its target (URL, query, file), and replayed results are hidden unless you ask for them. The session header has stat tiles.
+- **Decision detail, reordered.** It shows the outcome and reason first, then the changes, what Claude did next, the rules that applied, and the rewrite agent's edits. IDs and hashes move into a collapsed "Technical details" section.
+- **Getting started.** With no sessions yet, the app shows a three-step checklist (API key, profile, first session) and the command-line install.
+- **Experiment results are easier to read.** Runs are titled by date. Caveats sit in a callout. Heuristic signals are bars with 95% interval whiskers. Numbers drop noise ("3", not "3.0 ± 0.0"). The definition view and the new-experiment form are reorganized, with variants shown up front.
+- **Profiles and Settings.** The rule editor flags rules that can never work (no tools, no instructions, invalid regex). Version history marks the current version. Settings adds a command-line install helper and a "Show in Finder" button for the data folder. The new-session form is grouped and shows its advanced options only when relevant.
+
 ## 1.1.0 — 2026-10-25
 
 ### New

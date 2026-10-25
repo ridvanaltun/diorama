@@ -54,11 +54,11 @@ enum SidebarSection: String, CaseIterable, Identifiable {
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
-    @State private var section: SidebarSection? = .sessions
 
     var body: some View {
+        @Bindable var model = model
         NavigationSplitView {
-            List(SidebarSection.allCases, selection: $section) { s in
+            List(SidebarSection.allCases, selection: $model.section) { s in
                 Label(s.rawValue, systemImage: s.icon).tag(s)
             }
             .navigationSplitViewColumnWidth(min: 160, ideal: 180)
@@ -88,7 +88,7 @@ struct RootView: View {
                         Button("Retry") { Task { await model.connect() } }
                     }
                 case .connected:
-                    switch section ?? .sessions {
+                    switch model.section ?? .sessions {
                     case .sessions: SessionsView()
                     case .experiments: ExperimentsView()
                     case .profiles: ProfilesView()
@@ -100,7 +100,7 @@ struct RootView: View {
         }
         .task(id: model.connection) {
             guard let dir = model.snapshotDir, case .connected = model.connection else { return }
-            await Snapshotter.run(dir: dir, model: model) { section = $0 }
+            await Snapshotter.run(dir: dir, model: model) { model.section = $0 }
         }
         .alert("Diorama", isPresented: Binding(get: { model.lastError != nil }, set: { if !$0 { model.lastError = nil } })) {
             Button("OK") { model.lastError = nil }

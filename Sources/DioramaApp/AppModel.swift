@@ -35,6 +35,10 @@ final class AppModel {
     var eventTick = 0
     var lastEvent: SessionEvent?
     var update: UpdateInfo?
+    /// Sidebar selection (lifted here so views can navigate, e.g. "Open Settings").
+    var section: SidebarSection? = .sessions
+    /// Set by the getting-started guide to open the new-profile sheet.
+    var wantsNewProfile = false
     var updateError: String?
 
     private var eventsTask: Task<Void, Never>?

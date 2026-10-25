@@ -89,4 +89,16 @@ enum FormLogic {
             variants: variants, trialsPerVariant: f.trials, concurrency: f.concurrency, treatment: f.frozen ? .frozen : .fresh,
             judge: f.useJudge ? JudgeConfig() : nil)
     }
+
+    /// Problems that would make a rule silently never match or do nothing.
+    static func ruleProblems(_ rule: Rule) -> [String] {
+        var out: [String] = []
+        if rule.match.tools.isEmpty { out.append("No tools: the rule never matches.") }
+        if rule.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { out.append("No instructions for the rewrite agent.") }
+        if let c = rule.match.content, (try? Regex(c)) == nil { out.append("Content regex is invalid.") }
+        for (field, pattern) in rule.match.input.sorted(by: { $0.key < $1.key }) where (try? Regex(pattern)) == nil {
+            out.append("Input pattern for “\(field)” is an invalid regex.")
+        }
+        return out
+    }
 }

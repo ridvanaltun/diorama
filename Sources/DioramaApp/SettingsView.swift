@@ -1,3 +1,4 @@
+import AppKit
 import DioramaCore
 import SwiftUI
 
@@ -12,7 +13,7 @@ struct SettingsView: View {
         Form {
             Section("Rewrite agent API key") {
                 if let k = model.keyStatus {
-                    Label(k.configured ? "Configured via \(k.source ?? "?") (\(k.hint ?? ""))" : "Not configured", systemImage: k.configured ? "checkmark.seal" : "exclamationmark.triangle")
+                    Label(k.configured ? "Configured — \(k.source ?? "unknown source")\(k.hint.map { " · \($0)" } ?? "")" : "Not configured — rewrites will fail and the original is forwarded", systemImage: k.configured ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                         .foregroundStyle(k.configured ? .green : .orange)
                 }
                 SecureField("Anthropic API key (sk-ant-…)", text: $keyInput)
@@ -64,6 +65,20 @@ struct SettingsView: View {
                     }
                 }
                 Text("Updates are downloaded manually; Diorama never replaces itself. `diorama update --download` fetches and verifies the zip.").font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Command-line tool") {
+                Text("Link the bundled `diorama` command into your PATH (asks for your password):").font(.callout)
+                CommandLineInstall()
+                Text("Then run `diorama run` in any project folder to start a routed Claude Code session.").font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Data") {
+                LabeledContent("Data folder") {
+                    HStack {
+                        Text(Fmt.shortPath(DioramaPaths.default().home.path)).textSelection(.enabled).lineLimit(1).truncationMode(.middle)
+                        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([DioramaPaths.default().home]) }
+                    }
+                }
+                Text("Sessions, decisions, experiment runs and captured bodies live here. API keys are in the Keychain, not in this folder.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Diagnostics") {
                 if let d = doctor {

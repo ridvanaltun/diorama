@@ -12,23 +12,28 @@ struct ExperimentsView: View {
         HSplitView {
             List(selection: $selection) {
                 ForEach(model.experiments) { e in
-                    Section(e.name) {
-                        if e.runs.isEmpty { Text("No runs yet").font(.caption).foregroundStyle(.secondary) }
-                        ForEach(e.runs) { r in
-                            HStack {
-                                Badge(text: r.status.rawValue, color: r.status == .completed ? .green : (r.status == .running ? .blue : .secondary))
-                                Text("\(r.trialsDone)/\(r.trialsTotal)").font(.caption)
-                                Text(r.createdAt.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
-                            }.tag("run:" + r.id)
+                    Section {
+                        Label("Definition & new run", systemImage: "doc.text.magnifyingglass").tag("exp:" + e.id)
+                        ForEach(e.runs) { r in RunRow(run: r).tag("run:" + r.id) }
+                    } header: {
+                        HStack {
+                            Text(e.name)
+                            Spacer()
+                            Text(Fmt.plural(e.runs.count, "run")).foregroundStyle(.tertiary)
                         }
-                        Text("Definition & new run").font(.caption).foregroundStyle(.blue).tag("exp:" + e.id)
                     }
                 }
             }
-            .frame(minWidth: 260, idealWidth: 300, maxWidth: 380)
+            .frame(minWidth: 240, idealWidth: 280, maxWidth: 360)
             .overlay {
                 if model.experiments.isEmpty {
-                    ContentUnavailableView("No experiments", systemImage: "flask", description: Text("Compare an unmodified control with steered variants over repeated trials."))
+                    ContentUnavailableView {
+                        Label("No experiments", systemImage: "flask")
+                    } description: {
+                        Text("Run the same task many times — once unmodified, once steered — and compare what Claude Code did.")
+                    } actions: {
+                        Button("New Experiment") { showNew = true }
+                    }
                 }
             }
             Group {
@@ -37,7 +42,8 @@ struct ExperimentsView: View {
                 } else if let s = selection, s.hasPrefix("exp:"), let e = model.experiments.first(where: { $0.id == s.dropFirst(4) }) {
                     ExperimentSummaryView(experiment: e, onRunStarted: { selection = "run:" + $0 })
                 } else {
-                    ContentUnavailableView("Select an experiment run", systemImage: "chart.bar.xaxis")
+                    ContentUnavailableView("Select an experiment run", systemImage: "chart.bar.xaxis",
+                                           description: Text("Facts and heuristic signals per variant, with every trial's record."))
                 }
             }
             .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
@@ -51,6 +57,33 @@ struct ExperimentsView: View {
     }
 }
 
+struct RunRow: View {
+    let run: RunSummary
+    var body: some View {
+        HStack(spacing: 8) {
+            RunStatusIcon(status: run.status)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(Fmt.runTitle(run.createdAt)).lineLimit(1)
+                Text(run.status == .running ? "\(run.trialsDone) of \(Fmt.plural(run.trialsTotal, "trial"))" : "\(Fmt.plural(run.trialsTotal, "trial")) · \(run.status.rawValue)")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+struct RunStatusIcon: View {
+    let status: RunStatus
+    var body: some View {
+        switch status {
+        case .completed: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+        case .running: ProgressView().controlSize(.small)
+        case .pending: Image(systemName: "clock").foregroundStyle(.secondary)
+        case .cancelled: Image(systemName: "stop.circle").foregroundStyle(.secondary)
+        case .failed: Image(systemName: "xmark.octagon.fill").foregroundStyle(.red)
+        }
+    }
+}
+
 struct ExperimentSummaryView: View {
     @Environment(AppModel.self) private var model
     let experiment: ExperimentInfo
@@ -60,32 +93,50 @@ struct ExperimentSummaryView: View {
     var body: some View {
         let d = experiment.definition
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(experiment.name).font(.title2.bold())
-                Text("Definition hash \(experiment.definitionHash)").font(.caption.monospaced()).foregroundStyle(.secondary)
-                LabeledContent("Task") { Text(d.task).textSelection(.enabled) }
-                LabeledContent("Project") { Text(d.projectPath).font(.caption) }
-                LabeledContent("Claude Code") {
-                    Text("model \(d.claude.model ?? "default") · tools \(d.claude.allowedTools.joined(separator: ", ")) · max turns \(d.claude.maxTurns.map(String.init) ?? "—") · isolated config \(d.claude.isolateConfiguration ? "yes" : "no")").font(.caption)
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(experiment.name).font(.title2.bold())
+                    Spacer()
+                    Button {
+                        Task { pending = await model.perform { try await $0.prepareRun(experimentId: experiment.id) } }
+                    } label: {
+                        Label("Estimate cost & run…", systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
-                LabeledContent("Trials") { Text("\(d.trialsPerVariant) per variant · concurrency \(d.concurrency) · treatment \(d.treatment.rawValue)") }
-                GroupBox("Variants") {
-                    VStack(alignment: .leading) {
-                        ForEach(d.variants, id: \.key) { v in
-                            HStack(alignment: .top) {
-                                Text(v.key).bold()
-                                if v.isControl { Badge(text: "control", color: .green) }
-                                Text([v.profile.map { "profile: \($0)" }, v.prompt.map { "prompt: \($0.text)" }, v.lockdown == .none ? nil : "lockdown"].compactMap { $0 }.joined(separator: " · ")).font(.caption)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Task").font(.headline)
+                    Text(d.task).textSelection(.enabled).padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+                }
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
+                    GridRow { Text("Project").foregroundStyle(.secondary); Text(Fmt.shortPath(d.projectPath)).textSelection(.enabled) }
+                    GridRow { Text("Model").foregroundStyle(.secondary); Text(d.claude.model ?? "Claude Code default") }
+                    GridRow { Text("Allowed tools").foregroundStyle(.secondary); Text(d.claude.allowedTools.joined(separator: ", ")) }
+                    GridRow { Text("Trials").foregroundStyle(.secondary); Text("\(d.trialsPerVariant) per variant, \(d.concurrency) at a time") }
+                    GridRow { Text("Treatment").foregroundStyle(.secondary); Text(d.treatment == .frozen ? "Frozen — identical rewrites reused across trials" : "Fresh rewrite in every trial") }
+                    GridRow { Text("Limits").foregroundStyle(.secondary); Text("\(d.claude.maxTurns.map { "\($0) turns" } ?? "no turn limit") · \(d.claude.maxBudgetUSD.map { Fmt.money($0) + " per trial" } ?? "no budget limit")") }
+                    GridRow { Text("Configuration").foregroundStyle(.secondary); Text(d.claude.isolateConfiguration ? "Isolated (no user settings or MCP servers)" : "User's Claude Code configuration") }
+                    if let j = d.judge { GridRow { Text("LLM judge").foregroundStyle(.secondary); Text(j.model) } }
+                }
+                .font(.callout)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Variants").font(.headline)
+                    ForEach(d.variants, id: \.key) { v in
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: v.isControl ? "circle.dashed" : "wand.and.stars").foregroundStyle(v.isControl ? .green : .purple).frame(width: 18)
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack { Text(v.name.isEmpty ? v.key : v.name).bold(); if v.isControl { Badge(text: "control", color: .green) } }
+                                Text(variantDescription(v)).font(.caption).foregroundStyle(.secondary)
                             }
                         }
-                    }.frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+                    }
                 }
-                Button("Estimate cost & run…") {
-                    Task { pending = await model.perform { try await $0.prepareRun(experimentId: experiment.id) } }
-                }
-                .buttonStyle(.borderedProminent)
+                Text("Definition \(String(experiment.definitionHash.prefix(12)))").font(.caption2.monospaced()).foregroundStyle(.tertiary).textSelection(.enabled)
             }
-            .padding(16)
+            .padding(20)
         }
         .sheet(item: $pending) { run in
             EstimateSheet(run: run, experiment: experiment) { started in
@@ -93,6 +144,11 @@ struct ExperimentSummaryView: View {
                 if let started { onRunStarted(started.id) }
             }
         }
+    }
+
+    func variantDescription(_ v: ExperimentVariant) -> String {
+        let parts = [v.profile.map { "Profile “\($0)”" }, v.prompt.map { "Prompt: \($0.text)" }, v.lockdown == .none ? nil : "Network lockdown"].compactMap { $0 }
+        return parts.isEmpty ? "Unmodified — tool results forwarded as-is" : parts.joined(separator: " · ")
     }
 }
 
@@ -103,14 +159,25 @@ struct EstimateSheet: View {
     let done: (RunSummary?) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Confirm experiment run").font(.title2.bold())
             if let e = run.estimate {
-                Text("\(e.trials) Claude Code runs (\(experiment.definition.variants.count) variants × \(experiment.definition.trialsPerVariant)).")
-                Text(String(format: "Estimated total: $%.2f – $%.2f", e.totalLowUSD, e.totalHighUSD)).font(.title3.bold())
-                Text(String(format: "Claude Code: $%.2f – $%.2f per trial — %@", e.perTrialLowUSD, e.perTrialHighUSD, e.basis)).font(.callout)
-                Text(String(format: "Rewrite agent: $%.3f – $%.3f", e.rewriteLowUSD, e.rewriteHighUSD)).font(.callout)
-                ForEach(e.notes, id: \.self) { Text("• " + $0).font(.caption).foregroundStyle(.secondary) }
+                Text("\(Fmt.plural(e.trials, "Claude Code run")) (\(Fmt.plural(experiment.definition.variants.count, "variant")) × \(experiment.definition.trialsPerVariant)).")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Estimated total").font(.caption).foregroundStyle(.secondary)
+                    Text("\(Fmt.money(e.totalLowUSD)) – \(Fmt.money(e.totalHighUSD))").font(.title.bold().monospacedDigit())
+                }
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
+                    GridRow { Text("Claude Code, per trial").foregroundStyle(.secondary); Text("\(Fmt.money(e.perTrialLowUSD)) – \(Fmt.money(e.perTrialHighUSD))") }
+                    GridRow { Text("Rewrite agent, total").foregroundStyle(.secondary); Text("\(Fmt.money(e.rewriteLowUSD)) – \(Fmt.money(e.rewriteHighUSD))") }
+                }
+                .font(.callout)
+                Text(e.basis).font(.caption).foregroundStyle(.secondary)
+                if !e.notes.isEmpty {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(e.notes, id: \.self) { Label($0, systemImage: "info.circle").font(.caption).foregroundStyle(.secondary) }
+                    }
+                }
             }
             HStack {
                 Spacer()
@@ -143,42 +210,60 @@ struct RunView: View {
     var body: some View {
         ScrollView {
             if let c = comparison {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack {
-                        Text("Run \(c.run.id)").font(.title3.bold())
-                        Badge(text: c.run.status.rawValue, color: c.run.status == .completed ? .green : .blue)
-                        Text("\(c.run.trialsDone)/\(c.run.trialsTotal) trials · seed \(String(c.run.seed))").font(.caption).foregroundStyle(.secondary)
-                        Spacer()
-                        if c.run.status == .running {
-                            Button("Cancel run", role: .destructive) { Task { _ = await model.perform { try await $0.cancelRun(runId) } } }
+                VStack(alignment: .leading, spacing: 18) {
+                    header(c)
+                    if c.run.status == .running {
+                        ProgressView(value: Double(c.run.trialsDone), total: Double(max(c.run.trialsTotal, 1))) {
+                            Text("\(c.run.trialsDone) of \(Fmt.plural(c.run.trialsTotal, "trial")) done").font(.caption)
                         }
-                        Menu("Export") {
-                            Button("Markdown report…") { Task { await export("md") } }
-                            Button("JSON bundle…") { Task { await export("json") } }
-                        }.fixedSize()
                     }
-                    if c.run.status == .running { ProgressView(value: Double(c.run.trialsDone), total: Double(max(c.run.trialsTotal, 1))) }
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(c.caveats, id: \.self) { Label($0, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange) }
+                    if !c.caveats.isEmpty { CaveatsBox(caveats: c.caveats) }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Observed facts", systemImage: "checkmark.seal").font(.headline)
+                        FactsTable(variants: c.variants)
                     }
-                    GroupBox("Observed facts") { FactsTable(variants: c.variants) }
-                    GroupBox {
-                        HeuristicsTable(variants: c.variants)
-                    } label: {
-                        Label("Heuristic signals — pattern-matched interpretations, not facts", systemImage: "wand.and.stars")
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Heuristic signals", systemImage: "wand.and.stars").font(.headline)
+                        Text("Pattern-matched interpretations, not facts. Bars show the share of trials; whiskers the 95% interval.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        HeuristicsCharts(variants: c.variants)
                     }
-                    GroupBox("Trials") {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(c.trials) { t in TrialRow(trial: t) }
-                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Trials", systemImage: "list.number").font(.headline)
+                        ForEach(c.trials) { t in TrialRow(trial: t) }
                     }
                 }
-                .padding(16)
+                .padding(20)
             } else {
                 ProgressView().padding()
             }
         }
         .task(id: model.eventTick) { comparison = await model.perform { try await $0.comparison(runId) } }
+    }
+
+    func header(_ c: RunComparison) -> some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text("Run · \(Fmt.runTitle(c.run.createdAt))").font(.title2.bold())
+                    RunStatusIcon(status: c.run.status)
+                }
+                let duration = c.run.startedAt.flatMap { s in (c.run.finishedAt ?? Date()).timeIntervalSince(s) }
+                Text([Fmt.plural(c.run.trialsTotal, "trial"), duration.map { Fmt.duration($0 * 1000) }, "seed \(String(c.run.seed))"].compactMap { $0 }.joined(separator: " · "))
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            Spacer()
+            if c.run.status == .running {
+                Button("Cancel run", role: .destructive) { Task { _ = await model.perform { try await $0.cancelRun(runId) } } }
+            }
+            Menu {
+                Button("Markdown report…") { Task { await export("md") } }
+                Button("JSON bundle…") { Task { await export("json") } }
+            } label: {
+                Label("Export", systemImage: "square.and.arrow.up")
+            }
+            .fixedSize()
+        }
     }
 
     func export(_ format: String) async {
@@ -192,54 +277,136 @@ struct RunView: View {
     }
 }
 
-struct FactsTable: View {
-    let variants: [VariantComparison]
-    func num(_ s: NumericStat, _ f: String = "%.1f") -> String { s.n == 0 ? "—" : String(format: "\(f) ± \(f)", s.mean, s.stdDev) }
+struct CaveatsBox: View {
+    let caveats: [String]
     var body: some View {
-        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
-            GridRow {
-                ForEach(["Variant", "Valid", "Errors", "Turns", "Duration", "Claude $", "Rewrite $", "Rewrites", "Distinct outputs"], id: \.self) { Text($0).font(.caption.bold()) }
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Read these before drawing conclusions").font(.callout.weight(.semibold))
+                ForEach(caveats, id: \.self) { Text($0).font(.callout).fixedSize(horizontal: false, vertical: true) }
             }
-            Divider()
-            ForEach(variants, id: \.variantKey) { v in
-                GridRow {
-                    HStack { Text(v.variantKey).bold(); if v.isControl { Badge(text: "control", color: .green) } }
-                    Text("\(v.validTrials)/\(v.trials)")
-                    Text("\(v.errorRate.count)")
-                    Text(num(v.turns))
-                    Text(v.durationMs.n == 0 ? "—" : String(format: "%.1fs", v.durationMs.mean / 1000))
-                    Text(num(v.claudeCostUSD, "%.3f"))
-                    Text(num(v.rewriteCostUSD, "%.4f"))
-                    Text(num(v.rewritesApplied))
-                    Text("\(v.distinctFinalOutputs)")
-                }.font(.callout)
-            }
+            Spacer(minLength: 0)
         }
-        .padding(6)
+        .padding(12)
+        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.orange.opacity(0.35)))
     }
 }
 
-struct HeuristicsTable: View {
+struct FactsTable: View {
     let variants: [VariantComparison]
-    var hasJudge: Bool { variants.contains { $0.judgeAdopted != nil } }
-    func p(_ s: ProportionStat) -> String { s.total == 0 ? "—" : String(format: "%d/%d  (95%% CI %.0f–%.0f%%)", s.count, s.total, s.interval95.low * 100, s.interval95.high * 100) }
+    let columns = ["Variant", "Valid", "Errors", "Turns", "Duration", "Claude Code", "Rewrites", "Rewrite cost", "Distinct outputs"]
+
     var body: some View {
-        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
+        Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
             GridRow {
-                ForEach(["Variant", "Echoed rewritten content", "Flagged suspicion", "Tried to verify"] + (hasJudge ? ["LLM judge: adopted"] : []), id: \.self) { Text($0).font(.caption.bold()) }
+                ForEach(columns, id: \.self) { Text($0).font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
             }
             Divider()
             ForEach(variants, id: \.variantKey) { v in
                 GridRow {
-                    Text(v.variantKey).bold()
-                    Text(p(v.echoedRewrittenContent))
-                    Text(p(v.flaggedSuspicion))
-                    Text(p(v.attemptedVerification))
-                    if hasJudge { Text(v.judgeAdopted.map(p) ?? "—") }
-                }.font(.callout)
+                    VariantLabel(key: v.variantKey, isControl: v.isControl)
+                    Text("\(v.validTrials)/\(v.trials)")
+                    Text("\(v.errorRate.count)").foregroundStyle(v.errorRate.count > 0 ? .red : .primary)
+                    Text(Fmt.stat(v.turns))
+                    Text(v.durationMs.n == 0 ? "—" : Fmt.duration(v.durationMs.mean))
+                    Text(Fmt.stat(v.claudeCostUSD, money: true))
+                    Text(Fmt.stat(v.rewritesApplied))
+                    Text(Fmt.stat(v.rewriteCostUSD, money: true))
+                    Text("\(v.distinctFinalOutputs)")
+                }
+                .font(.callout.monospacedDigit())
             }
         }
-        .padding(6)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+struct VariantLabel: View {
+    let key: String
+    let isControl: Bool
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle().fill(isControl ? Color.green : Color.purple).frame(width: 7, height: 7)
+            Text(key).fontWeight(.semibold)
+        }
+    }
+}
+
+struct HeuristicsCharts: View {
+    let variants: [VariantComparison]
+
+    struct Point: Identifiable {
+        var variant: String
+        var isControl: Bool
+        var stat: ProportionStat
+        var id: String { variant }
+    }
+
+    var metrics: [(String, String, [Point])] {
+        var out: [(String, String, [Point])] = [
+            ("Echoed rewritten content", "The final answer repeats words the rewrite introduced.", variants.map { Point(variant: $0.variantKey, isControl: $0.isControl, stat: $0.echoedRewrittenContent) }),
+            ("Flagged suspicion", "Claude said the content looked wrong, odd or contradictory.", variants.map { Point(variant: $0.variantKey, isControl: $0.isControl, stat: $0.flaggedSuspicion) }),
+            ("Tried to verify", "Claude fetched or searched again to double-check.", variants.map { Point(variant: $0.variantKey, isControl: $0.isControl, stat: $0.attemptedVerification) }),
+        ]
+        if variants.contains(where: { $0.judgeAdopted != nil }) {
+            out.append(("LLM judge: adopted", "A judge model rated the answer as having adopted the change.",
+                        variants.compactMap { v in v.judgeAdopted.map { Point(variant: v.variantKey, isControl: v.isControl, stat: $0) } }))
+        }
+        return out
+    }
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 12)], spacing: 12) {
+            ForEach(metrics, id: \.0) { title, help, points in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(title).font(.callout.weight(.semibold))
+                    Text(help).font(.caption).foregroundStyle(.secondary).lineLimit(2, reservesSpace: true)
+                    VStack(spacing: 8) {
+                        ForEach(points) { p in ProportionBar(point: p) }
+                    }
+                }
+                .padding(12)
+                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
+            }
+        }
+    }
+}
+
+/// One variant's share of trials, with its 95% interval as a whisker.
+struct ProportionBar: View {
+    let point: HeuristicsCharts.Point
+
+    var body: some View {
+        let st = point.stat
+        HStack(spacing: 10) {
+            Text(point.variant).font(.caption.weight(.medium)).frame(width: 70, alignment: .leading).lineLimit(1)
+            GeometryReader { geo in
+                let w = geo.size.width
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.primary.opacity(0.07))
+                    if st.total > 0 {
+                        Capsule().fill(point.isControl ? Color.green.opacity(0.75) : Color.purple.opacity(0.8))
+                            .frame(width: max(st.rate * w, st.rate > 0 ? 6 : 0))
+                        Rectangle().fill(Color.primary.opacity(0.5))
+                            .frame(width: max((st.interval95.high - st.interval95.low) * w, 1), height: 1.5)
+                            .offset(x: st.interval95.low * w)
+                        ForEach([st.interval95.low, st.interval95.high], id: \.self) { x in
+                            Rectangle().fill(Color.primary.opacity(0.5)).frame(width: 1.5, height: 8).offset(x: min(x * w, w - 1.5))
+                        }
+                    }
+                }
+                .frame(height: 10)
+                .frame(maxHeight: .infinity)
+            }
+            .frame(height: 14)
+            Text(st.total > 0 ? "\(Fmt.proportion(st))  \(Int((st.rate * 100).rounded()))%" : "—")
+                .font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 64, alignment: .trailing)
+        }
+        .help(st.total > 0 ? "\(Fmt.proportion(st)) trials · 95% interval \(Int((st.interval95.low * 100).rounded()))–\(Int((st.interval95.high * 100).rounded()))%" : "No valid trials")
     }
 }
 
@@ -248,33 +415,55 @@ struct TrialRow: View {
     let trial: TrialInfo
     @State private var expanded = false
 
+    var statusColor: Color {
+        switch trial.status {
+        case .succeeded: .green
+        case .running, .pending: .blue
+        case .cancelled: .secondary
+        case .failed, .invalid: .red
+        }
+    }
+
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 if let f = trial.facts {
                     Text("Final output").font(.caption.bold())
                     MonoBlock(text: f.finalOutput).frame(minHeight: 60, maxHeight: 200)
-                    Text("Tools: " + f.toolCalls.sorted { $0.key < $1.key }.map { "\($0.key)×\($0.value)" }.joined(separator: ", ")).font(.caption)
+                    if !f.toolCalls.isEmpty {
+                        Text("Tools used: " + f.toolCalls.sorted { $0.key < $1.key }.map { "\(Fmt.toolName($0.key)) ×\($0.value)" }.joined(separator: ", ")).font(.caption)
+                    }
                     if !f.filesChanged.isEmpty { Text("Files changed: " + f.filesChanged.joined(separator: ", ")).font(.caption) }
                 }
-                if let s = trial.signals, !s.evidence.isEmpty {
-                    Text("Heuristic evidence").font(.caption.bold())
-                    ForEach(s.evidence, id: \.self) { Text("• " + $0).font(.caption).foregroundStyle(.secondary) }
+                if let s = trial.signals {
+                    if let verdict = s.judgeVerdict {
+                        Label {
+                            Text("Judge: ").bold() + Text(verdict) + Text(s.judgeRationale.map { " — \($0)" } ?? "").foregroundStyle(.secondary)
+                        } icon: { Image(systemName: "scale.3d") }
+                        .font(.caption)
+                    }
+                    if !s.evidence.isEmpty {
+                        Text("Heuristic evidence").font(.caption.bold())
+                        ForEach(s.evidence, id: \.self) { Text("• " + $0).font(.caption).foregroundStyle(.secondary) }
+                    }
                 }
                 if let m = trial.manifest {
-                    Text("Manifest: Claude Code \(m.claudeVersion ?? "?") · \(m.arguments.joined(separator: " "))").font(.caption2.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                    Text("Claude Code \(m.claudeVersion ?? "?") · \(m.arguments.joined(separator: " "))").font(.caption2.monospaced()).foregroundStyle(.tertiary).textSelection(.enabled).lineLimit(3)
                 }
-                if let sid = trial.sessionId { Text("Session \(sid) (see Sessions → Trials)").font(.caption2).foregroundStyle(.secondary) }
+                if trial.sessionId != nil { Text("Full timeline: Sessions → Trials").font(.caption2).foregroundStyle(.secondary) }
             }
+            .padding(.leading, 4)
         } label: {
-            HStack {
-                Text("#\(trial.order + 1)").font(.caption.monospaced())
-                Text(trial.variantKey).bold()
-                Badge(text: trial.status.rawValue, color: trial.status == .succeeded ? .green : (trial.status == .running ? .blue : .red))
+            HStack(spacing: 8) {
+                Text("#\(trial.order + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 28, alignment: .trailing)
+                Circle().fill(statusColor).frame(width: 7, height: 7).help(trial.status.rawValue)
+                Text(trial.variantKey).fontWeight(.medium)
                 if let f = trial.facts {
-                    Text("\(f.numTurns ?? 0) turns · \(formatMoney(f.claudeCostUSD)) · \(f.rewritesApplied) rewrites").font(.caption).foregroundStyle(.secondary)
+                    Text("\(Fmt.plural(f.numTurns ?? 0, "turn")) · \(Fmt.money(f.claudeCostUSD)) · \(Fmt.plural(f.rewritesApplied, "rewrite"))").font(.caption).foregroundStyle(.secondary)
                 }
+                if let v = trial.signals?.judgeVerdict { Badge(text: v, color: v == "adopted" ? .purple : .secondary) }
                 if let e = trial.error { Text(e).font(.caption).foregroundStyle(.red).lineLimit(1) }
+                Spacer()
             }
         }
     }
@@ -303,46 +492,74 @@ struct NewExperimentSheet: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("New experiment").font(.title2.bold())
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("New experiment").font(.title2.bold())
+                Text("Runs the same task repeatedly in fresh copies of a project — unmodified and steered — and compares what Claude Code did.")
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            .padding([.horizontal, .top], 20)
             Form {
-                TextField("Name", text: $name)
-                VStack(alignment: .leading) {
-                    Text("Task given to Claude Code")
-                    TextEditor(text: $task).frame(height: 70).overlay(RoundedRectangle(cornerRadius: 4).stroke(.quaternary))
+                Section {
+                    TextField("Name", text: $name)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Task given to Claude Code")
+                        TextEditor(text: $task).font(.body).frame(height: 60).scrollContentBackground(.hidden)
+                            .padding(4).background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+                    }
+                    LabeledContent("Project folder") {
+                        HStack {
+                            TextField("Project folder", text: $project).labelsHidden()
+                            Button("Choose…") { if let f = chooseFolder() { project = f } }
+                        }
+                    }
+                } footer: {
+                    Text("The folder is cloned (APFS copy-on-write) for every trial; the original is never modified.").font(.caption).foregroundStyle(.secondary)
                 }
-                HStack {
-                    TextField("Project folder (copied per trial)", text: $project)
-                    Button("Choose…") { if let f = chooseFolder() { project = f } }
-                }
-                TextField("Claude Code model (blank = default)", text: $claudeModel)
-                TextField("Allowed tools", text: $allowedTools)
-                Stepper("Max turns: \(maxTurns)", value: $maxTurns, in: 1...200)
-                Stepper(String(format: "Max budget per trial: $%.2f", budget), value: $budget, in: 0.1...50, step: 0.5)
-                Stepper("Trials per variant: \(trials)", value: $trials, in: 1...200)
-                Stepper("Concurrency: \(concurrency)", value: $concurrency, in: 1...8)
-                Toggle("Frozen treatment (reuse identical rewrites across trials)", isOn: $frozen)
-                Toggle("Isolate Claude Code configuration (no user settings/MCP)", isOn: $isolate)
-                Toggle("LLM judge after the run (heuristic; uses your API key)", isOn: $useJudge)
-                Section("Variants") {
+                Section {
                     ForEach($variants, id: \.key) { $v in
-                        HStack(alignment: .top) {
-                            TextField("key", text: $v.key).frame(width: 90)
-                            Picker("", selection: Binding(get: { v.profile ?? "" }, set: { v.profile = $0.isEmpty ? nil : $0 })) {
+                        HStack(alignment: .center, spacing: 8) {
+                            Circle().fill(v.profile == nil && v.prompt == nil ? Color.green : Color.purple).frame(width: 7, height: 7)
+                            TextField("Key", text: $v.key).labelsHidden().frame(width: 90)
+                            Picker("Profile", selection: Binding(get: { v.profile ?? "" }, set: { v.profile = $0.isEmpty ? nil : $0 })) {
                                 Text("No profile").tag("")
                                 ForEach(model.profiles) { Text($0.name).tag($0.name) }
-                            }.frame(width: 170)
-                            TextField("Session prompt (blank = none)", text: Binding(
+                            }
+                            .labelsHidden().frame(width: 160)
+                            TextField("Session prompt", text: Binding(
                                 get: { v.prompt?.text ?? "" },
-                                set: { v.prompt = $0.isEmpty ? nil : SessionPrompt(text: $0, tools: allowedTools.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }))
+                                set: { v.prompt = $0.isEmpty ? nil : SessionPrompt(text: $0, tools: allowedTools.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }),
+                                prompt: Text("Session prompt (blank = none)"))
+                            .labelsHidden()
+                            if variants.count > 2 {
+                                Button { variants.removeAll { $0.key == v.key } } label: { Image(systemName: "minus.circle") }.buttonStyle(.borderless)
+                            }
                         }
                     }
                     Button("Add variant") { variants.append(ExperimentVariant(key: "v\(variants.count + 1)", name: "Variant \(variants.count + 1)")) }
-                    Text("A variant with no profile and no prompt is the unmodified control. One is required.").font(.caption).foregroundStyle(.secondary)
+                } header: {
+                    Text("Variants")
+                } footer: {
+                    Text("A variant with no profile and no prompt is the unmodified control (green). One is required.").font(.caption).foregroundStyle(.secondary)
+                }
+                Section("Claude Code") {
+                    TextField("Model", text: $claudeModel, prompt: Text("Default"))
+                    TextField("Allowed tools", text: $allowedTools)
+                    Stepper("Max turns: \(maxTurns)", value: $maxTurns, in: 1...200)
+                    Stepper("Max budget per trial: \(Fmt.money(budget))", value: $budget, in: 0.1...50, step: 0.5)
+                    Toggle("Isolate configuration (no user settings or MCP servers)", isOn: $isolate)
+                }
+                Section("Trials") {
+                    Stepper("Trials per variant: \(trials)", value: $trials, in: 1...200)
+                    Stepper("Run \(concurrency) at a time", value: $concurrency, in: 1...8)
+                    Toggle("Frozen treatment (reuse identical rewrites across trials)", isOn: $frozen)
+                    Toggle("LLM judge after the run (uses your API key)", isOn: $useJudge)
                 }
             }
             .formStyle(.grouped)
             HStack {
+                Text("You'll see a cost estimate before anything runs.").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Cancel") { dismiss() }
                 Button("Create") {
@@ -359,9 +576,11 @@ struct NewExperimentSheet: View {
                     }
                 }
                 .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
+            .padding(20)
         }
-        .padding(20)
-        .frame(width: 680, height: 720)
+        .frame(width: 700, height: 760)
     }
 }
