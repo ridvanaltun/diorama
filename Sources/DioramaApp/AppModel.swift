@@ -41,6 +41,8 @@ final class AppModel {
     var wantsNewProfile = false
     /// Set by the menu bar panel: open the new-session sheet / select this session.
     var wantsNewSession = false
+    /// Shows the "Connect to Claude" (MCP) panel.
+    var showMCPConnect = false
     var focusSessionId: String?
     var updateError: String?
 

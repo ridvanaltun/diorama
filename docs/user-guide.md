@@ -68,7 +68,7 @@ diorama mcp install --claude-code --read-only   # inspection tools only
 diorama mcp uninstall --claude-code --claude-desktop
 ```
 
-The same options are under **Settings → AI control (MCP)** in the app. The server is `diorama mcp serve`, speaking JSON-RPC over stdio, and any MCP client can launch it.
+In the app, click **Connect to Claude…** at the bottom of the sidebar (also in the menu bar panel and Settings). It shows where Diorama is connected, and connects or disconnects each client in one click. The server is `diorama mcp serve`, speaking JSON-RPC over stdio, and any MCP client can launch it.
 
 | Tools | What they do |
 |---|---|

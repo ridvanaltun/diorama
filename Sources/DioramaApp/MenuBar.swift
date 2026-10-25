@@ -54,6 +54,9 @@ struct MenuBarPanel: View {
                 MenuRow(action: { open {} }) {
                     Label("Open Diorama", systemImage: "macwindow")
                 }
+                MenuRow(action: { open { model.showMCPConnect = true } }) {
+                    Label("Connect to Claude…", systemImage: "sparkles")
+                }
                 if let u = model.update, u.isNewer, let url = URL(string: u.pageURL) {
                     MenuRow(action: { NSWorkspace.shared.open(url); dismiss() }) {
                         Label("Diorama \(u.latest) available", systemImage: "arrow.down.circle").foregroundStyle(Color.accentColor)

@@ -119,72 +119,19 @@ struct SettingsView: View {
     }
 }
 
-/// Registers Diorama's MCP server so an AI assistant can inspect and control it.
+/// Opens the "Connect to Claude" panel (MCP).
 struct MCPSettingsSection: View {
     @Environment(AppModel.self) private var model
-    @State private var readOnly = false
-    @State private var inDesktop = MCPInstaller.isInstalledInDesktop()
-    @State private var message: String?
-    @State private var busy = false
 
     var body: some View {
         Section {
-            Text("Let Claude (or another MCP client) read sessions and audit records, manage profiles and hooks, and run experiments. Experiment runs need the cost estimate's confirmation token, and your client asks before each tool call you haven't allowed.")
-                .font(.caption).foregroundStyle(.secondary)
-            Toggle("Read-only (inspection tools only)", isOn: $readOnly)
-            LabeledContent("Claude desktop app") {
-                HStack {
-                    if inDesktop { Label("Added", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.caption) }
-                    Button(inDesktop ? "Update" : "Add") {
-                        do {
-                            try MCPInstaller.installDesktop(cli: model.cliPath, readOnly: readOnly)
-                            inDesktop = true
-                            message = "Added to the Claude desktop app. Quit and reopen Claude to load it."
-                        } catch { model.report(error) }
-                    }
-                    if inDesktop {
-                        Button("Remove") {
-                            do {
-                                try MCPInstaller.uninstallDesktop()
-                                inDesktop = false
-                                message = "Removed from the Claude desktop app. Restart Claude to unload it."
-                            } catch { model.report(error) }
-                        }
-                    }
-                }
+            LabeledContent {
+                Button("Connect to Claude…") { model.showMCPConnect = true }
+            } label: {
+                Text("Let Claude Code or the Claude desktop app inspect and control Diorama through MCP.")
             }
-            LabeledContent("Claude Code") {
-                Button("Add for my user") { Task { await addToClaudeCode() } }.disabled(busy)
-            }
-            if let message { Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
         } header: {
             Text("AI control (MCP)")
         }
-    }
-
-    func addToClaudeCode() async {
-        busy = true
-        defer { busy = false }
-        var args = ["mcp", "install", "--claude-code"]
-        if readOnly { args.append("--read-only") }
-        if let claude = model.settings.claudePath { args += ["--claude", claude] }
-        let cli = model.cliPath
-        let result = await Task.detached { () -> String in
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: cli)
-            p.arguments = args
-            let pipe = Pipe()
-            p.standardOutput = pipe
-            p.standardError = pipe
-            do {
-                try p.run()
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                p.waitUntilExit()
-                return String(decoding: data, as: UTF8.self)
-            } catch {
-                return "Couldn't run \(cli): \(error)"
-            }
-        }.value
-        message = result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

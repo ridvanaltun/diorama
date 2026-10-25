@@ -106,7 +106,8 @@ struct RootView: View {
             }
             .navigationSplitViewColumnWidth(min: 160, ideal: 180)
             .safeAreaInset(edge: .bottom) {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 8) {
+                    MCPConnectButton()
                     if let u = model.update, u.isNewer {
                         Link(destination: URL(string: u.pageURL) ?? URL(string: "https://github.com")!) {
                             Label("Diorama \(u.latest) available", systemImage: "arrow.down.circle.fill")
@@ -178,6 +179,7 @@ enum Snapshotter {
             ("sheet-new-profile", AnyView(NewProfileSheet(selection: .constant(nil)).environment(model))),
             ("sheet-new-experiment", AnyView(NewExperimentSheet(created: { _ in }).environment(model))),
             ("menu-bar-panel", AnyView(MenuBarPanel().environment(model))),
+            ("mcp-connect", AnyView(MCPConnectPanel().environment(model))),
         ]
         for (name, view) in sheets {
             let host = NSHostingView(rootView: view)

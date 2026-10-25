@@ -409,6 +409,25 @@ public enum MCPInstaller {
     }
 
     public static func isInstalledInDesktop(config url: URL = desktopConfig()) -> Bool {
-        ((try? HookInstaller.read(url))?["mcpServers"] as? [String: Any])?[serverName] != nil
+        registration(in: url) != nil
+    }
+
+    /// Where a client launches Diorama's server from, as registered.
+    public struct Registration: Equatable, Sendable {
+        public var command: String
+        public var readOnly: Bool
+        /// The registered executable no longer exists (the app was moved or deleted).
+        public var isStale: Bool { !FileManager.default.isExecutableFile(atPath: command) }
+    }
+
+    /// Claude Code keeps user-scope MCP servers in `~/.claude.json` (read only; changes go through `claude mcp`).
+    public static func claudeCodeConfig(home: String = NSHomeDirectory()) -> URL {
+        URL(fileURLWithPath: home).appendingPathComponent(".claude.json")
+    }
+
+    public static func registration(in url: URL) -> Registration? {
+        guard let entry = ((try? HookInstaller.read(url))?["mcpServers"] as? [String: Any])?[serverName] as? [String: Any],
+              let command = entry["command"] as? String else { return nil }
+        return Registration(command: command, readOnly: (entry["args"] as? [String] ?? []).contains("--read-only"))
     }
 }
