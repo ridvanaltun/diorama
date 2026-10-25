@@ -18,7 +18,7 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Toolchain
         run: |
           swift --version
@@ -29,7 +29,7 @@ jobs:
         run: swift test
       - name: Bundle app (ad-hoc signed)
         run: ./scripts/bundle-app.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Diorama-app
           path: dist/Diorama-*.zip
