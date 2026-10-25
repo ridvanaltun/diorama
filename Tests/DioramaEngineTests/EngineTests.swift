@@ -438,3 +438,22 @@ func extractionBody(page: String, prompt: String) -> [UInt8] {
         }
     }
 }
+
+
+@Suite struct JudgeTests {
+    @Test func parsesVerdictsAndFailures() {
+        let ok = AnthropicJudge.parse(#"{"model":"claude-haiku-5-5","stop_reason":"end_turn","usage":{"input_tokens":500,"output_tokens":40},"content":[{"type":"text","text":"{\"verdict\":\"adopted\",\"rationale\":\"It repeats the new heading.\"}"}]}"#)
+        #expect(ok.verdict == "adopted")
+        #expect(ok.rationale == "It repeats the new heading.")
+        #expect((ok.costUSD ?? 0) > 0)
+        #expect(AnthropicJudge.parse(#"{"stop_reason":"refusal","content":[]}"#).verdict == nil)
+        #expect(AnthropicJudge.parse(#"{"stop_reason":"end_turn","content":[{"type":"text","text":"{\"verdict\":\"maybe\",\"rationale\":\"x\"}"}]}"#).verdict == nil)
+    }
+
+    @Test func promptListsChangesAndAnswer() {
+        let msg = JudgePrompt.userMessage(JudgeRequest(task: "T", changes: [JudgedChange(before: "Example", after: "Morph Test")], finalOutput: "The heading is Morph Test Domain.", question: "Q?", model: "m"))
+        #expect(msg.contains("before: Example"))
+        #expect(msg.contains("after: Morph Test"))
+        #expect(msg.contains("<final_answer>"))
+    }
+}

@@ -221,11 +221,12 @@ struct FactsTable: View {
 
 struct HeuristicsTable: View {
     let variants: [VariantComparison]
+    var hasJudge: Bool { variants.contains { $0.judgeAdopted != nil } }
     func p(_ s: ProportionStat) -> String { s.total == 0 ? "—" : String(format: "%d/%d  (95%% CI %.0f–%.0f%%)", s.count, s.total, s.interval95.low * 100, s.interval95.high * 100) }
     var body: some View {
         Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
             GridRow {
-                ForEach(["Variant", "Echoed rewritten content", "Flagged suspicion", "Tried to verify"], id: \.self) { Text($0).font(.caption.bold()) }
+                ForEach(["Variant", "Echoed rewritten content", "Flagged suspicion", "Tried to verify"] + (hasJudge ? ["LLM judge: adopted"] : []), id: \.self) { Text($0).font(.caption.bold()) }
             }
             Divider()
             ForEach(variants, id: \.variantKey) { v in
@@ -234,6 +235,7 @@ struct HeuristicsTable: View {
                     Text(p(v.echoedRewrittenContent))
                     Text(p(v.flaggedSuspicion))
                     Text(p(v.attemptedVerification))
+                    if hasJudge { Text(v.judgeAdopted.map(p) ?? "—") }
                 }.font(.callout)
             }
         }
@@ -294,6 +296,7 @@ struct NewExperimentSheet: View {
     @State private var concurrency = 2
     @State private var frozen = true
     @State private var isolate = true
+    @State private var useJudge = false
     @State private var variants: [ExperimentVariant] = [
         ExperimentVariant(key: "control", name: "Unmodified"),
         ExperimentVariant(key: "steered", name: "Steered", prompt: SessionPrompt(text: "")),
@@ -320,6 +323,7 @@ struct NewExperimentSheet: View {
                 Stepper("Concurrency: \(concurrency)", value: $concurrency, in: 1...8)
                 Toggle("Frozen treatment (reuse identical rewrites across trials)", isOn: $frozen)
                 Toggle("Isolate Claude Code configuration (no user settings/MCP)", isOn: $isolate)
+                Toggle("LLM judge after the run (heuristic; uses your API key)", isOn: $useJudge)
                 Section("Variants") {
                     ForEach($variants, id: \.key) { $v in
                         HStack(alignment: .top) {
@@ -346,7 +350,7 @@ struct NewExperimentSheet: View {
                         let def = ExperimentDefinition(
                             name: name, task: task, projectPath: project,
                             claude: ClaudeRunOptions(model: claudeModel.isEmpty ? nil : claudeModel, allowedTools: allowedTools.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }, maxTurns: maxTurns, maxBudgetUSD: budget, isolateConfiguration: isolate),
-                            variants: variants.map { var v = $0; v.name = v.key; return v }, trialsPerVariant: trials, concurrency: concurrency, treatment: frozen ? .frozen : .fresh)
+                            variants: variants.map { var v = $0; v.name = v.key; return v }, trialsPerVariant: trials, concurrency: concurrency, treatment: frozen ? .frozen : .fresh, judge: useJudge ? JudgeConfig() : nil)
                         if let e = await model.perform({ try await $0.createExperiment(def) }) {
                             await model.refreshExperiments()
                             created(e.id)

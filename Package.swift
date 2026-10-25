@@ -32,7 +32,7 @@ let package = Package(
                 .product(name: "NIOHTTP1", package: "swift-nio"),
             ]
         ),
-        .target(name: "DioramaRunner", dependencies: ["DioramaCore", "DioramaStore", "DioramaEngine"]),
+        .target(name: "DioramaRunner", dependencies: ["DioramaCore", "DioramaStore", "DioramaEngine", "DioramaJSON"]),
         .target(name: "DioramaClient", dependencies: ["DioramaCore"]),
         .executableTarget(name: "dioramad", dependencies: ["DioramaGateway", "DioramaCore"]),
         .executableTarget(

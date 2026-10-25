@@ -27,6 +27,8 @@ public final class DioramaDaemon: @unchecked Sendable {
         public var environment = ProcessInfo.processInfo.environment
         /// Overrides the provider entirely (tests).
         public var providerOverride: RewriteProvider?
+        /// Overrides the LLM judge (tests).
+        public var judgeOverride: JudgeProvider?
 
         public init(paths: DioramaPaths) { self.paths = paths }
     }
@@ -74,6 +76,7 @@ public final class DioramaDaemon: @unchecked Sendable {
         runner = ExperimentRunner(
             store: store, paths: options.paths, environment: options.environment,
             claudePath: { [store] in ClaudeLocator.find(configured: store.settings().claudePath, environment: options.environment) },
+            judge: options.judgeOverride ?? AnthropicJudge(baseURL: options.rewriteBaseURL, apiKey: { secrets.get() }),
             makeSession: { spec in
                 guard let make = factory.make else { throw RunnerError("daemon is shutting down") }
                 return try make(spec)

@@ -2,6 +2,7 @@ import DioramaCore
 import DioramaStore
 import Foundation
 import Testing
+import DioramaEngine
 @testable import DioramaRunner
 
 @Suite struct CoreAlgorithmsTests {
@@ -130,6 +131,12 @@ import Testing
         #expect(fresh.caveats.contains { $0.contains("could be reused") })
         let frozen = Comparison.compare(run: run, definition: def, trials: [trial("1", "control", rewrites: 0, reused: 0), trial("2", "control", rewrites: 0, reused: 0), trial("3", "s", rewrites: 1, reused: 0), trial("4", "s", rewrites: 1, reused: 1)])
         #expect(!frozen.caveats.contains { $0.contains("could be reused") })
+    }
+
+    @Test func changePairsComeFromTheDiff() {
+        let pairs = Heuristics.changePairs(original: "The heading is Example Domain today", replacement: "The heading is Morph Test Domain today, really")
+        #expect(pairs.contains(JudgedChange(before: "Example", after: "Morph Test")))
+        #expect(pairs.contains { $0.after.contains("really") })
     }
 
     @Test func seededOrderIsReproducible() {

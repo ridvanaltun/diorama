@@ -1,4 +1,5 @@
 import DioramaCore
+import DioramaEngine
 import DioramaStore
 import Foundation
 
@@ -17,12 +18,14 @@ public final class ExperimentRunner: @unchecked Sendable {
     let makeSession: SessionFactory
     let claudePath: @Sendable () -> String?
     let baseEnvironment: [String: String]
+    let judge: JudgeProvider?
     private let lock = NSLock()
     private var runTasks: [String: Task<Void, Never>] = [:]
     private var processes: [String: TrialProcess] = [:]
 
     public init(store: Store, paths: DioramaPaths, environment: [String: String] = ProcessInfo.processInfo.environment,
-                claudePath: @escaping @Sendable () -> String?, makeSession: @escaping SessionFactory) {
+                claudePath: @escaping @Sendable () -> String?, judge: JudgeProvider? = nil, makeSession: @escaping SessionFactory) {
+        self.judge = judge
         self.store = store
         self.paths = paths
         self.makeSession = makeSession
@@ -78,6 +81,12 @@ public final class ExperimentRunner: @unchecked Sendable {
             let count = def.treatment == .frozen ? 3.0 : 3.0 * Double(def.trialsPerVariant)
             rewriteLow += per.0 * count * 0.5
             rewriteHigh += per.1 * count * 2
+        }
+        if let j = def.judge, j.enabled {
+            let per: (Double, Double) = j.model.contains("haiku") ? (0.0003, 0.003) : j.model.contains("sonnet") ? (0.005, 0.05) : (0.01, 0.1)
+            rewriteLow += per.0 * Double(trials)
+            rewriteHigh += per.1 * Double(trials)
+            notes.append("LLM judge (\(j.model)) rates every successful trial once after the run; included in the rewrite-agent figure.")
         }
         notes.append("Claude Code usage is billed to the account Claude Code is signed in with; on subscription plans the figures are notional and count toward plan limits.")
         notes.append("Rewrite-agent calls use your Anthropic API key.")
@@ -160,6 +169,9 @@ public final class ExperimentRunner: @unchecked Sendable {
                 }
             }
             await group.waitForAll()
+        }
+        if !Task.isCancelled, let config = def.judge, config.enabled, let judge {
+            await judgeRun(run: run, definition: def, config: config, judge: judge)
         }
         let cancelled = Task.isCancelled
         for t in (try? store.trials(runId: run.id)) ?? [] where t.status == .pending || t.status == .running {
@@ -293,6 +305,41 @@ public final class ExperimentRunner: @unchecked Sendable {
         }
         try? store.trialFinished(id: trial.id, status: status, facts: facts, signals: signals, error: error, transcriptBlob: transcriptBlob)
         store.addEvent(sessionId: launch.session.id, kind: .trialFinished, message: "Trial \(trial.order + 1) (\(variant.key)) \(status.rawValue)", refId: trial.id)
+    }
+
+    /// Asks the LLM judge about every successful trial, controls included (their verdicts are
+    /// the baseline), against the changes the run's rewrites introduced.
+    func judgeRun(run: RunSummary, definition def: ExperimentDefinition, config: JudgeConfig, judge: JudgeProvider) async {
+        let trials = (try? store.trials(runId: run.id)) ?? []
+        var changes: [JudgedChange] = []
+        for t in trials where t.status == .succeeded {
+            guard let sid = t.sessionId else { continue }
+            for d in (try? store.decisions(sessionId: sid)) ?? [] where d.outcome == .rewritten {
+                guard let rb = d.replacementBlob,
+                      let original = (try? store.blobs.getString(d.originalBlob)).map(ContentText.displayText(fromContentJSON:)),
+                      let replacement = (try? store.blobs.getString(rb)).map(ContentText.displayText(fromContentJSON:))
+                else { continue }
+                for c in Heuristics.changePairs(original: original, replacement: replacement) where !changes.contains(c) { changes.append(c) }
+            }
+        }
+        guard !changes.isEmpty else {
+            store.addEvent(sessionId: nil, kind: .warning, message: "LLM judge skipped: no rewrites in this run", refId: run.id)
+            return
+        }
+        changes = Array(changes.prefix(20))
+        store.addEvent(sessionId: nil, kind: .warning, message: "LLM judge (\(config.model)) rating \(trials.filter { $0.status == .succeeded }.count) trial(s)", refId: run.id)
+        for t in trials where t.status == .succeeded {
+            if Task.isCancelled { return }
+            guard let facts = t.facts, var signals = t.signals else { continue }
+            let r = await judge.judge(JudgeRequest(task: def.task, changes: changes, finalOutput: facts.finalOutput, question: config.question ?? JudgeConfig.defaultQuestion, model: config.model))
+            signals.judgeVerdict = r.verdict ?? "error"
+            signals.judgeRationale = r.rationale ?? r.error
+            signals.judgeModel = r.modelServed ?? config.model
+            signals.judgeCostUSD = r.costUSD
+            if r.verdict == nil { signals.judgeVerdict = nil }
+            if let rationale = r.rationale ?? r.error { signals.evidence.append("LLM judge: \(r.verdict ?? "failed") — \(rationale)") }
+            try? store.updateTrialSignals(id: t.id, signals: signals)
+        }
     }
 
     // MARK: Results

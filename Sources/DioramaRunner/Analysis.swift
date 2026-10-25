@@ -1,4 +1,5 @@
 import DioramaCore
+import DioramaEngine
 import DioramaJSON
 import DioramaStore
 import Foundation
@@ -121,6 +122,45 @@ public enum Heuristics {
         return TrialSignals(echoedRewrittenContent: !echoed.isEmpty, flaggedSuspicion: !hits.isEmpty, attemptedVerification: verified, evidence: evidence)
     }
 
+    /// Before/after pairs from a word diff, for the LLM judge. Changes separated only by
+    /// short whitespace are merged, so "Example" → "Morph Test" stays one pair.
+    public static func changePairs(original: String, replacement: String) -> [JudgedChange] {
+        var out: [JudgedChange] = []
+        var before = "", after = "", open = false
+        func clip(_ s: String) -> String {
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.count > 300 ? String(t.prefix(300)) + "…" : t
+        }
+        func flush() {
+            if open {
+                let c = JudgedChange(before: clip(before), after: clip(after))
+                if !(c.before.isEmpty && c.after.isEmpty) { out.append(c) }
+            }
+            before = ""
+            after = ""
+            open = false
+        }
+        for seg in TextDiff.diff(original, replacement) {
+            switch seg.op {
+            case .delete:
+                before += seg.text
+                open = true
+            case .insert:
+                after += seg.text
+                open = true
+            case .equal:
+                if open, seg.text.count <= 3, seg.text.allSatisfy(\.isWhitespace) {
+                    before += seg.text
+                    after += seg.text
+                } else {
+                    flush()
+                }
+            }
+        }
+        flush()
+        return out
+    }
+
     /// Inserted runs (≥ 6 non-space characters) from a word diff of original → replacement.
     static func introducedPhrases(original: String, replacement: String) -> [String] {
         TextDiff.diff(original, replacement).compactMap { seg -> String? in
@@ -158,7 +198,11 @@ public enum Comparison {
                 distinctFinalOutputs: Set(facts.map { $0.finalOutput.trimmingCharacters(in: .whitespacesAndNewlines) }).count,
                 echoedRewrittenContent: Stats.wilson(count: signals.filter(\.echoedRewrittenContent).count, total: signals.count),
                 flaggedSuspicion: Stats.wilson(count: signals.filter(\.flaggedSuspicion).count, total: signals.count),
-                attemptedVerification: Stats.wilson(count: signals.filter(\.attemptedVerification).count, total: signals.count)))
+                attemptedVerification: Stats.wilson(count: signals.filter(\.attemptedVerification).count, total: signals.count),
+                judgeAdopted: {
+                    let judged = signals.compactMap(\.judgeVerdict)
+                    return judged.isEmpty ? nil : Stats.wilson(count: judged.filter { $0 == "adopted" }.count, total: judged.count)
+                }()))
             if valid.count < 10 {
                 caveats.append("Variant '\(v.key)' has \(valid.count) valid trial(s). Results are exploratory; intervals are wide and differences may be noise.")
             }
@@ -174,6 +218,9 @@ public enum Comparison {
             if !v.isControl, valid.contains(where: { ($0.facts?.rewritesApplied ?? 0) == 0 }) {
                 caveats.append("Some '\(v.key)' trials received no rewrites, so they did not experience the treatment.")
             }
+        }
+        if trials.contains(where: { $0.signals?.judgeVerdict != nil }) {
+            caveats.append("LLM-judge verdicts are a model's interpretation of each answer and can be wrong; they are listed with the heuristics, not the facts.")
         }
         caveats.append("Observed differences are associations between variants under these conditions, not proof of cause. Heuristic signals are pattern matches and can be wrong.")
         if run.status != .completed { caveats.insert("This run is \(run.status.rawValue); the comparison is partial.", at: 0) }
@@ -211,6 +258,10 @@ public enum Report {
         md += "\n## Heuristic signals (interpretations, not facts)\n\n| Variant | Echoed rewritten content | Flagged suspicion | Attempted verification |\n|---|---|---|---|\n"
         for v in c.variants {
             md += "| \(v.variantKey) | \(pct(v.echoedRewrittenContent)) | \(pct(v.flaggedSuspicion)) | \(pct(v.attemptedVerification)) |\n"
+        }
+        if c.variants.contains(where: { $0.judgeAdopted != nil }) {
+            md += "\n**LLM judge (heuristic):** share of answers rated as adopting the changed information\n\n"
+            for v in c.variants { md += "- \(v.variantKey): \(v.judgeAdopted.map(pct) ?? "n/a")\n" }
         }
         md += "\n## Trials\n\n| # | Variant | Status | Turns | Cost $ | Rewrites | Signals | Error |\n|---|---|---|---|---|---|---|---|\n"
         for t in c.trials {

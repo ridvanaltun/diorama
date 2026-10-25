@@ -52,6 +52,7 @@ struct ClaudeHarness {
         o.upstream = mock.url
         o.providerOverride = provider
         o.secrets = MemorySecretStore("sk-ant-test-key-not-real-000000")
+        o.judgeOverride = ScriptedJudge.substring
         o.environment = ClaudeHarness.claudeEnvironment(home: fakeUserHome)
         let d = try DioramaDaemon(options: o)
         _ = try await d.start()
@@ -243,7 +244,7 @@ struct ClaudeCodeContractTests {
             claude: ClaudeRunOptions(allowedTools: ["Read"], maxTurns: 5, isolateConfiguration: true, timeoutSeconds: 120),
             variants: [ExperimentVariant(key: "control", name: "Control"),
                        ExperimentVariant(key: "steered", name: "Steered", prompt: SessionPrompt(text: "rename the domain", tools: ["Read"]))],
-            trialsPerVariant: 2, concurrency: 2, treatment: .frozen, seed: 7)
+            trialsPerVariant: 2, concurrency: 2, treatment: .frozen, seed: 7, judge: JudgeConfig(model: "claude-haiku-5-5"))
         let exp = try await h.client.createExperiment(def)
         let pending = try await h.client.prepareRun(experimentId: exp.id)
         let est = try #require(pending.estimate)
@@ -260,6 +261,10 @@ struct ClaudeCodeContractTests {
         #expect(steered.rewritesApplied.mean == 1)
         #expect(steered.echoedRewrittenContent.count == 2)
         #expect(control.echoedRewrittenContent.count == 0)
+        // LLM judge (scripted here): steered answers adopted the change, controls did not.
+        #expect(steered.judgeAdopted?.count == 2)
+        #expect(control.judgeAdopted?.count == 0)
+        #expect(cmp.caveats.contains { $0.contains("LLM-judge") })
         // Frozen treatment: both steered trials reused one rewrite.
         #expect(h.rewriteCalls == 1)
         // Isolation: the source project is untouched and trial clones are cleaned up.

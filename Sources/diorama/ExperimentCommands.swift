@@ -146,7 +146,13 @@ struct Experiment: AsyncParsableCommand {
             })
             print("\nHEURISTIC SIGNALS (pattern matches — interpretations, not facts)")
             func p(_ s: ProportionStat) -> String { s.total == 0 ? "—" : String(format: "%d/%d [%.0f–%.0f%%]", s.count, s.total, s.interval95.low * 100, s.interval95.high * 100) }
-            table(["VARIANT", "ECHOED REWRITE", "FLAGGED SUSPICION", "TRIED TO VERIFY"], c.variants.map { [$0.variantKey, p($0.echoedRewrittenContent), p($0.flaggedSuspicion), p($0.attemptedVerification)] })
+            if c.variants.contains(where: { $0.judgeAdopted != nil }) {
+                table(["VARIANT", "ECHOED REWRITE", "FLAGGED SUSPICION", "TRIED TO VERIFY", "LLM JUDGE: ADOPTED"], c.variants.map {
+                    [$0.variantKey, p($0.echoedRewrittenContent), p($0.flaggedSuspicion), p($0.attemptedVerification), $0.judgeAdopted.map(p) ?? "—"]
+                })
+            } else {
+                table(["VARIANT", "ECHOED REWRITE", "FLAGGED SUSPICION", "TRIED TO VERIFY"], c.variants.map { [$0.variantKey, p($0.echoedRewrittenContent), p($0.flaggedSuspicion), p($0.attemptedVerification)] })
+            }
         }
     }
 

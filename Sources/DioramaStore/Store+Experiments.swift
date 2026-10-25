@@ -121,6 +121,10 @@ extension Store {
             ])
     }
 
+    public func updateTrialSignals(id: String, signals: TrialSignals) throws {
+        try db.run("UPDATE trials SET signals = ? WHERE id = ?", [.text(json(signals)), .text(id)])
+    }
+
     public func trialTranscript(id: String) throws -> String? {
         guard let blob = try db.query("SELECT transcript_blob FROM trials WHERE id = ?", [.text(id)]).first?.string("transcript_blob") else { return nil }
         return try blobs.getString(blob)
