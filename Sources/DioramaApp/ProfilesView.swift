@@ -175,6 +175,23 @@ struct ProfileEditor: View {
                     }
                 }
                 .padding(12)
+                if let file = detail.syncedFile {
+                    HStack(spacing: 8) {
+                        Image(systemName: "doc.badge.arrow.up").foregroundStyle(.blue)
+                        Text("Synced from \(Fmt.shortPath(file)). When the file changes, it replaces edits made here.").font(.callout).lineLimit(2)
+                            .help(file)
+                        Spacer()
+                        Button("Write to File") {
+                            Task {
+                                if dirty { await save() }
+                                _ = await model.perform { try await $0.writeProfileToFile(profileId) }
+                            }
+                        }
+                        .help(dirty ? "Save as a new version, then write it to the file" : "Write the current version to the file")
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(Color.blue.opacity(0.08))
+                }
                 Divider()
                 Form {
                     Section {
@@ -264,6 +281,10 @@ struct ProfileEditor: View {
             }
             .sheet(isPresented: $showPlayground) { PlaygroundSheet(draft: draft) }
             .sheet(item: $comparing) { c in ProfileCompareSheet(from: c.from, fromLabel: c.fromLabel, to: c.to, toLabel: c.toLabel) }
+            .onChange(of: model.profiles.first { $0.id == profileId }?.currentVersionId) { _, vid in
+                // A new version from elsewhere (a synced file, the CLI, MCP): show it unless there are unsaved edits.
+                if let vid, vid != detail.current.id, !dirty { Task { await load() } }
+            }
             .task(id: "\(statsDays)/\(detail.current.id)") { stats = await model.perform { try await $0.ruleStats(profileId, days: statsDays) } }
         } else {
             ProgressView().task { await load() }

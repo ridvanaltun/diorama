@@ -233,6 +233,17 @@ The decision records the outcome: "not rewritten: rewrite rejected in review" or
 
 **Export…** in the profile editor saves the profile's saved version as a `.diorama-profile.json` file. **Import Profile…** in the Profiles toolbar, or dropping `.json` files on the profile list, adds each one as a new profile at version 1. If the name is taken, a number is appended, for example "Docs steer (2)". The files are plain JSON in the same format as `diorama profiles export` and `diorama profiles create --file`, so they work in git, in pull requests or on another Mac. They hold only rules and defaults, never keys.
 
+### Profile folders: profiles as files in git
+
+To share profiles with a team, keep them as JSON files, for example in a git repository's `profiles/` directory, and watch that folder: **Settings → Profile folders → Add Folder…**, or `diorama profiles folders --add ~/code/team/profiles`.
+
+- **New and changed files:** Diorama checks every few seconds. Each profile file (JSON with `name` and `rules`, up to three folders deep) becomes a profile, and a changed file becomes a new version. Other JSON, such as `package.json`, is ignored, as are hidden, `node_modules` and build folders.
+- **Problems:** invalid files are listed with the reason and retried until fixed. A second file using a name another file already owns is refused.
+- **One way, the file wins:** when a file changes, its contents replace the profile, including edits made in the app. The editor shows **Synced from …** with **Write to File**, which saves the current version back to the file. From the terminal: `diorama profiles write-file "Team docs"`.
+- **Deleting and unwatching:** deleting a file keeps its profile. Unwatching a folder keeps its profiles too.
+
+A file in a watched folder decides what Claude is shown in sessions that use its profile, so only watch folders whose contents you trust (for example, review pulls before they land). Combine this with `diorama profiles check --file` in CI to test the files before they reach anyone.
+
 ### Comparing profile versions
 
 Every save makes a new version. In the editor's **Version history**, **Compare with vN** shows what changed from an older version to the current one. While you have unsaved edits, **Show Changes…** compares them with the saved version. Rules are matched by id, so each one shows as added, removed, changed (each field, old → new, with a word diff for instructions) or moved. Changes to the name, description and defaults are listed too.

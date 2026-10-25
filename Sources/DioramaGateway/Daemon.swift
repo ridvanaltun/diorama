@@ -139,6 +139,14 @@ public final class DioramaDaemon: @unchecked Sendable {
                 try? await Task.sleep(for: .seconds(24 * 3600))
             }
         })
+        // Profile folders: pick up new and changed profile files.
+        background.append(Task.detached(priority: .utility) { [store] in
+            while !Task.isCancelled {
+                let folders = store.settings().profileFolders
+                if !folders.isEmpty { store.syncProfileFolders(folders) }
+                try? await Task.sleep(for: .seconds(5))
+            }
+        })
         background.append(Task { [hub] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(15))

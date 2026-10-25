@@ -627,7 +627,7 @@ struct Session: AsyncParsableCommand {
 struct Profiles: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Manage profiles (versioned sets of global rules).",
-        subcommands: [List.self, Show.self, Create.self, Update.self, Export.self, Delete.self, Templates.self, Test.self, Stats.self, Diff.self, Check.self, AddTest.self], defaultSubcommand: List.self)
+        subcommands: [List.self, Show.self, Create.self, Update.self, Export.self, Delete.self, Templates.self, Test.self, Stats.self, Diff.self, Check.self, AddTest.self, SyncFolders.self, WriteFile.self], defaultSubcommand: List.self)
 
     struct List: AsyncParsableCommand {
         @OptionGroup var global: GlobalOptions
@@ -712,6 +712,54 @@ struct Profiles: AsyncParsableCommand {
         func run() async throws {
             try await global.client().archiveProfile(id)
             print("Archived.")
+        }
+    }
+
+    struct SyncFolders: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "folders",
+            abstract: "Keep profiles in sync with JSON files in folders (e.g. a git repo's profiles/ directory).",
+            discussion: """
+                Every profile file (JSON with "name" and "rules") in a watched folder, up to three levels deep, becomes a \
+                profile; when the file changes, the profile gets a new version. One way: the file wins when it changes, and \
+                `diorama profiles write-file` saves app edits back. Deleting a file keeps its profile.
+                  diorama profiles folders                      # list watched folders and their files
+                  diorama profiles folders --add ~/code/team-profiles
+                  diorama profiles folders --remove ~/code/team-profiles
+                  diorama profiles folders --sync               # sync now (also happens every few seconds)
+                """)
+        @OptionGroup var global: GlobalOptions
+        @Option(help: "Start watching this folder.") var add: String?
+        @Option(help: "Stop watching this folder (its profiles stay).") var remove: String?
+        @Flag(help: "Sync now.") var sync = false
+        @Flag var json = false
+        func run() async throws {
+            let client = try await global.client()
+            var status: [ProfileFolderStatus]
+            if let add { status = try await client.setProfileFolder(Folders.absolute(add), watched: true) }
+            else if let remove { status = try await client.setProfileFolder(Folders.absolute(remove), watched: false) }
+            else if sync { status = try await client.syncProfileFolders() }
+            else { status = try await client.profileFolders() }
+            if json { return try printJSON(status) }
+            guard !status.isEmpty else { return print("No profile folders. Add one with `diorama profiles folders --add <folder>`.") }
+            for f in status {
+                print("\(f.path)" + (f.exists ? "" : "  (missing)"))
+                if f.files.isEmpty { print("  no profile files yet") }
+                for file in f.files {
+                    let rel = file.path.hasPrefix(f.path + "/") ? String(file.path.dropFirst(f.path.count + 1)) : file.path
+                    let state = file.missing ? "file deleted; profile kept" : file.error.map { "✗ \($0)" } ?? "→ \(file.profileName ?? "?")"
+                    print("  \(rel)  \(state)")
+                }
+            }
+        }
+    }
+
+    struct WriteFile: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(commandName: "write-file", abstract: "Write a synced profile's current version back to its file.")
+        @OptionGroup var global: GlobalOptions
+        @Argument var profile: String
+        func run() async throws {
+            print("✓ Wrote \(try await global.client().writeProfileToFile(profile))")
         }
     }
 

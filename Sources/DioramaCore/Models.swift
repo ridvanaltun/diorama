@@ -1150,6 +1150,8 @@ public struct DioramaSettings: Codable, Sendable, Hashable {
     public var steeringPaused: Bool
     /// Default profile (name or id) per project folder: sessions started in the folder or below use it.
     public var folderProfiles: [String: String] = [:]
+    /// Folders whose profile JSON files are kept in sync as profiles (one way: file → Diorama).
+    public var profileFolders: [String] = []
 
     public static let defaultOllamaURL = "http://127.0.0.1:11434"
 
@@ -1173,6 +1175,7 @@ public struct DioramaSettings: Codable, Sendable, Hashable {
         dailyBudgetUSD = try c.decodeIfPresent(Double.self, forKey: .dailyBudgetUSD)
         steeringPaused = try c.decodeIfPresent(Bool.self, forKey: .steeringPaused) ?? false
         folderProfiles = try c.decodeIfPresent([String: String].self, forKey: .folderProfiles) ?? [:]
+        profileFolders = try c.decodeIfPresent([String].self, forKey: .profileFolders) ?? []
     }
 
     /// The default for `path`: its own entry or the nearest parent folder's.
@@ -1319,6 +1322,8 @@ public struct ProfileDetail: Codable, Sendable {
     public var summary: ProfileSummary
     public var current: ProfileVersionInfo
     public var versions: [ProfileVersionInfo]
+    /// The watched-folder file this profile is synced from, if any.
+    public var syncedFile: String?
 
     public init(summary: ProfileSummary, current: ProfileVersionInfo, versions: [ProfileVersionInfo]) {
         self.summary = summary
@@ -1548,5 +1553,40 @@ public struct ArchiveRequest: Codable, Sendable {
         self.olderThanDays = olderThanDays
         self.kind = kind
         self.archived = archived
+    }
+}
+
+/// One profile file in a watched folder and what syncing it did.
+public struct ProfileSyncFile: Codable, Sendable, Hashable, Identifiable {
+    public var path: String
+    public var profileId: String?
+    public var profileName: String?
+    /// Why the file isn't (or is no longer) in sync, e.g. invalid JSON or a name clash.
+    public var error: String?
+    public var syncedAt: Date
+    /// The file was synced before but is gone now (its profile is kept).
+    public var missing: Bool
+    public var id: String { path }
+
+    public init(path: String, profileId: String?, profileName: String?, error: String?, syncedAt: Date, missing: Bool = false) {
+        self.path = path
+        self.profileId = profileId
+        self.profileName = profileName
+        self.error = error
+        self.syncedAt = syncedAt
+        self.missing = missing
+    }
+}
+
+public struct ProfileFolderStatus: Codable, Sendable, Hashable, Identifiable {
+    public var path: String
+    public var exists: Bool
+    public var files: [ProfileSyncFile]
+    public var id: String { path }
+
+    public init(path: String, exists: Bool, files: [ProfileSyncFile]) {
+        self.path = path
+        self.exists = exists
+        self.files = files
     }
 }

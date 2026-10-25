@@ -59,6 +59,7 @@ struct SettingsView: View {
             }
             SpendHistorySection()
             FolderDefaultsSection()
+            ProfileFoldersSection()
             Section("Steering") {
                 Toggle("Pause steering everywhere", isOn: Binding(
                     get: { model.settings.steeringPaused },
@@ -252,5 +253,61 @@ struct FolderDefaultsSection: View {
             Text("`diorama run` in one of these folders, or a folder inside it, uses its profile unless you pass --profile, --prompt or --no-folder-default.")
                 .font(.caption).foregroundStyle(.secondary)
         }
+    }
+}
+
+/// Watched folders whose profile JSON files are kept in sync as profiles.
+struct ProfileFoldersSection: View {
+    @Environment(AppModel.self) private var model
+    @State private var status: [ProfileFolderStatus] = []
+
+    var body: some View {
+        Section {
+            if status.isEmpty {
+                Text("None. Add a folder, such as a git repository's profiles/ directory, to share profiles as files.").font(.callout).foregroundStyle(.secondary)
+            }
+            ForEach(status) { f in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Image(systemName: f.exists ? "folder" : "folder.badge.questionmark").foregroundStyle(f.exists ? Color.secondary : Color.orange)
+                        Text(Fmt.shortPath(f.path)).lineLimit(1).truncationMode(.middle).help(f.path)
+                        Spacer()
+                        Text(Fmt.plural(f.files.filter { $0.error == nil && !$0.missing }.count, "profile")).foregroundStyle(.secondary)
+                        Button(role: .destructive) { Task { await set(f.path, false) } } label: { Image(systemName: "trash") }
+                            .buttonStyle(.borderless).help("Stop watching (its profiles stay)")
+                    }
+                    ForEach(f.files) { file in
+                        HStack(spacing: 6) {
+                            Text(file.path.hasPrefix(f.path + "/") ? String(file.path.dropFirst(f.path.count + 1)) : file.path)
+                                .font(.caption.monospaced()).lineLimit(1).truncationMode(.middle)
+                            Spacer()
+                            if file.missing {
+                                Text("file deleted; profile kept").font(.caption).foregroundStyle(.secondary)
+                            } else if let e = file.error {
+                                Text(e).font(.caption).foregroundStyle(.red).lineLimit(1).help(e)
+                            } else {
+                                Text("→ \(file.profileName ?? "?")").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.leading, 24)
+                    }
+                }
+            }
+            HStack {
+                Button("Add Folder…") { if let f = chooseFolder(prompt: "Watch") { Task { await set(f, true) } } }
+                Button("Sync Now") { Task { status = await model.perform { try await $0.syncProfileFolders() } ?? status } }.disabled(status.isEmpty)
+            }
+        } header: {
+            Text("Profile folders")
+        } footer: {
+            Text("Profile JSON files (with a name and rules) become profiles, and a changed file becomes a new version within seconds. When a file changes, it wins over edits made in the app; use Write to File in the editor to save those back. Deleting a file keeps its profile.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .task(id: model.eventTick / 10) { status = await model.perform { try await $0.profileFolders() } ?? status }
+    }
+
+    func set(_ path: String, _ watched: Bool) async {
+        if let s = await model.perform({ try await $0.setProfileFolder(path, watched: watched) }) { status = s }
+        await model.refreshProfiles()
     }
 }

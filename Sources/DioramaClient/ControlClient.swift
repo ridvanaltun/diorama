@@ -104,6 +104,20 @@ public struct ControlClient: Sendable {
     public func runProfileTests(_ ref: String? = nil, profile: Profile? = nil) async throws -> [ProfileTestResult] {
         try await request("POST", "profile-tests", body: ProfileTestRequest(profileRef: ref, profile: profile))
     }
+    /// Watched profile folders and what syncing their files did.
+    public func profileFolders() async throws -> [ProfileFolderStatus] { try await request("GET", "profile-folders") }
+    /// Starts (or stops) syncing profile files from a folder; returns the folders after syncing.
+    @discardableResult
+    public func setProfileFolder(_ path: String, watched: Bool) async throws -> [ProfileFolderStatus] {
+        try await request("POST", "profile-folders/\(watched ? "add" : "remove")", body: FolderDefault(path: path, profile: nil))
+    }
+    @discardableResult
+    public func syncProfileFolders() async throws -> [ProfileFolderStatus] { try await request("POST", "profile-folders/sync") }
+    /// Writes a synced profile's current version back to its file.
+    public func writeProfileToFile(_ profile: String) async throws -> String {
+        let out: [String: String] = try await request("POST", "profiles/\(profile.urlPathEscaped)/write-file")
+        return out["path"] ?? ""
+    }
     /// Project folders with a default profile.
     public func folderDefaults() async throws -> [FolderDefault] { try await request("GET", "folders") }
     /// The default that applies to `path` (its own or the nearest parent's), if any.

@@ -6,6 +6,7 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 ## Unreleased
 
 ### New
+- **Profile folders.** Watch folders (e.g. a git repo's profiles/ directory): profile JSON files become profiles and changed files become new versions within seconds. One way, file wins; **Write to File** saves app edits back; deleting a file keeps its profile. Settings → Profile folders, `diorama profiles folders --add|--remove|--sync`, `diorama profiles write-file`.
 - **Compare models in the playground.** Run the same rewrite on up to four models at once (**Compare models**, `diorama profiles test --rewrite --models a,b`, MCP `test_rules` with `models`) and see each one's result, diff, time and cost, with the fastest and cheapest marked.
 - **Did Claude use it?** Each rewritten tool result is labeled from what Claude did next: **used** (it repeated text the rewrite introduced), **questioned**, **checked** (re-fetched or ran a network command), **original surfaced**, or **no sign**, with the evidence. Shown in the timeline, the audit record, a "used by Claude" tile in the session header, reports and MCP `get_session`. A heuristic, labeled as one.
 

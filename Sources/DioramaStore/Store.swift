@@ -108,6 +108,11 @@ public final class Store: @unchecked Sendable {
         """
         ALTER TABLE sessions ADD COLUMN disabled_rules TEXT NOT NULL DEFAULT '[]';
         """,
+        // v11: profiles synced from files in watched folders
+        """
+        CREATE TABLE profile_sync(
+          path TEXT PRIMARY KEY, profile_id TEXT, body_hash TEXT, mtime REAL, error TEXT, synced_at REAL NOT NULL);
+        """,
     ]
 
     public static var schemaVersion: Int { migrations.count }

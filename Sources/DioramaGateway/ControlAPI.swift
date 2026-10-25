@@ -78,6 +78,7 @@ struct ControlAPI: Sendable {
             // Pausing has its own endpoints; a settings save (possibly from an older draft) never changes it.
             s.steeringPaused = store.settings().steeringPaused
             s.folderProfiles = store.settings().folderProfiles
+            s.profileFolders = store.settings().profileFolders
             guard s.retentionDays >= 1, s.retentionDays <= 3650 else { throw Failure(status: 400, message: "retentionDays must be 1–3650") }
             if let b = s.dailyBudgetUSD, !(b >= 0) { throw Failure(status: 400, message: "dailyBudgetUSD must be zero or more") }
             try store.saveSettings(s)
@@ -205,6 +206,32 @@ struct ControlAPI: Sendable {
             if let p = r.profile { return try ok(ProfileTests.run(p)) }
             guard let ref = r.profileRef, let v = try store.resolveProfile(ref) else { throw notFound("profile") }
             return try ok(ProfileTests.run(v.profile))
+        }
+        if Self.match(method, route, "GET", "profile-folders") != nil {
+            return try ok(store.profileFolderStatus(store.settings().profileFolders))
+        }
+        if Self.match(method, route, "POST", "profile-folders/sync") != nil {
+            return try ok(store.syncProfileFolders(store.settings().profileFolders))
+        }
+        if Self.match(method, route, "POST", "profile-folders/add") != nil || Self.match(method, route, "POST", "profile-folders/remove") != nil {
+            let f = try decode(FolderDefault.self, req)
+            let path = FolderDefault.normalize(f.path)
+            var s = store.settings()
+            if route.last == "add" {
+                var isDir: ObjCBool = false
+                guard path.hasPrefix("/"), FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else {
+                    throw Failure(status: 400, message: "\(path) isn't a folder")
+                }
+                if !s.profileFolders.contains(path) { s.profileFolders.append(path) }
+            } else {
+                s.profileFolders.removeAll { $0 == path }
+            }
+            try store.saveSettings(s)
+            return try ok(store.syncProfileFolders(s.profileFolders))
+        }
+        if let c = Self.match(method, route, "POST", "profiles/:id/write-file") {
+            guard let current = try store.resolveProfile(c[0]) else { throw notFound("profile") }
+            do { return try ok(["path": try store.writeProfileToFile(profileId: current.profileId)]) } catch let e as StoreError { throw Failure(status: 400, message: e.description) }
         }
         if Self.match(method, route, "GET", "folders") != nil {
             if let path = req.query["path"], !path.isEmpty { return try ok(store.settings().folderDefault(for: path).map { [$0] } ?? []) }
@@ -389,7 +416,9 @@ struct ControlAPI: Sendable {
         guard let current = try store.resolveProfile(id),
               let summary = try store.profiles(includeArchived: true).first(where: { $0.id == current.profileId })
         else { throw notFound("profile") }
-        return ProfileDetail(summary: summary, current: current, versions: try store.profileVersions(profileId: current.profileId))
+        var d = ProfileDetail(summary: summary, current: current, versions: try store.profileVersions(profileId: current.profileId))
+        d.syncedFile = store.syncedFile(profileId: current.profileId)
+        return d
     }
 
     /// Server-sent events of live activity, optionally filtered to one session.
