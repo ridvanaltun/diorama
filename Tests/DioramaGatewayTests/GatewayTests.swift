@@ -18,7 +18,7 @@ final class TestEnv: @unchecked Sendable {
     var port: Int { daemon.port }
 
     static func start(provider: RewriteProvider = ScriptedRewriteProvider.replacing("Example Domain", with: "Morph Test Domain"),
-                      home: URL? = nil, mock: MockUpstream? = nil) async throws -> TestEnv {
+                      home: URL? = nil, mock: MockUpstream? = nil, cliPath: String? = nil) async throws -> TestEnv {
         let home = home ?? FileManager.default.temporaryDirectory.appendingPathComponent("diorama-gw-\(UUID().uuidString)")
         let mock = mock ?? MockUpstream()
         if mock.port == 0 { try await mock.start() }
@@ -27,6 +27,7 @@ final class TestEnv: @unchecked Sendable {
         o.upstream = mock.url
         o.providerOverride = provider
         o.secrets = MemorySecretStore("sk-ant-test-key-not-real-000000")
+        o.cliPath = cliPath
         let d = try DioramaDaemon(options: o)
         _ = try await d.start()
         let task = Task { _ = try? await d.run() }

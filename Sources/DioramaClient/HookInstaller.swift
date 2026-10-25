@@ -13,6 +13,7 @@ public enum HookInstaller {
     /// Events Diorama listens to: the session's start and end, and every tool result.
     static let events: [(name: String, matcher: String?, timeout: Int)] = [
         ("SessionStart", nil, 15),
+        ("PreToolUse", "*", 180),
         ("PostToolUse", "*", 180),
         ("SessionEnd", nil, 15),
     ]
@@ -77,6 +78,14 @@ public enum HookInstaller {
     public static func installedCommand(settings url: URL) -> String? {
         guard let root = try? read(url) else { return nil }
         return installedCommand(in: root["hooks"] as? [String: Any] ?? [:])
+    }
+
+    /// The hook events Diorama's hook is installed for (older installs lack PreToolUse).
+    public static func installedEvents(settings url: URL) -> Set<String> {
+        guard let hooks = (try? read(url))?["hooks"] as? [String: Any] else { return [] }
+        return Set(hooks.compactMap { event, value in
+            ((value as? [[String: Any]]) ?? []).contains { ($0["hooks"] as? [[String: Any]] ?? []).contains(where: isDiorama) } ? event : nil
+        })
     }
 
     static func installedCommand(in hooks: [String: Any]) -> String? {

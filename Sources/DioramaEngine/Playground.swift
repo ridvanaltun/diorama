@@ -51,7 +51,7 @@ extension DecisionEngine {
             return result
         }
         var request = RewriteRequest(
-            toolName: stage == .page ? "\(toolName) (raw page, before extraction)" : toolName, toolInput: toolInputJSON ?? "{}", segments: segments,
+            toolName: Self.agentToolLabel(toolName, stage), toolInput: toolInputJSON ?? "{}", segments: segments,
             instructions: matched.map { RuleInstruction(name: $0.name, text: $0.instructions) }, taskContext: nil, model: model,
             effort: matched.last(where: { $0.effort != nil })?.effort ?? defaults.effort, maxOutputTokens: defaults.maxOutputTokens,
             timeout: defaults.timeoutSeconds)

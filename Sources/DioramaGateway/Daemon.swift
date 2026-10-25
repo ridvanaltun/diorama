@@ -28,6 +28,8 @@ public final class DioramaDaemon: @unchecked Sendable {
         public var environment = ProcessInfo.processInfo.environment
         /// Overrides the provider entirely (tests).
         public var providerOverride: RewriteProvider?
+        /// The `diorama` CLI that input-rule hooks run (default: next to this executable).
+        public var cliPath: String?
         /// Overrides the LLM judge (tests).
         public var judgeOverride: JudgeProvider?
 
@@ -187,6 +189,17 @@ public final class DioramaDaemon: @unchecked Sendable {
         var settings: [String: Any] = ["env": env]
         let deny = spec.lockdown.disallowedTools
         if !deny.isEmpty { settings["permissions"] = ["deny": deny] }
+        // Input rules act before a tool runs, which only a PreToolUse hook can do: add one for this session.
+        // Not for experiment trials, whose tool calls can't be approved interactively.
+        let hasInputRules = (record.profileVersion?.profile.rules ?? []).contains { $0.enabled && $0.match.stage == .input } || spec.prompt?.stage == .input
+        if hasInputRules, spec.kind == .interactive {
+            if let cli = options.cliPath ?? Self.bundledCLI() {
+                let command = "'" + cli.replacingOccurrences(of: "'", with: "'\\''") + "' hook run"
+                settings["hooks"] = ["PreToolUse": [["matcher": "*", "hooks": [["type": "command", "command": command, "timeout": 180]]]]]
+            } else {
+                store.addEvent(sessionId: record.id, kind: .warning, message: "Input rules can't apply: the diorama CLI wasn't found next to the daemon", refId: record.id)
+            }
+        }
         let json = String(decoding: try JSONSerialization.data(withJSONObject: settings, options: [.sortedKeys, .withoutEscapingSlashes]), as: UTF8.self)
         return SessionLaunch(session: try store.info(record), token: token, baseURL: base, environment: env, claudeArguments: ["--settings", json])
     }
@@ -292,7 +305,7 @@ public final class DioramaDaemon: @unchecked Sendable {
         if let id = req.toolUseId, !id.isEmpty {
             guard let d = try store.decision(toolUseId: id) else { throw StoreError("no tool result \(id)") }
             let session = try store.session(id: d.sessionId)
-            let stage: RuleStage = req.stage ?? (id.hasPrefix("page:") ? .page : .result)
+            let stage: RuleStage = req.stage ?? Self.stage(ofDecision: id)
             return await engine.playground(
                 rules: rules, defaults: defaults, toolName: (d.toolName ?? "tool").replacingOccurrences(of: " (page)", with: ""), toolInputJSON: d.toolInput,
                 segments: playgroundSegments(d, via: session?.via ?? .gateway), isError: d.isError, stage: stage, rewrite: req.rewrite, profileId: profileId)
@@ -344,7 +357,7 @@ public final class DioramaDaemon: @unchecked Sendable {
                 return playgroundSegments(copy, via: session.via).joined(separator: "\n\n")
             }
             return Source(decision: d, toolName: (d.toolName ?? "tool").replacingOccurrences(of: " (page)", with: ""),
-                          stage: d.toolUseId.hasPrefix("page:") ? .page : .result, segments: segments, beforeText: before)
+                          stage: Self.stage(ofDecision: d.toolUseId), segments: segments, beforeText: before)
         }
 
         // Free pass: which rules match each result.
@@ -447,9 +460,14 @@ public final class DioramaDaemon: @unchecked Sendable {
         return (low, high)
     }
 
+    static func stage(ofDecision id: String) -> RuleStage {
+        id.hasPrefix("page:") ? .page : id.hasPrefix("input:") ? .input : .result
+    }
+
     /// The readable text of a recorded original, split the way the engine split it.
     func playgroundSegments(_ d: DecisionRecord, via: SessionVia) -> [String] {
         let original = (try? store.blobs.get(d.originalBlob)) ?? []
+        if d.toolUseId.hasPrefix("input:") { return [DecisionEngine.prettyJSON(original) ?? String(decoding: original, as: UTF8.self)] }
         guard let v = try? JSONValue.parse(original) else { return [String(decoding: original, as: UTF8.self)] }
         if via == .hook {
             return HookOutputMapping.textPaths(toolName: d.toolName ?? "", response: v).compactMap { HookOutputMapping.get(v, $0)?.stringValue }
@@ -471,7 +489,13 @@ public final class DioramaDaemon: @unchecked Sendable {
     /// by Claude's session id; their configuration is fixed when the first event arrives.
     func handleHook(_ e: HookEvent) async throws -> HookReply {
         guard !e.claudeSessionId.isEmpty else { throw RunnerError("hook event without a session id") }
+        // A `diorama run` session: the gateway handles its results; the hook only carries tool inputs.
+        if let gid = e.dioramaSessionId {
+            guard e.event == "PreToolUse", let session = try store.session(id: gid), session.kind == .interactive else { return HookReply() }
+            return await decideInput(e, session: session)
+        }
         guard let session = try hookSession(e) else { return HookReply() }
+        if e.event == "PreToolUse" { return await decideInput(e, session: session) }
         if let path = e.transcriptPath, session.transcriptPath != path { try? store.setTranscriptPath(sessionId: session.id, path) }
         switch e.event {
         case "SessionEnd":
@@ -486,6 +510,13 @@ public final class DioramaDaemon: @unchecked Sendable {
         default:
             return HookReply(sessionId: session.id)
         }
+    }
+
+    func decideInput(_ e: HookEvent, session: SessionRecord) async -> HookReply {
+        guard let tool = e.toolName, let toolUseId = e.toolUseId, let input = e.toolInput else { return HookReply(sessionId: session.id) }
+        let task = wantsTaskContext(session) ? (e.transcriptPath ?? session.transcriptPath).flatMap(Self.firstUserMessage) : nil
+        let (d, output) = await engine.decideInput(session: session, toolUseId: toolUseId, toolName: tool, toolInputJSON: input, taskText: task)
+        return HookReply(sessionId: session.id, updatedInput: output.map { String(decoding: $0, as: UTF8.self) }, outcome: d?.outcome, reason: d?.reason)
     }
 
     private let hookLock = NSLock()
@@ -542,6 +573,13 @@ public final class DioramaDaemon: @unchecked Sendable {
             }
         }
         return nil
+    }
+
+    /// The `diorama` CLI shipped next to `dioramad` (Contents/Helpers in the app, .build/… in development).
+    static func bundledCLI() -> String? {
+        guard let exe = Bundle.main.executableURL?.resolvingSymlinksInPath() else { return nil }
+        let cli = exe.deletingLastPathComponent().appendingPathComponent("diorama").path
+        return FileManager.default.isExecutableFile(atPath: cli) ? cli : nil
     }
 
     func health() -> HealthInfo {

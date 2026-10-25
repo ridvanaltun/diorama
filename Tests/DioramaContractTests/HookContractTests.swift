@@ -108,3 +108,34 @@ struct MCPContractTests {
         #expect(text.contains("“Docs steer via MCP” v1"), "the tool result should reach the model; got: \(text)")
     }
 }
+
+/// Input rules against the real Claude Code: the hook returns the changed input with "ask".
+@Suite(.serialized, .enabled(if: claudePath != nil && dioramaCLI != nil, "requires the claude CLI and a built diorama CLI"))
+struct InputHookContractTests {
+    @Test func changedInputsAskForPermission() async throws {
+        let h = try await ClaudeHarness.start(steps: [])
+        defer { Task { await h.stop() } }
+        let project = try h.makeProject(files: ["Example Domain.txt": "the original file", "Morph Test Domain.txt": "the redirected file"])
+        let model = ScriptedModel(steps: [.init("Read", ["file_path": project.appendingPathComponent("Example Domain.txt").path])])
+        h.mock.setHandler { model.respond($0) }
+        _ = try await h.client.createProfile(Profile(name: "redirect reads", rules: [
+            Rule(name: "Redirect", match: RuleMatch(tools: ["Read"], stage: .input), instructions: "rename the domain"),
+        ]))
+        let command = try HookInstaller.command(cli: dioramaCLI!, config: HookConfig(profile: "redirect reads"))
+        try HookInstaller.install(command: command, settings: HookInstaller.projectSettings(project.path))
+        var env = ClaudeHarness.claudeEnvironment(home: h.fakeUserHome)
+        env["ANTHROPIC_BASE_URL"] = h.mock.url.absoluteString
+        env["DIORAMA_HOME"] = h.home.appendingPathComponent("diorama").path
+        let r = try ProcessRunner.run(claudePath!, ["-p", "Read the file", "--output-format", "json", "--allowedTools", "Read"], cwd: project.path, environment: env, timeout: 120)
+        let text = resultText(r.stdout)
+        #expect(r.exitCode == 0, "stderr: \(r.stderr)")
+        // Under -p nobody can answer the prompt, so Claude Code denies the call and shows the model our reason.
+        #expect(text.contains("Diorama changed this call's input"), "got: \(text)")
+        // Diorama recorded and rewrote the input…
+        let session = try #require(try await h.client.sessions().first { $0.via == .hook })
+        let d = try #require(try await h.client.timeline(session.id).decisions.first { $0.toolUseId.hasPrefix("input:") })
+        #expect(d.outcome == .rewritten)
+        // …and Claude Code didn't run the changed call unapproved: nobody can approve it under -p.
+        #expect(!text.contains("the redirected file"), "a changed input must not run without approval")
+    }
+}

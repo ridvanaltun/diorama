@@ -258,7 +258,7 @@ public final class DecisionEngine: Sendable {
         // A concurrent request may already have decided this id: the first decision wins.
         if let existing = try? store.decision(toolUseId: t.decisionId) { return existing }
         let originalBlob = (try? store.blobs.put(t.original)) ?? t.hash
-        let label = t.stage == .page ? "\(t.toolName ?? "tool") page" : "\(t.toolName ?? "tool") result"
+        let label = "\(t.toolName ?? "tool") " + (t.stage == .page ? "page" : t.stage == .input ? "input" : "result")
         func record(_ outcome: DecisionOutcome, _ reason: String, replacement: String? = nil, refs: [RuleRef] = [], instructions: [String] = [], treatmentKey: String? = nil) -> DecisionRecord {
             let d = DecisionRecord(
                 toolUseId: t.decisionId, sessionId: session.id, exchangeId: exchangeId, toolName: t.toolName, toolInput: t.toolInputJSON,
@@ -354,7 +354,7 @@ public final class DecisionEngine: Sendable {
             let effort = rewriteRules.last(where: { $0.effort != nil })?.effort ?? app.defaults.effort
             let wantsTask = rewriteRules.contains { $0.context == .task }
             var request = RewriteRequest(
-                toolName: t.stage == .page ? "\(toolName) (raw page, before extraction)" : toolName, toolInput: t.toolInputJSON ?? "{}",
+                toolName: Self.agentToolLabel(toolName, t.stage), toolInput: t.toolInputJSON ?? "{}",
                 segments: segments, instructions: instructions, taskContext: wantsTask ? t.taskText : nil, model: model, effort: effort,
                 maxOutputTokens: app.defaults.maxOutputTokens, timeout: app.defaults.timeoutSeconds)
 
@@ -391,8 +391,20 @@ public final class DecisionEngine: Sendable {
                 switch status {
                 case .succeeded:
                     guard let newSegments else { break }
-                    guard let replacement = try? t.buildReplacement(newSegments), let blob = try? store.blobs.put(replacement) else {
-                        lastError = "could not build replacement content"
+                    let replacement: [UInt8]
+                    do {
+                        replacement = try t.buildReplacement(newSegments)
+                    } catch {
+                        // E.g. an edited tool input that is no longer valid JSON: retry once with the reason.
+                        lastError = "could not build replacement content: \(error)"
+                        if attempt == 0, Date().timeIntervalSince(started) < budget / 2 {
+                            request.feedback = lastError
+                            continue
+                        }
+                        break
+                    }
+                    guard let blob = try? store.blobs.put(replacement) else {
+                        lastError = "could not store replacement content"
                         break
                     }
                     if let key = treatmentKey { try? store.storeTreatment(key: key, replacementBlob: blob, attemptId: attemptId) }
@@ -432,6 +444,15 @@ public final class DecisionEngine: Sendable {
         let decided = await rewriteNow()
         await treatmentLock.unlock(key)
         return decided
+    }
+
+    /// How the tool is named to the rewrite agent, so it knows what it is editing.
+    static func agentToolLabel(_ toolName: String, _ stage: RuleStage) -> String {
+        switch stage {
+        case .result: toolName
+        case .page: "\(toolName) (raw page, before extraction)"
+        case .input: "\(toolName) — TOOL INPUT: the JSON arguments of a call about to run, not its output. Edit values only; keep valid JSON with the same keys."
+        }
     }
 
     /// Builds the replacement `content` JSON: the original content bytes with only the text

@@ -159,6 +159,7 @@ struct ProfileEditor: View {
                                     Text(rule.name.isEmpty ? "Untitled rule" : rule.name).bold().foregroundStyle(rule.enabled ? .primary : .secondary)
                                     Text(rule.match.tools.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary)
                                     if rule.match.stage == .page { Badge(text: "page", color: .teal) }
+                                    if rule.match.stage == .input { Badge(text: "input", color: .blue) }
                                     if rule.isRedaction { Badge(text: "redact", color: .orange) }
                                     if !FormLogic.ruleProblems(rule).isEmpty {
                                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).help(FormLogic.ruleProblems(rule).joined(separator: "\n"))
@@ -252,6 +253,7 @@ struct RuleEditor: View {
             Picker("Applies to", selection: $rule.match.stage) {
                 Text("Tool result (what Claude receives)").tag(RuleStage.result)
                 Text("WebFetch page, before summarization").tag(RuleStage.page)
+                Text("Tool input, before the call (you approve each change)").tag(RuleStage.input)
             }
             Toggle("Also rewrite error results", isOn: $rule.match.includeErrors)
             if rule.match.stage == .page && !rule.match.tools.allSatisfy({ $0 == "WebFetch" }) {

@@ -33,6 +33,9 @@ public enum RuleStage: String, Codable, Sendable, CaseIterable {
     case result
     /// WebFetch only: the raw page, before WebFetch's summarizing model sees it ("pre-extraction").
     case page
+    /// A tool call's input, before the tool runs (hook mode and `diorama run`; Claude Code asks the
+    /// user to approve each changed call). Not applied in experiment trials.
+    case input
 }
 
 public struct RuleMatch: Codable, Sendable, Hashable {
@@ -433,11 +436,14 @@ public struct HookEvent: Codable, Sendable {
     /// Raw JSON of `tool_response`.
     public var toolResponse: String?
     public var config: HookConfig
+    /// Set for a `diorama run` session (its gateway session id): only its tool inputs go through the hook.
+    public var dioramaSessionId: String?
 
     public init(
         event: String, claudeSessionId: String, cwd: String, transcriptPath: String? = nil, client: String? = nil, toolName: String? = nil,
-        toolUseId: String? = nil, toolInput: String? = nil, toolResponse: String? = nil, config: HookConfig = HookConfig()
+        toolUseId: String? = nil, toolInput: String? = nil, toolResponse: String? = nil, config: HookConfig = HookConfig(), dioramaSessionId: String? = nil
     ) {
+        self.dioramaSessionId = dioramaSessionId
         self.event = event
         self.claudeSessionId = claudeSessionId
         self.cwd = cwd
@@ -455,10 +461,13 @@ public struct HookReply: Codable, Sendable {
     public var sessionId: String?
     /// Raw JSON to return as `updatedToolOutput`; nil leaves the tool result unchanged.
     public var updatedToolOutput: String?
+    /// Raw JSON of a changed tool input (PreToolUse); Claude Code asks the user to approve it.
+    public var updatedInput: String?
     public var outcome: DecisionOutcome?
     public var reason: String?
 
-    public init(sessionId: String? = nil, updatedToolOutput: String? = nil, outcome: DecisionOutcome? = nil, reason: String? = nil) {
+    public init(sessionId: String? = nil, updatedToolOutput: String? = nil, updatedInput: String? = nil, outcome: DecisionOutcome? = nil, reason: String? = nil) {
+        self.updatedInput = updatedInput
         self.sessionId = sessionId
         self.updatedToolOutput = updatedToolOutput
         self.outcome = outcome

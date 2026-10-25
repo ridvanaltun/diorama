@@ -101,6 +101,9 @@ struct Hook: AsyncParsableCommand {
             print("Diorama hook installed in \(url.path)")
             print("  \(command)")
             let cli = command.split(separator: " ").first.map { String($0).trimmingCharacters(in: CharacterSet(charactersIn: "'")) } ?? ""
+            if !HookInstaller.installedEvents(settings: url).contains("PreToolUse") {
+                print("  ⚠ Installed before input rules existed: run `diorama hook install` again to let them work here.")
+            }
             if !FileManager.default.isExecutableFile(atPath: cli) {
                 print("  ⚠ \(cli) doesn't exist any more (was Diorama moved?). Run `diorama hook install` again.")
             }
@@ -116,15 +119,28 @@ struct Hook: AsyncParsableCommand {
 
         func run() async throws {
             let env = ProcessInfo.processInfo.environment
-            // Sessions started with `diorama run` are handled by the gateway; acting here too would rewrite twice.
-            if env["DIORAMA_SESSION"] != nil { return }
             let input = FileHandle.standardInput.readDataToEndOfFile()
             do {
-                guard let event = try Self.event(from: input, config: options.config, client: env["CLAUDE_CODE_ENTRYPOINT"]) else { return }
+                guard var event = try Self.event(from: input, config: options.config, client: env["CLAUDE_CODE_ENTRYPOINT"]) else { return }
+                // Sessions started with `diorama run`: the gateway handles their results (acting here too would
+                // rewrite twice); only tool inputs come through the hook.
+                if let gateway = env["DIORAMA_SESSION"] {
+                    guard event.event == "PreToolUse" else { return }
+                    event.dioramaSessionId = gateway
+                }
                 let client = try await ControlClient.connect(paths: global.paths, autostart: true, timeout: 10)
                 let reply = try await client.hook(event)
                 if let output = reply.updatedToolOutput, event.event == "PostToolUse" {
                     print(#"{"hookSpecificOutput":{"hookEventName":"PostToolUse","updatedToolOutput":"# + output + "}}")
+                }
+                if let changed = reply.updatedInput, event.event == "PreToolUse",
+                   let newInput = try? JSONSerialization.jsonObject(with: Data(changed.utf8)) {
+                    // Always "ask": the user approves every call whose input Diorama changed.
+                    let out: [String: Any] = ["hookSpecificOutput": [
+                        "hookEventName": "PreToolUse", "permissionDecision": "ask", "updatedInput": newInput,
+                        "permissionDecisionReason": "Diorama changed this call's input: \(reply.reason ?? "rewritten by a rule")",
+                    ]]
+                    if let data = try? JSONSerialization.data(withJSONObject: out, options: [.withoutEscapingSlashes]) { print(String(decoding: data, as: UTF8.self)) }
                 }
             } catch {
                 log("hook failed, tool result left unchanged: \(error)")

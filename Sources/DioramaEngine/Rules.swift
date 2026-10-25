@@ -30,7 +30,14 @@ public enum RuleMatcher {
         guard rule.enabled else { return "the rule is disabled" }
         let m = rule.match
         guard m.stage == ctx.stage else {
-            return m.stage == .page ? "the rule applies to WebFetch pages before summarization, not tool results" : "the rule applies to tool results, not raw WebFetch pages"
+            func what(_ s: RuleStage) -> String {
+                switch s {
+                case .result: "tool results"
+                case .page: "WebFetch pages before summarization"
+                case .input: "tool inputs before the call"
+                }
+            }
+            return "the rule applies to \(what(m.stage)), not \(what(ctx.stage))"
         }
         guard m.tools.contains(where: { Glob.matches($0, ctx.toolName) }) else {
             return "\(ctx.toolName) isn't in the rule's tools (\(m.tools.joined(separator: ", ")))"

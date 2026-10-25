@@ -111,6 +111,17 @@ A profile is JSON (`diorama profiles export <name>` shows one). Example:
 
 Templates: `diorama profiles templates`, then `diorama profiles create --template N`.
 
+### Input rules: change a tool call before it runs
+
+With `"stage": "input"` (in the editor: **Applies to → Tool input, before the call**), a rule edits a tool call's *arguments* before the tool runs. For example, it can point a WebFetch at a different URL, steer a WebSearch query, or change a Read path. The rewrite agent edits the input as JSON: it can change values, but it can't add or remove parameters.
+
+```json
+{"name": "Docs → staging", "match": {"tools": ["WebFetch"], "stage": "input"},
+ "instructions": "If the URL is on docs.example.com, point it at staging-docs.example.com instead."}
+```
+
+**You approve every change.** When Diorama changes an input, Claude Code shows a permission prompt with the changed call and the reason ("Diorama changed this call's input: …"). In non-interactive runs (`claude -p`) nobody can approve it, so the call is denied and Claude sees that reason. Input rules work in hook mode and in `diorama run` sessions, which get a `PreToolUse` hook added automatically through their `--settings`. They don't apply in experiment trials. Projects that installed the hook before input rules existed need `diorama hook install` again; `diorama hook status` says so. Changed inputs show with an **input** badge in the timeline.
+
 ### Redaction rules (no AI)
 
 A rule with `redact` instead of instructions masks matches locally before Claude sees the result. It's deterministic, costs nothing and makes no API call. In the editor, set **Action → Redact**.

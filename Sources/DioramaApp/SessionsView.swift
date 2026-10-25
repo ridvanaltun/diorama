@@ -220,6 +220,20 @@ struct TimelineView: View {
                         LazyVStack(alignment: .leading, spacing: 10) {
                             let notices = t.events.filter { $0.kind == .anomaly || $0.kind == .rewriteFailed || $0.kind == .warning }
                             if !notices.isEmpty { NoticesCard(events: notices) }
+                            let inputs = t.decisions.filter { $0.toolUseId.hasPrefix("input:") }.sorted { $0.createdAt < $1.createdAt }
+                            if !inputs.isEmpty {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Label("Tool inputs checked before the call", systemImage: "arrow.right.to.line").font(.callout.weight(.medium))
+                                    ForEach(inputs) { d in
+                                        ToolResultRow(entry: ToolResultEntry(toolUseId: d.toolUseId, toolName: d.toolName, handling: d.outcome.newHandling), decision: d,
+                                                      selected: selectedDecision == d.toolUseId) {
+                                            selectedDecision = selectedDecision == d.toolUseId ? nil : d.toolUseId
+                                        }
+                                    }
+                                }
+                                .padding(12)
+                                .background(Color.blue.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                            }
                             if grouped.turns.isEmpty {
                                 ContentUnavailableView("Waiting for Claude Code", systemImage: "hourglass",
                                                        description: Text("Requests appear here as soon as the session talks to the model."))
@@ -467,6 +481,7 @@ struct ToolResultRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
                         Text(Fmt.toolName(entry.toolName)).font(.callout.weight(.medium))
+                        if entry.toolUseId.hasPrefix("input:") { Badge(text: "input", color: .blue).help("The tool call's input, changed before it ran") }
                         if let target { Text(target).font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
                         Badge(text: entry.handling.label, color: entry.handling.color)
                     }
@@ -681,7 +696,9 @@ struct DecisionDetailView: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: Fmt.toolIcon(d.summary.toolName)).font(.title2).foregroundStyle(d.summary.outcome.color == .secondary ? .secondary : d.summary.outcome.color)
             VStack(alignment: .leading, spacing: 2) {
-                Text(d.summary.toolUseId.hasPrefix("page:") ? "WebFetch page (before summarization)" : Fmt.toolName(d.summary.toolName)).font(.title3.bold())
+                Text(d.summary.toolUseId.hasPrefix("page:") ? "WebFetch page (before summarization)"
+                     : d.summary.toolUseId.hasPrefix("input:") ? "\(Fmt.toolName(d.summary.toolName)) input (before the call)"
+                     : Fmt.toolName(d.summary.toolName)).font(.title3.bold())
                 if let target = Fmt.toolTarget(d.summary.toolName, d.toolInput) {
                     Text(target).font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 }
