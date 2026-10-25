@@ -111,6 +111,9 @@ public struct ControlClient: Sendable {
     public func session(_ id: String) async throws -> SessionInfo { try await request("GET", "sessions/\(id)") }
     public func endSession(_ id: String) async throws -> SessionInfo { try await request("POST", "sessions/\(id)/end") }
     public func timeline(_ id: String) async throws -> Timeline { try await request("GET", "sessions/\(id)/timeline") }
+    public func experimentDraft(sessionId: String, trials: Int = 5) async throws -> ExperimentDraft {
+        try await request("GET", "sessions/\(sessionId)/experiment-draft", query: ["trials": String(trials)])
+    }
     public func decision(_ toolUseId: String) async throws -> DecisionDetail { try await request("GET", "decisions/\(toolUseId.urlPathEscaped)") }
     public func exchange(_ id: Int64) async throws -> ExchangeSummary { try await request("GET", "exchanges/\(id)") }
     public func exchangeRaw(_ id: Int64) async throws -> ExchangeRawPayload { try await request("GET", "exchanges/\(id)/raw") }

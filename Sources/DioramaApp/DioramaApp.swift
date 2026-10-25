@@ -185,6 +185,9 @@ enum Snapshotter {
         // With data (the demo), also the what-if sheet for a session that rewrote something.
         if let s = model.sessions.first(where: { $0.stats.rewrites > 0 && !$0.isHook && $0.kind == .interactive }) {
             sheets.append(("sheet-whatif", AnyView(WhatIfSheet(session: s).environment(model))))
+            if let draft = try? await model.client?.experimentDraft(sessionId: s.id) {
+                sheets.append(("sheet-experiment-from-session", AnyView(NewExperimentSheet(draft: draft, created: { _ in }).environment(model))))
+            }
         }
         for (name, view) in sheets {
             let host = NSHostingView(rootView: view)

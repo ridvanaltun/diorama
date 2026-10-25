@@ -250,7 +250,7 @@ struct Sessions: AsyncParsableCommand {
 }
 
 struct Session: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Inspect a session.", subcommands: [Show.self, Decision.self, Watch.self, End.self, WhatIf.self])
+    static let configuration = CommandConfiguration(abstract: "Inspect a session.", subcommands: [Show.self, Decision.self, Watch.self, End.self, WhatIf.self, ToExperiment.self])
 
     struct Show: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Show a session's timeline.")
@@ -351,6 +351,35 @@ struct Session: AsyncParsableCommand {
             for try await e in c.eventStream(session: id) {
                 print("\(e.createdAt.formatted(date: .omitted, time: .standard)) \(e.sessionId ?? "-") \(e.kind.rawValue): \(e.message)")
             }
+        }
+    }
+
+    struct ToExperiment: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "experiment",
+            abstract: "Draft an experiment from a session: same task and project, an unmodified control, and the session's steering.",
+            discussion: """
+                Prints the definition (JSON) to review or edit; with --create, registers it. Nothing runs until you \
+                run it and approve its cost estimate.
+
+                Examples:
+                  diorama session experiment ses_123 > exp.json      # edit, then: diorama experiment run exp.json
+                  diorama session experiment ses_123 --trials 10 --create
+                """)
+        @OptionGroup var global: GlobalOptions
+        @Argument var id: String
+        @Option(help: "Trials per variant (default 5).") var trials: Int = 5
+        @Flag(help: "Register the experiment instead of printing it.") var create = false
+
+        func run() async throws {
+            let client = try await global.client()
+            let draft = try await client.experimentDraft(sessionId: id, trials: trials)
+            for n in draft.notes { eprint("note: \(n)") }
+            guard create else { return try printJSON(draft.definition) }
+            guard !draft.definition.task.isEmpty else { throw ValidationError("the session's task wasn't recorded; print the draft, add a task, then `diorama experiment run FILE`") }
+            let e = try await client.createExperiment(draft.definition)
+            print("✓ Created experiment “\(e.name)” (\(e.id)): \(e.definition.variants.count) variants × \(e.definition.trialsPerVariant) trials.")
+            print("  Estimate and run it from the app, or: diorama experiment run \(e.id)")
         }
     }
 

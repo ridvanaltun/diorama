@@ -137,6 +137,9 @@ struct ControlAPI: Sendable {
             try store.endSession(id: id)
             return try ok(try store.info(try store.session(id: id)!))
         }
+        if let c = Self.match(method, route, "GET", "sessions/:id/experiment-draft") {
+            return try ok(try daemon.experimentDraft(sessionId: c[0], trialsPerVariant: Int(req.query["trials"] ?? "") ?? 5))
+        }
         if let c = Self.match(method, route, "GET", "sessions/:id/timeline") {
             let id = c[0]
             guard let s = try store.session(id: id) else { throw notFound("session") }

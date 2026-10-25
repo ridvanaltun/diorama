@@ -400,6 +400,15 @@ enum MCPTools {
             return "Session \(info.id) is \(info.status.rawValue)."
         },
         .init(
+            name: "draft_experiment_from_session",
+            description: "Prefill an experiment from a session: its task (the first prompt), project, tools and model, an unmodified control, and the session's profile (pinned to the version it used) or prompt. Returns the definition and notes; nothing is created. Review it with the user, adjust, then call create_experiment.",
+            schema: schema(["session_id": string("Session id (ses_…)."), "trials_per_variant": ["type": "integer", "minimum": 1, "maximum": 200, "description": "Default 5."]], required: ["session_id"]),
+            readOnly: true
+        ) { s, a in
+            let d = try await s.daemon().experimentDraft(sessionId: try arg(a, "session_id"), trials: (a["trials_per_variant"] as? Int) ?? 5)
+            return "Notes:\n" + d.notes.map { "- \($0)" }.joined(separator: "\n") + "\n\nDefinition (pass to create_experiment as `definition`):\n" + (try json(d.definition))
+        },
+        .init(
             name: "create_experiment",
             description: "Define an experiment (nothing runs yet). Definition: {name, task, projectPath, claude: {allowedTools, model?, maxTurns?, maxBudgetUSD?}, variants: [{key, name, profile?, prompt?: {text, tools}}] including one unmodified control, trialsPerVariant, concurrency?, treatment?: frozen|fresh, judge?: {}}.",
             schema: schema(["definition": ["type": "object", "description": "The experiment definition."]], required: ["definition"]), readOnly: false

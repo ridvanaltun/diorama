@@ -21,6 +21,8 @@ public struct SessionRecord: Sendable, Hashable {
     public var claudeSessionIds: [String]
     public var flags: [String]
     public var via: SessionVia = .gateway
+    /// Claude Code's transcript (hook mode only).
+    public var transcriptPath: String?
 }
 
 extension Store {
@@ -70,7 +72,7 @@ extension Store {
             treatmentScope: r.string("treatment_scope"),
             claudeSessionIds: decode([String].self, r.string("claude_session_ids")) ?? [],
             flags: decode([String].self, r.string("flags")) ?? [],
-            via: SessionVia(rawValue: r.string("via") ?? "") ?? .gateway)
+            via: SessionVia(rawValue: r.string("via") ?? "") ?? .gateway, transcriptPath: r.string("transcript_path"))
     }
 
     public func session(id: String) throws -> SessionRecord? {
@@ -91,6 +93,10 @@ extension Store {
     public func endSession(id: String) throws {
         try db.run("UPDATE sessions SET status = 'ended', ended_at = ? WHERE id = ? AND status = 'active'", [.date(Date()), .text(id)])
         if db.changes > 0 { addEvent(sessionId: id, kind: .sessionEnded, message: "Session ended", refId: id) }
+    }
+
+    public func setTranscriptPath(sessionId: String, _ path: String) throws {
+        try db.run("UPDATE sessions SET transcript_path = ? WHERE id = ? AND (transcript_path IS NULL OR transcript_path != ?)", [.text(path), .text(sessionId), .text(path)])
     }
 
     /// Reactivates an ended session (a resumed hook-mode session).

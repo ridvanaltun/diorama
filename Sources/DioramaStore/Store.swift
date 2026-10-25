@@ -76,6 +76,10 @@ public final class Store: @unchecked Sendable {
           id INTEGER PRIMARY KEY AUTOINCREMENT, created_at REAL NOT NULL, kind TEXT NOT NULL, profile_id TEXT, cost_usd REAL NOT NULL);
         CREATE INDEX spend_ledger_day ON spend_ledger(created_at);
         """,
+        // v4: hook-mode sessions remember Claude Code's transcript (their task, for drafting experiments)
+        """
+        ALTER TABLE sessions ADD COLUMN transcript_path TEXT;
+        """,
     ]
 
     public static var schemaVersion: Int { migrations.count }

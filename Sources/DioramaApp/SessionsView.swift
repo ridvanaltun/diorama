@@ -263,8 +263,10 @@ struct TimelineView: View {
 }
 
 struct SessionHeader: View {
+    @Environment(AppModel.self) private var model
     let session: SessionInfo
     @State private var showWhatIf = false
+    @State private var draft: ExperimentDraft?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -281,9 +283,22 @@ struct SessionHeader: View {
                     .controlSize(.small)
                     .disabled(session.stats.toolResults == 0)
                     .help("Re-run this session's tool results through other rules and compare")
+                Button { Task { draft = await model.perform { try await $0.experimentDraft(sessionId: session.id) } } } label: {
+                    Label("Experiment…", systemImage: "flask")
+                }
+                .controlSize(.small)
+                .disabled(session.kind != .interactive)
+                .help("Measure this session's steering: an experiment with the same task and project, plus an unmodified control")
                 CopyableID(id: session.id)
             }
             .sheet(isPresented: $showWhatIf) { WhatIfSheet(session: session) }
+            .sheet(item: $draft) { d in
+                NewExperimentSheet(draft: d) { id in
+                    Task { await model.refreshExperiments() }
+                    model.section = .experiments
+                    model.focusExperimentId = id
+                }
+            }
             HStack(spacing: 12) {
                 Label(Fmt.shortPath(session.cwd), systemImage: "folder").lineLimit(1).truncationMode(.middle)
                 Label(session.profileName.map { "\($0) · v\(session.profileVersionNumber ?? 0)" } ?? "No profile", systemImage: "slider.horizontal.3")

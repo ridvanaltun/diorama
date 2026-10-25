@@ -66,7 +66,7 @@ JSON
 rm -rf "$DEMO/shots"
 DIORAMA_SNAPSHOT_DIR="$DEMO/shots" "$APP/Contents/MacOS/Diorama" > /dev/null 2>&1 &
 APP_PID=$!
-for i in {1..90}; do sleep 1; [[ -f "$DEMO/shots/sheet-playground.png" ]] && break; done
+for i in {1..90}; do sleep 1; [[ -f "$DEMO/shots/sheet-experiment-from-session.png" ]] && break; done
 sleep 1
 for n in sessions experiments profiles settings; do
   W=$(sips -g pixelWidth "$DEMO/shots/$n.png" | awk '/pixelWidth/ {print $2}')

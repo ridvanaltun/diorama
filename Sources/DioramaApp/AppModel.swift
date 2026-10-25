@@ -46,6 +46,8 @@ final class AppModel {
     /// Today's rewrite spending against the caps.
     var spend: SpendSummary?
     var focusSessionId: String?
+    /// Set after creating an experiment elsewhere (e.g. from a session) to select it.
+    var focusExperimentId: String?
     var updateError: String?
 
     private var eventsTask: Task<Void, Never>?

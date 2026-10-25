@@ -514,3 +514,16 @@ public struct StartRunRequest: Codable, Sendable {
     public var confirmationToken: String
     public init(confirmationToken: String) { self.confirmationToken = confirmationToken }
 }
+
+/// An experiment definition prefilled from a session (not yet created), with notes on what was
+/// inferred and what to check before running it.
+public struct ExperimentDraft: Codable, Sendable, Hashable, Identifiable {
+    public var definition: ExperimentDefinition
+    public var notes: [String]
+    public var id: String { definition.projectPath + definition.name }
+
+    public init(definition: ExperimentDefinition, notes: [String]) {
+        self.definition = definition
+        self.notes = notes
+    }
+}

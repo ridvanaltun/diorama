@@ -5,6 +5,9 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+### New
+- **Experiment from a session.** **Experiment…** in a session's header prefills an experiment with the session's task (its first prompt), project, tools and model, an unmodified control, and the session's steering pinned to the exact profile version it used. Review, create, then estimate and run as usual. Also `diorama session experiment` and the MCP tool `draft_experiment_from_session`. Profile references now accept a version id (`pv_…`) to pin one version.
+
 ### Fixed
 - `diorama session show` now lists a hook-mode session's tool results (it showed only model requests, which hook sessions don't have), and includes budget warnings.
 

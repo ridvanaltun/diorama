@@ -52,6 +52,11 @@ struct ExperimentsView: View {
             ToolbarItem { Button { showNew = true } label: { Label("New Experiment", systemImage: "plus") } }
         }
         .sheet(isPresented: $showNew) { NewExperimentSheet { selection = "exp:" + $0 } }
+        .onChange(of: model.focusExperimentId, initial: true) { _, id in
+            guard let id else { return }
+            selection = "exp:" + id
+            model.focusExperimentId = nil
+        }
         .navigationTitle("Experiments")
         .task { if model.snapshotDir != nil, selection == nil, let r = model.experiments.first?.runs.first { selection = "run:" + r.id } }
     }
@@ -147,7 +152,7 @@ struct ExperimentSummaryView: View {
     }
 
     func variantDescription(_ v: ExperimentVariant) -> String {
-        let parts = [v.profile.map { "Profile “\($0)”" }, v.prompt.map { "Prompt: \($0.text)" }, v.lockdown == .none ? nil : "Network lockdown"].compactMap { $0 }
+        let parts = [v.profile.map { $0.hasPrefix("pv_") ? "Profile version pinned (\(v.name))" : "Profile “\($0)”" }, v.prompt.map { "Prompt: \($0.text)" }, v.lockdown == .none ? nil : "Network lockdown"].compactMap { $0 }
         return parts.isEmpty ? "Unmodified — tool results forwarded as-is" : parts.joined(separator: " · ")
     }
 }
@@ -490,13 +495,42 @@ struct NewExperimentSheet: View {
         ExperimentVariant(key: "control", name: "Unmodified"),
         ExperimentVariant(key: "steered", name: "Steered", prompt: SessionPrompt(text: "")),
     ]
+    /// What was inferred when the form was prefilled from a session.
+    let notes: [String]
+
+    init(draft: ExperimentDraft? = nil, created: @escaping (String) -> Void) {
+        self.created = created
+        notes = draft?.notes ?? []
+        guard let d = draft?.definition else { return }
+        _name = State(initialValue: d.name)
+        _task = State(initialValue: d.task)
+        _project = State(initialValue: d.projectPath)
+        _claudeModel = State(initialValue: d.claude.model ?? "")
+        _allowedTools = State(initialValue: d.claude.allowedTools.joined(separator: ","))
+        _maxTurns = State(initialValue: d.claude.maxTurns ?? 15)
+        _budget = State(initialValue: d.claude.maxBudgetUSD ?? 2)
+        _trials = State(initialValue: d.trialsPerVariant)
+        _concurrency = State(initialValue: d.concurrency)
+        _frozen = State(initialValue: d.treatment == .frozen)
+        _isolate = State(initialValue: d.claude.isolateConfiguration)
+        _useJudge = State(initialValue: d.judge != nil)
+        _variants = State(initialValue: d.variants)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("New experiment").font(.title2.bold())
+                Text(notes.isEmpty ? "New experiment" : "New experiment from a session").font(.title2.bold())
                 Text("Runs the same task repeatedly in fresh copies of a project — unmodified and steered — and compares what Claude Code did.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if !notes.isEmpty {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(notes, id: \.self) { Label($0, systemImage: "info.circle").font(.caption).fixedSize(horizontal: false, vertical: true) }
+                    }
+                    .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                    .padding(.top, 6)
+                }
             }
             .padding([.horizontal, .top], 20)
             Form {
@@ -525,6 +559,8 @@ struct NewExperimentSheet: View {
                             Picker("Profile", selection: Binding(get: { v.profile ?? "" }, set: { v.profile = $0.isEmpty ? nil : $0 })) {
                                 Text("No profile").tag("")
                                 ForEach(model.profiles) { Text($0.name).tag($0.name) }
+                                // A version pinned by "Experiment from session" (pv_…).
+                                if let p = v.profile, p.hasPrefix("pv_") { Text("\(v.name) (pinned)").tag(p) }
                             }
                             .labelsHidden().frame(width: 160)
                             TextField("Session prompt", text: Binding(

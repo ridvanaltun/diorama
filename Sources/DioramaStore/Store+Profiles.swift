@@ -115,7 +115,9 @@ extension Store {
     }
 
     /// Resolves a profile by id or (non-archived) name to its current version.
+    /// A profile's current version by id or name, or one specific version by its id (`pv_…`).
     public func resolveProfile(_ idOrName: String) throws -> ProfileVersionInfo? {
+        if idOrName.hasPrefix("pv_") { return try profileVersion(id: idOrName) }
         if let v = try currentProfileVersion(profileId: idOrName) { return v }
         guard let r = try db.query("SELECT id FROM profiles WHERE name = ? AND archived = 0", [.text(idOrName)]).first,
               let id = r.string("id")

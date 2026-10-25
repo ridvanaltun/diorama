@@ -185,6 +185,8 @@ Local models never send content off your Mac and cost nothing, but they follow t
 
 ## Experiments
 
+**From a session:** **Experiment…** in a session's header (or `diorama session experiment <id>`) prefills an experiment from what you just did. The task is the session's first prompt, and the project is its folder. Allowed tools are the tools it used, and the model is the one it ran on. There are two variants: an unmodified control, and the session's steering, with its profile pinned to the exact version the session used (a `pv_…` id) or its session prompt. Notes explain anything inferred or missing, for example when raw capture was off and the task wasn't recorded. You review and edit the form, create the experiment, then estimate and run it as usual. Through MCP the tool is `draft_experiment_from_session`.
+
 ```bash
 diorama experiment init > exp.json
 ```

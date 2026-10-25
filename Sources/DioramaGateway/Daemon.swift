@@ -191,6 +191,74 @@ public final class DioramaDaemon: @unchecked Sendable {
         return SessionLaunch(session: try store.info(record), token: token, baseURL: base, environment: env, claudeArguments: ["--settings", json])
     }
 
+    // MARK: Session → experiment
+
+    /// Prefills an experiment from a session: its task (first prompt), project, tools and model,
+    /// with an unmodified control and the session's steering (pinned to the version it used).
+    func experimentDraft(sessionId: String, trialsPerVariant: Int = 5) throws -> ExperimentDraft {
+        guard let session = try store.session(id: sessionId) else { throw StoreError("no session \(sessionId)") }
+        guard session.kind == .interactive else { throw StoreError("this session is already an experiment trial") }
+        var notes: [String] = []
+        let exchanges = try store.exchanges(sessionId: session.id)
+        let mains = exchanges.filter { $0.method == "POST" && $0.path == "/v1/messages" && ($0.requestClass == "main" || $0.requestClass == nil) }
+
+        // The task: the session's first prompt.
+        var task: String?
+        if session.via == .hook {
+            task = session.transcriptPath.flatMap(Self.firstUserMessage)
+        } else if let first = mains.first, let raw = try store.exchangeRaw(id: first.id)?.request {
+            task = (try? ScannedRequest.scan(Array(raw.utf8)))?.taskText
+        }
+        task = task?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if task?.isEmpty ?? true {
+            notes.append("The session's first prompt wasn't recorded (raw capture off, or an older session). Write the task before creating.")
+        } else {
+            notes.append("The task is the session's first prompt. Experiments run it with `claude -p`, so make sure it works without follow-up questions.")
+        }
+
+        // Tools and model, from what the session actually used.
+        var tools = Set(try store.decisions(sessionId: session.id).compactMap { $0.toolName?.replacingOccurrences(of: " (page)", with: "") })
+        for e in exchanges { for u in e.assistant?.toolUses ?? [] { tools.insert(u.name) } }
+        var allowed = tools.sorted()
+        if allowed.isEmpty {
+            allowed = ["WebFetch", "WebSearch", "Read"]
+            notes.append("No tool calls were recorded; allowed tools default to WebFetch, WebSearch and Read.")
+        }
+        let usesMCP = allowed.contains { $0.hasPrefix("mcp__") }
+        if usesMCP { notes.append("The session used MCP tools, so trials use your Claude Code configuration (not isolated) to have them.") }
+        let models = mains.compactMap(\.model)
+        let model = Dictionary(grouping: models, by: { $0 }).max { $0.value.count < $1.value.count }?.key
+        let turns = session.via == .hook ? (try store.decisions(sessionId: session.id).count) : mains.count
+        let maxTurns = max(10, min(50, turns * 2))
+
+        // Variants: an unmodified control, and the session's steering.
+        var steered = ExperimentVariant(key: "steered", name: "Steered")
+        if let v = session.profileVersion {
+            steered.profile = v.id
+            steered.name = "\(v.profile.name) v\(v.number)"
+            if let current = try store.resolveProfile(v.profileId), current.id != v.id {
+                notes.append("Pinned to v\(v.number) of “\(v.profile.name)”, the version this session used (the current one is v\(current.number)).")
+            }
+        }
+        if let p = session.prompt {
+            steered.prompt = p
+            if session.profileVersion == nil { steered.name = "Session prompt" }
+        }
+        if steered.isControl {
+            notes.append("This session had no profile or prompt. Add the steering to compare in the steered variant.")
+            steered.prompt = SessionPrompt(text: "")
+        }
+        if session.lockdown != .none { steered.lockdown = session.lockdown }
+
+        let definition = ExperimentDefinition(
+            name: "\(session.name) — experiment", task: task ?? "", projectPath: session.cwd,
+            claude: ClaudeRunOptions(model: model, allowedTools: allowed, maxTurns: maxTurns, maxBudgetUSD: 2, isolateConfiguration: !usesMCP),
+            variants: [ExperimentVariant(key: "control", name: "Unmodified"), steered],
+            trialsPerVariant: max(1, min(trialsPerVariant, 200)), concurrency: 2)
+        notes.append("Trials run in copies of \(session.cwd); the folder itself is never changed. Review the trial count, then estimate the cost before running.")
+        return ExperimentDraft(definition: definition, notes: notes)
+    }
+
     // MARK: Budget
 
     func spendSummary() throws -> SpendSummary {
@@ -402,6 +470,7 @@ public final class DioramaDaemon: @unchecked Sendable {
     func handleHook(_ e: HookEvent) async throws -> HookReply {
         guard !e.claudeSessionId.isEmpty else { throw RunnerError("hook event without a session id") }
         guard let session = try hookSession(e) else { return HookReply() }
+        if let path = e.transcriptPath, session.transcriptPath != path { try? store.setTranscriptPath(sessionId: session.id, path) }
         switch e.event {
         case "SessionEnd":
             try store.endSession(id: session.id)
