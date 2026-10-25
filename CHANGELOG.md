@@ -6,11 +6,13 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 ## Unreleased
 
 ### New
+- **AI control (MCP).** `diorama mcp install --claude-code` / `--claude-desktop`, or **Settings → AI control (MCP)** in the app, lets Claude list sessions, read audit records, write profiles, connect projects for hook mode, and run experiments. Starting a run needs the cost estimate's confirmation token. `--read-only` exposes inspection tools only.
 - **Claude desktop support (hook mode).** `diorama hook install` (or **New Session → Claude desktop & IDEs** in the app) connects a project through Claude Code hooks. Sessions in the Claude desktop app's Code tab, and in IDEs, then have their tool results rewritten and recorded with the same profiles and prompts. They appear with a "hook mode" badge. Hook mode doesn't capture model traffic or do pre-extraction; `diorama run` remains the full mode and runs experiments.
 - **New icon.** The app icon and the menu bar icon are now the same open box, seen at a slight angle, with the yellow dot inside. Every edge has the same width, so the menu bar version stays legible at 16 px. In the menu bar, the dot fills while a session is running.
 - **Menu bar icon.** Diorama lives in the menu bar: running sessions, New Session, Open Diorama, Quit. Closing the window keeps the app running there (no Dock icon) instead of quitting. You can turn this off in Settings → App.
 
 ### Fixed
+- Profiles whose names contain spaces couldn't be looked up by name through the control API (`diorama profiles show "Docs steer"`): the path was percent-encoded twice.
 - Two daemons started at the same moment, for example by the app and the CLI, could race the database setup. The daemon now takes its single-instance lock before it opens the database, and the app shares one connection attempt across its windows.
 
 ### Improved

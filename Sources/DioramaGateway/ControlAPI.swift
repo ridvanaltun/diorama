@@ -59,7 +59,8 @@ struct ControlAPI: Sendable {
         guard segs.count == route.count else { return nil }
         var caps: [String] = []
         for (a, b) in zip(segs, route) {
-            if a.hasPrefix(":") { caps.append(b) } else if a != b { return nil }
+            // Clients percent-encode captures (profile names can contain spaces).
+            if a.hasPrefix(":") { caps.append(b.removingPercentEncoding ?? b) } else if a != b { return nil }
         }
         return caps
     }

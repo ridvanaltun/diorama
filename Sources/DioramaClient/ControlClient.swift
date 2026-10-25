@@ -53,7 +53,10 @@ public struct ControlClient: Sendable {
     // MARK: Transport
 
     func request<T: Decodable>(_ method: String, _ path: String, query: [String: String] = [:], body: (some Encodable)? = Optional<String>.none, as: T.Type = T.self) async throws -> T {
-        var comps = URLComponents(url: info.controlBaseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
+        // `path` segments are already percent-encoded (urlPathEscaped); appendingPathComponent would encode them twice.
+        var comps = URLComponents(url: info.controlBaseURL, resolvingAgainstBaseURL: false)!
+        comps.percentEncodedPath = comps.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/")).isEmpty
+            ? "/" + path : comps.percentEncodedPath + (comps.percentEncodedPath.hasSuffix("/") ? "" : "/") + path
         if !query.isEmpty { comps.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) } }
         var req = URLRequest(url: comps.url!)
         req.httpMethod = method

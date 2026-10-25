@@ -57,6 +57,29 @@ diorama hook uninstall
 - **No double rewrites.** Sessions started with `diorama run` set `DIORAMA_SESSION`, and an installed hook ignores them, because the gateway already handles them.
 - `diorama hook install --user` installs into `~/.claude/settings.json` instead, so that every Claude Code session on your account reports to Diorama.
 
+## AI control (MCP)
+
+Diorama includes a Model Context Protocol server, so Claude (or another MCP client) can inspect and steer it for you: "which tool results were rewritten in my last session?", "make a profile that marks v1 of the API as deprecated and connect ~/code/app", "run that experiment with 10 trials".
+
+```bash
+diorama mcp install --claude-code        # Claude Code, for your user
+diorama mcp install --claude-desktop     # the Claude desktop app (restart it afterwards)
+diorama mcp install --claude-code --read-only   # inspection tools only
+diorama mcp uninstall --claude-code --claude-desktop
+```
+
+The same options are under **Settings → AI control (MCP)** in the app. The server is `diorama mcp serve`, speaking JSON-RPC over stdio, and any MCP client can launch it.
+
+| Tools | What they do |
+|---|---|
+| `diorama_status`, `list_sessions`, `get_session`, `get_decision` | Daemon health; sessions; one session's decisions; one result's full audit record (original, rewrite, rules, attempts, what Claude did next) |
+| `list_profiles`, `get_profile`, `list_rule_templates`, `create_profile`, `update_profile` | Read and write profiles. Every save is a new version. |
+| `get_hook_status`, `install_hook`, `uninstall_hook` | Connect a project folder for hook mode (Claude desktop, IDEs) |
+| `end_session` | Mark a session ended |
+| `list_experiments`, `create_experiment`, `estimate_experiment_run`, `start_experiment_run`, `cancel_experiment_run`, `get_run_report` | The experiment workflow |
+
+**Spending is gated.** `start_experiment_run` needs the confirmation token that `estimate_experiment_run` returns. The server tells the assistant to show you the estimate and wait for your approval. Your MCP client also asks before any tool call you haven't allowed. The server never sets the API key, changes settings, deletes profiles or stops the daemon. `--read-only` removes every tool that changes something.
+
 ## Writing rules
 
 A profile is JSON (`diorama profiles export <name>` shows one). Example:

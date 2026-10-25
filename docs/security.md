@@ -25,6 +25,10 @@ A rewrite request contains the matching tool result, the tool's name and input, 
 
 `diorama hook install` writes a command into a project's `.claude/settings.local.json`, or into `~/.claude/settings.json` with `--user`. Claude Code runs it after every tool call, with that tool call's input and output on stdin. The command is the bundled `diorama` CLI; it sends the event to the daemon over the authenticated control API and prints a replacement only when a rule rewrote the result. On any error it prints nothing, so the original result stands. Hook sessions are keyed by Claude Code's session id under a key that can never match a gateway URL token. Remove the hook with `diorama hook uninstall`.
 
+## AI control (MCP)
+
+`diorama mcp serve` runs as your user and reaches the daemon through the authenticated control API, like the CLI. It exposes no tool to set or read the API key, change settings, delete profiles or stop the daemon. Experiment runs, the only tools that spend money, need a confirmation token from the cost estimate. Tool output can include captured tool results (web pages, file contents), which the assistant then reads. Use `--read-only` to allow inspection only, and keep your MCP client's per-tool approval on.
+
 ## Captured data is sensitive
 
 Raw capture, on by default, stores full request and response bodies. These include your prompts, your code, files Claude read, and Claude Code's system prompt. They are kept for `retentionDays` (14 by default) and then deleted. Decision records (originals and rewrites) are kept until you delete the data directory. To stop raw capture, run `diorama settings set captureRawBodies false`.

@@ -108,7 +108,7 @@ public enum HookInstaller {
         return out
     }
 
-    static func read(_ url: URL) throws -> [String: Any] {
+    public static func read(_ url: URL) throws -> [String: Any] {
         guard let data = FileManager.default.contents(atPath: url.path), !data.isEmpty else { return [:] }
         guard let obj = try? JSONSerialization.jsonObject(with: data), let dict = obj as? [String: Any] else {
             throw Failure("\(url.path) is not a JSON object; fix or move it, then try again (it was left unchanged)")
@@ -116,7 +116,7 @@ public enum HookInstaller {
         return dict
     }
 
-    static func write(_ root: [String: Any], to url: URL) throws {
+    public static func write(_ root: [String: Any], to url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let data = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         try (data + Data("\n".utf8)).write(to: url, options: .atomic)

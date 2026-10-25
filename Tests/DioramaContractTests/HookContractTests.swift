@@ -81,3 +81,30 @@ struct HookContractTests {
         #expect(main.last?.toolResults.map(\.handling) == [.decidedRewritten], "the gateway must see Claude Code's original result")
     }
 }
+
+/// The real Claude Code loading `diorama mcp serve` and calling one of its tools.
+@Suite(.serialized, .enabled(if: claudePath != nil && dioramaCLI != nil, "requires the claude CLI and a built diorama CLI"))
+struct MCPContractTests {
+    @Test func claudeCodeCallsDioramaTools() async throws {
+        let h = try await ClaudeHarness.start(steps: [])
+        defer { Task { await h.stop() } }
+        _ = try await h.client.createProfile(Profile(name: "Docs steer via MCP", rules: [Rule(name: "r", match: RuleMatch(tools: ["WebFetch"]), instructions: "x")]))
+        let model = ScriptedModel(steps: [.init("mcp__diorama__list_profiles", [:])])
+        h.mock.setHandler { model.respond($0) }
+        let project = try h.makeProject(files: [:])
+        let config: [String: Any] = ["mcpServers": ["diorama": [
+            "command": dioramaCLI!, "args": ["mcp", "serve", "--read-only"],
+            "env": ["DIORAMA_HOME": h.home.appendingPathComponent("diorama").path],
+        ]]]
+        let configJSON = String(decoding: try JSONSerialization.data(withJSONObject: config), as: UTF8.self)
+        var env = ClaudeHarness.claudeEnvironment(home: h.fakeUserHome)
+        env["ANTHROPIC_BASE_URL"] = h.mock.url.absoluteString
+        let r = try ProcessRunner.run(
+            claudePath!, ["-p", "Which Diorama profiles exist?", "--output-format", "json", "--mcp-config", configJSON, "--strict-mcp-config",
+                          "--allowedTools", "mcp__diorama__list_profiles"],
+            cwd: project.path, environment: env, timeout: 120)
+        #expect(r.exitCode == 0, "stderr: \(r.stderr)")
+        let text = resultText(r.stdout)
+        #expect(text.contains("“Docs steer via MCP” v1"), "the tool result should reach the model; got: \(text)")
+    }
+}

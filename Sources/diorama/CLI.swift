@@ -12,7 +12,7 @@ struct Diorama: AsyncParsableCommand {
         discussion: "Diorama routes Claude Code sessions you start with `diorama run` through a local gateway that can rewrite tool results according to your rules, records everything, and runs A/B experiments.",
         version: DioramaVersion.current,
         subcommands: [
-            Run.self, Hook.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
+            Run.self, Hook.self, MCP.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
         ])
 }
 
@@ -152,11 +152,12 @@ struct Run: AsyncParsableCommand {
         throw ExitCode(status)
     }
 
-    func findClaude(_ env: [String: String]) -> String? {
-        let home = env["HOME"] ?? NSHomeDirectory()
-        let dirs = (env["PATH"] ?? "").split(separator: ":").map(String.init) + ["\(home)/.local/bin", "\(home)/.claude/local", "/opt/homebrew/bin", "/usr/local/bin"]
-        return dirs.map { ($0 as NSString).appendingPathComponent("claude") }.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
+}
+
+func findClaude(_ env: [String: String]) -> String? {
+    let home = env["HOME"] ?? NSHomeDirectory()
+    let dirs = (env["PATH"] ?? "").split(separator: ":").map(String.init) + ["\(home)/.local/bin", "\(home)/.claude/local", "/opt/homebrew/bin", "/usr/local/bin"]
+    return dirs.map { ($0 as NSString).appendingPathComponent("claude") }.first { FileManager.default.isExecutableFile(atPath: $0) }
 }
 
 /// Runs Claude Code in the foreground and keeps the daemon alive while it runs.
