@@ -5,6 +5,9 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+### New
+- **Spending history.** Settings → Spending charts rewrite-agent spending per day over 30 or 90 days, split into sessions, experiment trials and playground/what-if, with a per-profile breakdown. Also `diorama spend --days N` and MCP `get_spend_history`.
+
 ## 1.4.0 — 2026-10-25
 
 ### New

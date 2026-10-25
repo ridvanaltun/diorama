@@ -1371,3 +1371,30 @@ public struct SessionAnnotations: Codable, Sendable, Hashable {
             .prefix(maxTags).map { $0 }
     }
 }
+
+/// Rewrite-agent spending per local calendar day, by where it went. Unlike the budget, this
+/// includes experiment trials (as their own source), since they cost money too.
+public struct SpendHistory: Codable, Sendable, Hashable {
+    public struct Day: Codable, Sendable, Hashable, Identifiable {
+        /// Start of the local day.
+        public var day: Date
+        public var sessionsUSD: Double = 0
+        public var trialsUSD: Double = 0
+        /// Playground and what-if runs.
+        public var previewsUSD: Double = 0
+        /// Rewrite-agent calls (including classifier calls) in sessions and trials.
+        public var calls: Int = 0
+        /// Per profile name (sessions, trials and previews).
+        public var byProfile: [String: Double] = [:]
+        public var totalUSD: Double { sessionsUSD + trialsUSD + previewsUSD }
+        public var id: Date { day }
+
+        public init(day: Date) { self.day = day }
+    }
+
+    /// Oldest first, one entry per day in the window (zero days included).
+    public var days: [Day]
+    public var totalUSD: Double { days.reduce(0) { $0 + $1.totalUSD } }
+
+    public init(days: [Day]) { self.days = days }
+}

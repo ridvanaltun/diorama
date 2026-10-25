@@ -167,6 +167,10 @@ struct ControlAPI: Sendable {
             let rows = try store.exportDecisions(filter)
             return try ok(DecisionExport(format: format, rows: rows.count, content: DataExport.render(rows, format: format, includeTexts: filter.includeTexts)))
         }
+        if Self.match(method, route, "GET", "spend/history") != nil {
+            let days = min(max(Int(req.query["days"] ?? "") ?? 30, 1), 366)
+            return try ok(try store.spendHistory(days: days))
+        }
         if Self.match(method, route, "GET", "reviews") != nil {
             return try ok(await daemon.engine.reviews.pending)
         }

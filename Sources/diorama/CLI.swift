@@ -944,10 +944,18 @@ struct Spend: AsyncParsableCommand {
             and the session is flagged. Experiment runs don't count: they run against their own approved estimate.
             """)
     @OptionGroup var global: GlobalOptions
+    @Option(help: "Also show spending per day for the last N days (includes experiment trials).") var days: Int?
     @Flag var json = false
 
     func run() async throws {
-        let s = try await global.client().spend()
+        let client = try await global.client()
+        if let days {
+            let h = try await client.spendHistory(days: days)
+            if json { return try printJSON(h) }
+            print(SpendHistoryText.render(h))
+            return
+        }
+        let s = try await client.spend()
         if json { return try printJSON(s) }
         let cap = s.dailyBudgetUSD.map { " of \(money($0)) daily budget" + (s.isOverBudget ? " — used up, rewrites paused" : "") } ?? " (no daily cap)"
         print("Today: \(money(s.todayUSD))\(cap)")

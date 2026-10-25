@@ -402,6 +402,10 @@ To see what Claude does with the real results, pause steering instead of ending 
 
 While paused, tool results reach Claude unchanged with the reason "not rewritten: steering is paused …", and input rules don't change tool calls. Redaction rules keep running, so secrets stay hidden. Results already decided keep their decision (D9), so pausing affects new tool results only. Experiment runs aren't affected. Paused sessions show a **paused** badge; the pause survives daemon restarts.
 
+### Spending history
+
+**Settings → Spending** shows rewrite-agent spending per day for the last 30 or 90 days, as bars split into sessions, experiment trials, and playground and what-if runs. Hover over a day to see its total and number of calls. Below the chart, the profiles that spent the most are listed. Unlike the budget, the history includes experiment trials, since they're billed too. `diorama spend --days 30` prints the same as a table, and the MCP tool `get_spend_history` returns it.
+
 ## Notifications
 
 While Diorama is in the background, it notifies you when:

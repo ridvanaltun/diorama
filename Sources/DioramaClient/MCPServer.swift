@@ -273,6 +273,15 @@ enum MCPTools {
             return "Profile \(d.current.profileId), version \(d.current.number) (\(d.current.id)):\n" + (try json(d.current.profile))
         },
         .init(
+            name: "get_spend_history",
+            description: "Rewrite-agent spending per day (sessions, experiment trials, playground/what-if previews, calls) and per profile, for the last N days.",
+            schema: schema(["days": ["type": "integer", "minimum": 1, "maximum": 366, "description": "Days to cover, today included (default 30)."]]),
+            readOnly: true
+        ) { s, a in
+            let days = (a["days"] as? Int) ?? (a["days"] as? Double).map { Int($0) } ?? 30
+            return SpendHistoryText.render(try await s.daemon().spendHistory(days: days))
+        },
+        .init(
             name: "compare_profile_versions",
             description: "What changed between two versions of a profile: name, description, defaults, and per rule whether it was added, removed, changed (which fields, old → new) or moved.",
             schema: schema(["profile": string("Profile name or id."), "from": ["type": "integer", "description": "Older version number (default: the one before 'to')."],

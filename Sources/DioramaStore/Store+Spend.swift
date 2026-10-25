@@ -44,4 +44,37 @@ extension Store {
         }
         return out
     }
+
+    /// Spending per local day for the last `days` days (today included).
+    public func spendHistory(days: Int, calendar: Calendar = .current, now: Date = Date()) throws -> SpendHistory {
+        let today = calendar.startOfDay(for: now)
+        guard let start = calendar.date(byAdding: .day, value: -(max(days, 1) - 1), to: today) else { return SpendHistory(days: []) }
+        var byDay: [Date: SpendHistory.Day] = [:]
+        var d = start
+        while d <= today {
+            byDay[d] = SpendHistory.Day(day: d)
+            d = calendar.date(byAdding: .day, value: 1, to: d) ?? today.addingTimeInterval(86_400)
+        }
+        let names = Dictionary(try profiles(includeArchived: true).map { ($0.id, $0.name) }, uniquingKeysWith: { x, _ in x })
+        let attempts = try db.query("""
+            SELECT a.created_at AS t, COALESCE(a.cost_usd, 0) AS c, s.trial_id AS trial, s.profile_id AS p
+            FROM rewrite_attempts a JOIN sessions s ON s.id = a.session_id WHERE a.created_at >= ?
+            """, [.date(start)])
+        for r in attempts {
+            guard let t = r.date("t"), var day = byDay[calendar.startOfDay(for: t)] else { continue }
+            let c = r.double("c") ?? 0
+            if r.string("trial") != nil { day.trialsUSD += c } else { day.sessionsUSD += c }
+            day.calls += 1
+            if let p = r.string("p"), c > 0 { day.byProfile[names[p] ?? p, default: 0] += c }
+            byDay[day.day] = day
+        }
+        for r in try db.query("SELECT created_at AS t, cost_usd AS c, profile_id AS p FROM spend_ledger WHERE created_at >= ?", [.date(start)]) {
+            guard let t = r.date("t"), var day = byDay[calendar.startOfDay(for: t)] else { continue }
+            let c = r.double("c") ?? 0
+            day.previewsUSD += c
+            if let p = r.string("p"), c > 0 { day.byProfile[names[p] ?? p, default: 0] += c }
+            byDay[day.day] = day
+        }
+        return SpendHistory(days: byDay.values.sorted { $0.day < $1.day })
+    }
 }

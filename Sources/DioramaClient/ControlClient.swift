@@ -96,6 +96,8 @@ public struct ControlClient: Sendable {
     public func playground(_ r: PlaygroundRequest) async throws -> PlaygroundResult { try await request("POST", "playground", body: r) }
     public func whatIf(_ r: WhatIfRequest) async throws -> WhatIfResult { try await request("POST", "whatif", body: r) }
     public func spend() async throws -> SpendSummary { try await request("GET", "spend") }
+    /// Spending per day for the last `days` days (1–366).
+    public func spendHistory(days: Int = 30) async throws -> SpendHistory { try await request("GET", "spend/history", query: ["days": String(days)]) }
     public func search(_ query: String, rewrittenOnly: Bool = false, sessionId: String? = nil, limit: Int = 50) async throws -> [SearchHit] {
         var q = ["q": query, "limit": String(limit)]
         if rewrittenOnly { q["rewritten"] = "1" }

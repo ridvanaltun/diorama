@@ -57,6 +57,7 @@ struct SettingsView: View {
                 }
                 if let m = maintenance { Text(m).font(.caption).foregroundStyle(.secondary) }
             }
+            SpendHistorySection()
             Section("Steering") {
                 Toggle("Pause steering everywhere", isOn: Binding(
                     get: { model.settings.steeringPaused },
