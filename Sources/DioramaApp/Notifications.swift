@@ -9,18 +9,20 @@ struct NotificationPolicy {
         var runs = true
         var budget = true
         var failures = true
+        var reviews = true
 
-        static let runsKey = "notifyRuns", budgetKey = "notifyBudget", failuresKey = "notifyFailures"
+        static let runsKey = "notifyRuns", budgetKey = "notifyBudget", failuresKey = "notifyFailures", reviewsKey = "notifyReviews"
 
         static func load(_ d: UserDefaults = .standard) -> Prefs {
             Prefs(runs: d.object(forKey: runsKey) as? Bool ?? true, budget: d.object(forKey: budgetKey) as? Bool ?? true,
-                  failures: d.object(forKey: failuresKey) as? Bool ?? true)
+                  failures: d.object(forKey: failuresKey) as? Bool ?? true, reviews: d.object(forKey: reviewsKey) as? Bool ?? true)
         }
     }
 
     enum Target: Equatable {
         case run(String)
         case session(String)
+        case reviews
     }
 
     struct Note: Equatable {
@@ -51,6 +53,10 @@ struct NotificationPolicy {
             return Note(id: "budget-\(ev.id)", title: "Rewrite budget used up",
                         body: "Matching tool results pass through unchanged until tomorrow, or until you raise the budget in Settings.",
                         target: ev.sessionId.map { .session($0) })
+        case .reviewRequested where prefs.reviews:
+            return Note(id: "review-\(ev.id)", title: "Rewrite waiting for review" + (sessionName.map { " in “\($0)”" } ?? ""),
+                        body: ev.message.replacingOccurrences(of: " rewrite waiting for review: ", with: ": ") + " Claude waits until you answer.",
+                        target: .reviews)
         case .rewriteFailed where prefs.failures:
             guard let sid = ev.sessionId else { return nil }
             if let last = lastFailure[sid], now.timeIntervalSince(last) < Self.failureWindow { return nil }
@@ -102,6 +108,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             switch note.target {
             case .run(let id): content.userInfo = ["run": id]
             case .session(let id): content.userInfo = ["session": id]
+            case .reviews: content.userInfo = ["reviews": true]
             case nil: break
             }
             try? await center.add(UNNotificationRequest(identifier: note.id, content: content, trigger: nil))
@@ -122,6 +129,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let info = response.notification.request.content.userInfo
         let target: NotificationPolicy.Target? = (info["run"] as? String).map { .run($0) } ?? (info["session"] as? String).map { .session($0) }
+            ?? (info["reviews"] != nil ? .reviews : nil)
         await MainActor.run {
             if let target { self.open?(target) }
         }

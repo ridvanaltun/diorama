@@ -185,6 +185,17 @@ diorama session whatif ses_123 --version pv_abc --rewrite      # a specific vers
 diorama session whatif ses_123 --file draft.json --rewrite --max 10
 ```
 
+### Review mode: approve rewrites before Claude sees them
+
+Turn on **Review rewrites before Claude sees them** in a profile's defaults (`"defaults": {"review": true, "reviewTimeoutSeconds": 60}`) to hold every AI rewrite until you answer. Claude waits meanwhile. Diorama opens **Review rewrites** with a word diff of what Claude would see, and shows a banner, a menu bar row and, while it's in the background, a notification.
+
+- **Approve** sends the rewrite. **Reject** sends the original, with any redaction still applied.
+- If you don't answer within the wait time (15–120 s, default 60), Claude gets the original. In hook mode a review also ends 150 s after the tool result arrived, before Claude Code's 180 s hook limit.
+- `diorama review` lists what's waiting, and `diorama review approve|reject <id>` answers. The MCP tool `list_pending_reviews` can only list: AI clients can't approve rewrites.
+- Not used for experiment trials (nobody is there to answer) or input rules (Claude Code already asks you about those).
+
+The decision records the outcome: "not rewritten: rewrite rejected in review" or "no review in time". The rewrite agent's attempt and cost are kept either way.
+
 ### Rule usage: which rules fire, and what they cost
 
 The **Usage** section of the profile editor lists each rule with how many tool results it matched, how many of those were rewritten, left unchanged or failed, classifier answers, the sessions involved and the rewrite-agent cost. Choose 7, 30 or 90 days, or all time. Each rule's row in the rule list also shows its count, and rules that matched nothing are marked **never matched**, so you can fix or remove them. Counts cover every version of the profile, and rules removed in later versions are listed as **older version**. A tool result that several rules matched counts, with its cost, for each of them. Experiment trials are left out.

@@ -141,7 +141,9 @@ struct RootView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .safeAreaInset(edge: .top, spacing: 0) { ReviewBanner() }
         }
+        .sheet(isPresented: $model.showReviews) { ReviewSheet() }
         .onAppear {
             Notifier.shared.start()
             Notifier.shared.open = { [model] target in
@@ -154,6 +156,8 @@ struct RootView: View {
                 case .session(let id):
                     model.section = .sessions
                     model.focusSessionId = id
+                case .reviews:
+                    model.showReviews = true
                 }
             }
         }
@@ -195,6 +199,11 @@ enum Snapshotter {
             ("sheet-new-experiment", AnyView(NewExperimentSheet(created: { _ in }).environment(model))),
             ("menu-bar-panel", AnyView(MenuBarPanel().environment(model))),
             ("mcp-connect", AnyView(MCPConnectPanel().environment(model))),
+            ("sheet-review", AnyView(ReviewSheet(sample: [PendingReview(
+                id: "toolu_demo", sessionId: "ses_demo", sessionName: "docs heading demo", toolName: "WebFetch", toolInput: #"{"url":"https://example.com"}"#,
+                stage: .result, originalText: "Example Domain\n\nThis domain is for use in documentation examples.",
+                proposedText: "Morph Test Domain\n\nThis domain is for use in documentation examples.", explanation: "Renamed the heading as instructed.",
+                rules: ["Rename domain heading"], createdAt: Date(), expiresAt: Date().addingTimeInterval(52))]).environment(model))),
             ("sheet-playground", AnyView(PlaygroundSheet(draft: Profile(name: "Docs steer", rules: [Rule(name: "Rename the domain", match: RuleMatch(tools: ["WebFetch"]), instructions: "Rename it")])).environment(model))),
         ]
         // With data (the demo), also the what-if sheet for a session that rewrote something.

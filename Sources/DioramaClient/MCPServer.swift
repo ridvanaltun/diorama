@@ -270,6 +270,17 @@ enum MCPTools {
             return "Profile \(d.current.profileId), version \(d.current.number) (\(d.current.id)):\n" + (try json(d.current.profile))
         },
         .init(
+            name: "list_pending_reviews",
+            description: "Rewrites waiting for the user's approval (profiles with review mode on). Read-only: only the user approves or rejects rewrites, in the Diorama app or with `diorama review`.",
+            schema: schema(), readOnly: true
+        ) { s, _ in
+            let pending = try await s.daemon().pendingReviews()
+            guard !pending.isEmpty else { return "Nothing is waiting for review." }
+            return pending.map { r in
+                "- \(r.id): \(r.toolName) in “\(r.sessionName)”, \(max(0, Int(r.expiresAt.timeIntervalSinceNow))) s left — \(r.explanation)"
+            }.joined(separator: "\n") + "\nAsk the user to approve or reject these in Diorama."
+        },
+        .init(
             name: "get_rule_stats",
             description: "How a profile's rules have been used: per rule, how often it matched, how many of those results were rewritten or left unchanged, classifier answers and cost. Rules that never matched are listed too. Experiment trials are left out unless include_trials is true.",
             schema: schema(["profile": string("Profile name or id."), "days": ["type": "integer", "description": "Days to look back (default 30, 0 = all time)."],

@@ -185,6 +185,7 @@ struct NotificationSettingsSection: View {
     @AppStorage(NotificationPolicy.Prefs.runsKey) private var runs = true
     @AppStorage(NotificationPolicy.Prefs.budgetKey) private var budget = true
     @AppStorage(NotificationPolicy.Prefs.failuresKey) private var failures = true
+    @AppStorage(NotificationPolicy.Prefs.reviewsKey) private var reviews = true
     @State private var denied = false
 
     var body: some View {
@@ -192,6 +193,7 @@ struct NotificationSettingsSection: View {
             Toggle("An experiment run finishes", isOn: $runs)
             Toggle("The rewrite budget is used up", isOn: $budget)
             Toggle("Rewrites start failing in a session", isOn: $failures)
+            Toggle("A rewrite is waiting for review", isOn: $reviews)
             HStack {
                 Button("Send a test notification") {
                     Notifier.shared.post(.init(id: "test-\(Date().timeIntervalSince1970)", title: "Diorama notifications work",

@@ -1,3 +1,4 @@
+import AppKit
 import DioramaClient
 import DioramaCore
 import Foundation
@@ -45,6 +46,9 @@ final class AppModel {
     var showMCPConnect = false
     /// Today's rewrite spending against the caps.
     var spend: SpendSummary?
+    /// Rewrites held for approval (review mode).
+    var pendingReviews: [PendingReview] = []
+    var showReviews = false
     var focusSessionId: String?
     /// Set after creating an experiment elsewhere (e.g. from a session) to select it.
     var focusExperimentId: String?
@@ -136,6 +140,11 @@ final class AppModel {
         case .sessionCreated, .sessionEnded: await refreshSessions()
         case .profileUpdated: await refreshProfiles()
         case .runStarted, .runFinished, .trialFinished: await refreshExperiments()
+        case .reviewRequested, .reviewResolved:
+            await refreshReviews()
+            // Time-critical: open the review sheet right away if Diorama is in front.
+            if ev.kind == .reviewRequested, NSApp.isActive, snapshotDir == nil { showReviews = true }
+            if pendingReviews.isEmpty { showReviews = false }
         case .warning where ev.message.hasPrefix("Steering"):
             // Paused or resumed from the CLI, MCP or another window.
             await refreshSessions()
@@ -148,6 +157,7 @@ final class AppModel {
     }
 
     func refreshAll() async {
+        await refreshReviews()
         await refreshSessions()
         await refreshProfiles()
         await refreshExperiments()
@@ -158,6 +168,19 @@ final class AppModel {
         guard let client else { return }
         do { sessions = try await client.sessions(limit: 300) } catch { report(error) }
         spend = try? await client.spend()
+    }
+
+    func refreshReviews() async {
+        guard let client else { return }
+        pendingReviews = (try? await client.pendingReviews()) ?? []
+    }
+
+    func resolveReview(_ r: PendingReview, approve: Bool) async {
+        // A 409 means it was answered elsewhere or timed out; either way it's gone.
+        try? await client?.resolveReview(r.id, approve: approve)
+        pendingReviews.removeAll { $0.id == r.id }
+        await refreshReviews()
+        if pendingReviews.isEmpty { showReviews = false }
     }
 
     func refreshProfiles() async {

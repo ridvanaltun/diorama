@@ -20,7 +20,8 @@ public struct ControlClient: Sendable {
     public init(info: DaemonInfo) {
         self.info = info
         let cfg = URLSessionConfiguration.ephemeral
-        cfg.timeoutIntervalForRequest = 120
+        // Hook calls can wait for a rewrite and then a review (review mode).
+        cfg.timeoutIntervalForRequest = 300
         cfg.httpCookieStorage = nil
         cfg.urlCache = nil
         session = URLSession(configuration: cfg)
@@ -123,6 +124,11 @@ public struct ControlClient: Sendable {
     /// Pauses or resumes steering for one session.
     public func setPaused(_ id: String, _ paused: Bool) async throws -> SessionInfo { try await request("POST", "sessions/\(id)/\(paused ? "pause" : "resume")") }
     /// Pauses or resumes steering everywhere.
+    /// Rewrites waiting for approval (review mode).
+    public func pendingReviews() async throws -> [PendingReview] { try await request("GET", "reviews") }
+    public func resolveReview(_ id: String, approve: Bool) async throws {
+        let _: [String: String] = try await request("POST", "reviews/\(id.urlPathEscaped)/\(approve ? "approve" : "reject")")
+    }
     public func setSteeringPaused(_ paused: Bool) async throws -> DioramaSettings { try await request("POST", "steering/\(paused ? "pause" : "resume")") }
     public func timeline(_ id: String) async throws -> Timeline { try await request("GET", "sessions/\(id)/timeline") }
     /// A session's audit trail as a document: "md" or "html".

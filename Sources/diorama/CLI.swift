@@ -12,7 +12,7 @@ struct Diorama: AsyncParsableCommand {
         discussion: "Diorama routes Claude Code sessions you start with `diorama run` through a local gateway that can rewrite tool results according to your rules, records everything, and runs A/B experiments.",
         version: DioramaVersion.current,
         subcommands: [
-            Run.self, Hook.self, MCP.self, Spend.self, Search.self, PauseAll.self, ResumeAll.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
+            Run.self, Hook.self, MCP.self, Spend.self, Search.self, PauseAll.self, ResumeAll.self, Reviews.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
         ])
 }
 
@@ -911,6 +911,44 @@ struct Search: AsyncParsableCommand {
             print("\(dateText(h.createdAt))  \(h.sessionName) (\(h.sessionId)) — \(what)  [\(h.ref)]")
             let snippet = h.snippet.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "⟦", with: "\u{1B}[1m").replacingOccurrences(of: "⟧", with: "\u{1B}[0m")
             print("    \(snippet)\n")
+        }
+    }
+}
+
+struct Reviews: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "review",
+        abstract: "List rewrites waiting for your approval (review mode), or approve or reject one.",
+        discussion: """
+            Profiles with review mode on hold each AI rewrite until you answer; Claude waits meanwhile. \
+            Unanswered rewrites time out and Claude gets the original.
+              diorama review                 # list what's waiting, with the proposed change
+              diorama review approve toolu_01abc
+              diorama review reject toolu_01abc
+            """)
+    @OptionGroup var global: GlobalOptions
+    @Argument(help: "approve or reject.") var action: String?
+    @Argument(help: "The review's id (from the list).") var id: String?
+    @Flag var json = false
+
+    func run() async throws {
+        let client = try await global.client()
+        switch action {
+        case nil:
+            let pending = try await client.pendingReviews()
+            if json { return try printJSON(pending) }
+            guard !pending.isEmpty else { return print("Nothing is waiting for review.") }
+            for r in pending {
+                print("\(r.id)  \(r.toolName) in “\(r.sessionName)”, \(max(0, Int(r.expiresAt.timeIntervalSinceNow))) s left")
+                print("  \(r.explanation)")
+                print("  " + TextDiff.inline(TextDiff.diff(r.originalText, r.proposedText)).prefix(2000).replacingOccurrences(of: "\n", with: "\n  "))
+            }
+        case "approve", "reject":
+            guard let id else { throw ValidationError("give the review's id") }
+            try await client.resolveReview(id, approve: action == "approve")
+            print(action == "approve" ? "✓ Approved: Claude gets the rewrite." : "✗ Rejected: Claude gets the original.")
+        default:
+            throw ValidationError("unknown action '\(action!)': use approve or reject")
         }
     }
 }

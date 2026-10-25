@@ -168,6 +168,7 @@ public final class DioramaDaemon: @unchecked Sendable {
     private func performStop() async {
         for id in runner.activeRunIds { try? runner.cancel(runId: id) }
         for t in background { t.cancel() }
+        await engine.reviews.expireAll()
         hub.finishAll()
         await server.shutdown()
         upstream.invalidate()

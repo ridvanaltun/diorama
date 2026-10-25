@@ -146,6 +146,16 @@ struct ControlAPI: Sendable {
             try store.setPaused(sessionId: id, route.last == "pause")
             return try ok(try store.info(try store.session(id: id)!))
         }
+        if Self.match(method, route, "GET", "reviews") != nil {
+            return try ok(await daemon.engine.reviews.pending)
+        }
+        if let c = Self.match(method, route, "POST", "reviews/:id/approve") ?? Self.match(method, route, "POST", "reviews/:id/reject") {
+            let verdict: ReviewVerdict = route.last == "approve" ? .approved : .rejected
+            guard await daemon.engine.reviews.resolve(c[0], verdict) else {
+                throw Failure(status: 409, message: "nothing is waiting for review under \(c[0]) (already answered or timed out)")
+            }
+            return try ok(["id": c[0], "verdict": verdict.rawValue])
+        }
         if Self.match(method, route, "POST", "steering/pause") != nil || Self.match(method, route, "POST", "steering/resume") != nil {
             var s = store.settings()
             let pause = route.last == "pause"

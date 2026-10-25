@@ -6,6 +6,7 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 ## Unreleased
 
 ### New
+- **Review mode.** A profile can hold each AI rewrite for your approval: Claude waits while Diorama shows the word diff (sheet, banner, menu bar, notification); approve to send it, reject or let the wait (15–120 s) run out to send the original. Also `diorama review`; MCP can list pending reviews but not answer them. Trials and input rules are exempt.
 - **Rule usage.** The profile editor shows, per rule, how many tool results it matched and what came of them (rewritten, unchanged, failed), classifier answers, sessions and cost over 7, 30 or 90 days or all time, and flags rules that never matched. Also `diorama profiles stats` and MCP `get_rule_stats`.
 - **Pause steering.** Stop Diorama changing anything, for one session (**Pause** in its header, `diorama session pause`) or everywhere (menu bar, Settings, `diorama pause`), without restarting Claude. Paused results pass through unchanged; redaction still applies and experiment runs aren't affected. Also MCP `set_steering_paused`.
 - **Content-aware rules.** A rule can carry a classifier: a yes/no question a cheap model answers about the content ("Does this page state a price?"); the rule applies only on "yes", and a "no" or a failed call leaves the result unchanged. Verdicts are recorded as attempts (mode `classify`) and count toward the budget; the playground runs them on Run rewrite. Works with Anthropic models and `ollama:` models.

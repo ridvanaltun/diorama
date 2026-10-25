@@ -19,6 +19,8 @@ public final class DecisionEngine: Sendable {
     let providerFor: @Sendable (_ model: String) -> RewriteProvider
     let inflight = Inflight()
     let treatmentLock = KeyedLock()
+    /// Rewrites held for the user's approval (review mode).
+    public let reviews = ReviewCenter()
     let anomalies = AnomalyMemory()
     let pendingFetches = PendingFetches()
 
@@ -442,6 +444,18 @@ public final class DecisionEngine: Sendable {
                     }
                     if let key = treatmentKey { try? store.storeTreatment(key: key, replacementBlob: blob, attemptId: attemptId) }
                     let explanation = response.output?.explanation ?? "rewritten"
+                    // Review mode: Claude waits while the user approves or rejects the rewrite. Not for
+                    // trials (nobody is there to answer) or tool inputs (Claude Code already asks).
+                    if app.defaults.review, session.trialId == nil, t.stage != .input {
+                        let verdict = await requestReview(t, session: session, original: segments, proposed: newSegments, explanation: explanation,
+                                                          rules: rewriteRules.map(\.name), timeout: app.defaults.reviewTimeoutSeconds,
+                                                          // Claude Code stops a hook after 180 s: answer well before that.
+                                                          deadline: session.via == .hook ? started.addingTimeInterval(Self.hookReviewDeadline) : nil)
+                        if verdict != .approved {
+                            let why = verdict == .rejected ? "rewrite rejected in review" : "no review in time"
+                            return redaction != nil ? recordRedacted(why) : record(.unchanged, "not rewritten: \(why)", refs: app.refs, instructions: instructionTexts)
+                        }
+                    }
                     return record(.rewritten, redaction.map { "\($0.summary); \(explanation)" } ?? explanation, replacement: blob, refs: app.refs,
                                   instructions: instructionTexts, treatmentKey: treatmentKey)
                 case .unchanged:

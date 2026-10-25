@@ -188,14 +188,22 @@ public struct ProfileDefaults: Codable, Sendable, Hashable {
     public var maxOutputTokens: Int
     /// Cap on this profile's rewrite spending per local calendar day (all its versions). Nil = no cap.
     public var dailyBudgetUSD: Double?
+    /// Hold each AI rewrite until the user approves it; rejected or unanswered rewrites forward the original.
+    public var review: Bool
+    /// How long a rewrite waits for a review before the original is forwarded.
+    public var reviewTimeoutSeconds: Double
 
     public static let defaultModel = "claude-haiku-5-5"
+    public static let reviewTimeoutRange: ClosedRange<Double> = 15...120
 
     public init(
         model: String = ProfileDefaults.defaultModel, effort: String? = nil, onFailure: FailurePolicy = .passOriginal,
-        maxInputChars: Int = 200_000, timeoutSeconds: Double = 45, maxOutputTokens: Int = 16_000, dailyBudgetUSD: Double? = nil
+        maxInputChars: Int = 200_000, timeoutSeconds: Double = 45, maxOutputTokens: Int = 16_000, dailyBudgetUSD: Double? = nil,
+        review: Bool = false, reviewTimeoutSeconds: Double = 60
     ) {
         self.dailyBudgetUSD = dailyBudgetUSD
+        self.review = review
+        self.reviewTimeoutSeconds = reviewTimeoutSeconds
         self.model = model
         self.effort = effort
         self.onFailure = onFailure
@@ -214,6 +222,8 @@ public struct ProfileDefaults: Codable, Sendable, Hashable {
         timeoutSeconds = try c.decodeIfPresent(Double.self, forKey: .timeoutSeconds) ?? d.timeoutSeconds
         maxOutputTokens = try c.decodeIfPresent(Int.self, forKey: .maxOutputTokens) ?? d.maxOutputTokens
         dailyBudgetUSD = try c.decodeIfPresent(Double.self, forKey: .dailyBudgetUSD)
+        review = try c.decodeIfPresent(Bool.self, forKey: .review) ?? false
+        reviewTimeoutSeconds = try c.decodeIfPresent(Double.self, forKey: .reviewTimeoutSeconds) ?? d.reviewTimeoutSeconds
     }
 }
 
@@ -994,6 +1004,7 @@ public struct SessionEvent: Codable, Sendable, Hashable, Identifiable {
     public enum Kind: String, Codable, Sendable {
         case sessionCreated, sessionEnded, exchangeStarted, exchangeFinished, decisionMade, rewriteFailed, anomaly
         case trialStarted, trialFinished, runStarted, runFinished, profileUpdated, warning
+        case reviewRequested, reviewResolved
     }
 
     public var id: Int64
@@ -1283,3 +1294,39 @@ public struct ProfileRuleStats: Codable, Sendable, Hashable {
         self.rules = rules
     }
 }
+
+/// An AI rewrite waiting for the user's approval before Claude sees it (review mode).
+public struct PendingReview: Codable, Sendable, Hashable, Identifiable {
+    /// The decision id (`tool_use_id`, or `page:<id>` for a raw page).
+    public var id: String
+    public var sessionId: String
+    public var sessionName: String
+    public var toolName: String
+    public var toolInput: String?
+    public var stage: RuleStage
+    /// What Claude sees if the rewrite is rejected (after any redaction).
+    public var originalText: String
+    public var proposedText: String
+    public var explanation: String
+    public var rules: [String]
+    public var createdAt: Date
+    public var expiresAt: Date
+
+    public init(id: String, sessionId: String, sessionName: String, toolName: String, toolInput: String?, stage: RuleStage,
+                originalText: String, proposedText: String, explanation: String, rules: [String], createdAt: Date, expiresAt: Date) {
+        self.id = id
+        self.sessionId = sessionId
+        self.sessionName = sessionName
+        self.toolName = toolName
+        self.toolInput = toolInput
+        self.stage = stage
+        self.originalText = originalText
+        self.proposedText = proposedText
+        self.explanation = explanation
+        self.rules = rules
+        self.createdAt = createdAt
+        self.expiresAt = expiresAt
+    }
+}
+
+public enum ReviewVerdict: String, Codable, Sendable { case approved, rejected, timedOut }

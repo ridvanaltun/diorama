@@ -61,6 +61,11 @@ struct MenuBarPanel: View {
             }
             Divider()
             VStack(spacing: 0) {
+                if !model.pendingReviews.isEmpty {
+                    MenuRow(action: { open { model.showReviews = true } }) {
+                        Label("\(Fmt.plural(model.pendingReviews.count, "rewrite")) waiting for review…", systemImage: "hand.raised.fill").foregroundStyle(.orange)
+                    }
+                }
                 MenuRow(action: { open { model.section = .sessions; model.wantsNewSession = true } }) {
                     Label("New Session…", systemImage: "plus")
                 }
