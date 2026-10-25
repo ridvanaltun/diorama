@@ -300,6 +300,20 @@ public final class DecisionEngine: Sendable {
             return record(.unchanged, "content too large to rewrite (\(text.count) > \(app.defaults.maxInputChars) characters)", refs: app.refs, instructions: instructionTexts)
         }
 
+        // Budget guard: interactive sessions stop calling the rewrite agent once a daily cap is used up.
+        // Experiment trials are exempt; they run against their own approved estimate.
+        if session.trialId == nil,
+           let why = budgetBlock(profileId: session.profileId, profileBudget: session.profileVersion?.profile.defaults.dailyBudgetUSD) {
+            try? store.addFlag(sessionId: session.id, "budget-reached")
+            let day = Int(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970)
+            if await anomalies.firstTime("budget:\(session.id):\(day)") {
+                store.addEvent(sessionId: session.id, kind: .warning,
+                               message: "Rewrites paused: \(why). Matching tool results are forwarded unchanged until tomorrow, or until you raise the budget.",
+                               refId: t.decisionId)
+            }
+            return record(.unchanged, "not rewritten: \(why)", refs: app.refs, instructions: instructionTexts)
+        }
+
         // Frozen experiment treatment: identical inputs reuse the stored rewrite (decision D11).
         // Trials running in parallel wait for the first one's rewrite instead of racing.
         var treatmentKey: String?

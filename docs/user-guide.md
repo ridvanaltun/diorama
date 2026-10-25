@@ -224,6 +224,16 @@ Key fields:
 | `captureRawBodies` | `true` or `false` |
 | `claudePath` | Path to the `claude` executable |
 | `ollamaURL` | Ollama server for `ollama:` models (default `http://127.0.0.1:11434`) |
+| `dailyBudgetUSD` | Daily cap on rewrite-agent spending, for example `2`; `none` removes it. See "Budget guard". |
+
+### Budget guard
+
+Two optional daily caps limit rewrite-agent spending:
+
+- **Everything:** `diorama settings set dailyBudgetUSD 2`, or **Settings → Daily rewrite budget**. This covers rewrites in interactive sessions (gateway and hook mode) plus paid playground and what-if runs.
+- **Per profile:** `"defaults": {"dailyBudgetUSD": 0.5}` in the profile, or **Daily budget for this profile** in the editor. It covers that profile across all its versions.
+
+The day is your local calendar day. Each call is checked before it's made, so one call can go slightly over a cap. When a cap is used up, matching tool results **pass through unchanged** with the reason "not rewritten: … budget is used up". The session is flagged `budget-reached` and shows a warning. The playground and what-if refuse paid runs, and a what-if run is refused up front if its estimate would go over what's left. Free checks keep working. Experiment runs are exempt, because they run against the cost estimate you approved. `diorama spend`, Settings and the menu bar show today's total. The MCP server can read the budget but can't change it.
 
 ## Menu bar
 

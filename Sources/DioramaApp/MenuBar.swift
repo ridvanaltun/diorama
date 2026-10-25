@@ -46,6 +46,15 @@ struct MenuBarPanel: View {
                 }
             }
             .padding(6)
+            if let s = model.spend, s.todayUSD > 0 || s.dailyBudgetUSD != nil {
+                Label {
+                    Text("Rewrites today: \(Fmt.money(s.todayUSD))" + (s.dailyBudgetUSD.map { " of \(Fmt.money($0))" } ?? "") + (s.isOverBudget ? " — paused" : ""))
+                } icon: {
+                    Image(systemName: s.isOverBudget ? "exclamationmark.triangle.fill" : "dollarsign.circle")
+                }
+                .font(.caption).foregroundStyle(s.isOverBudget ? .orange : .secondary)
+                .padding(.horizontal, 12).padding(.bottom, 8)
+            }
             Divider()
             VStack(spacing: 0) {
                 MenuRow(action: { open { model.section = .sessions; model.wantsNewSession = true } }) {

@@ -218,7 +218,7 @@ struct TimelineView: View {
                     } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 10) {
-                            let notices = t.events.filter { $0.kind == .anomaly || $0.kind == .rewriteFailed }
+                            let notices = t.events.filter { $0.kind == .anomaly || $0.kind == .rewriteFailed || $0.kind == .warning }
                             if !notices.isEmpty { NoticesCard(events: notices) }
                             if grouped.turns.isEmpty {
                                 ContentUnavailableView("Waiting for Claude Code", systemImage: "hourglass",
@@ -356,13 +356,13 @@ struct NoticesCard: View {
         DisclosureGroup(isExpanded: $expanded) {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(events) { ev in
-                    Label(ev.message, systemImage: ev.kind == .anomaly ? "exclamationmark.triangle" : "xmark.octagon")
-                        .font(.caption).foregroundStyle(ev.kind == .anomaly ? .orange : .red)
+                    Label(ev.message, systemImage: ev.kind == .rewriteFailed ? "xmark.octagon" : "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(ev.kind == .rewriteFailed ? .red : .orange)
                 }
             }
             .padding(.top, 4)
         } label: {
-            Label(Fmt.plural(events.count, "notice") + " — rewrite failures or anomalies", systemImage: "exclamationmark.bubble")
+            Label(Fmt.plural(events.count, "notice") + " — budget, rewrite failures or anomalies", systemImage: "exclamationmark.bubble")
                 .font(.callout.weight(.medium)).foregroundStyle(.orange)
         }
         .padding(10)
@@ -539,7 +539,7 @@ struct HookTimeline: View {
                     .font(.caption).foregroundStyle(.secondary)
                     .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.teal.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-                let notices = timeline.events.filter { $0.kind == .anomaly || $0.kind == .rewriteFailed }
+                let notices = timeline.events.filter { $0.kind == .anomaly || $0.kind == .rewriteFailed || $0.kind == .warning }
                 if !notices.isEmpty { NoticesCard(events: notices) }
                 if decisions.isEmpty {
                     ContentUnavailableView(changedOnly ? "No changed results" : "Waiting for tool results", systemImage: "hourglass",

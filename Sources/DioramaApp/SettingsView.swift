@@ -38,6 +38,11 @@ struct SettingsView: View {
                 Stepper("Keep raw request/response capture for \(draft.retentionDays) days", value: $draft.retentionDays, in: 1...3650)
                 Toggle("Capture raw request and response bodies", isOn: $draft.captureRawBodies)
                 TextField("Ollama URL (for ollama: models)", text: $draft.ollamaURL)
+                BudgetField(label: "Daily rewrite budget", value: $draft.dailyBudgetUSD)
+                if let s = model.spend {
+                    Text("Spent today: \(Fmt.money(s.todayUSD))" + (s.dailyBudgetUSD.map { " of \(Fmt.money($0))" } ?? "") + (s.isOverBudget ? " — used up; matching results pass through unchanged until tomorrow." : ". Covers interactive sessions, the playground and what-if; experiments use their own approved estimate."))
+                        .font(.caption).foregroundStyle(s.isOverBudget ? .orange : .secondary)
+                }
                 TextField("claude executable (blank = auto-detect)", text: Binding(get: { draft.claudePath ?? "" }, set: { draft.claudePath = $0.isEmpty ? nil : $0 }))
                 HStack {
                     Button("Save settings") { Task { if let s = await model.perform({ try await $0.saveSettings(draft) }) { model.settings = s } } }
@@ -114,6 +119,7 @@ struct SettingsView: View {
         .task {
             await model.refreshSettings()
             draft = model.settings
+            await model.refreshSessions()
             doctor = await model.perform { try await $0.doctor() }
         }
     }
@@ -133,5 +139,35 @@ struct MCPSettingsSection: View {
         } header: {
             Text("AI control (MCP)")
         }
+    }
+}
+
+/// A dollar amount that may be empty (no limit).
+struct BudgetField: View {
+    let label: String
+    @Binding var value: Double?
+    @State private var text = ""
+
+    var body: some View {
+        LabeledContent(label) {
+            HStack(spacing: 4) {
+                Text("$").foregroundStyle(.secondary)
+                TextField(label, text: $text, prompt: Text("No limit")).labelsHidden().textFieldStyle(.roundedBorder).lineLimit(1).frame(width: 120).multilineTextAlignment(.trailing)
+                    .onSubmit(commit)
+                    .onChange(of: text) { commit() }
+            }
+        }
+        // Follows outside changes (settings loading after the field appears) without fighting the user's typing.
+        .onChange(of: value, initial: true) { if parsed != value { text = value.map { String(format: "%.2f", $0) } ?? "" } }
+    }
+
+    var parsed: Double? {
+        let t = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
+        return t.isEmpty ? nil : Double(t).flatMap { $0 >= 0 ? $0 : nil }
+    }
+
+    func commit() {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        if t.isEmpty { value = nil } else if let d = parsed { value = d }
     }
 }

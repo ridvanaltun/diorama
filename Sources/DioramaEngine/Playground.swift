@@ -8,7 +8,7 @@ extension DecisionEngine {
     /// exactly as a session would, but records nothing.
     public func playground(
         rules: [Rule], defaults: ProfileDefaults, toolName: String, toolInputJSON: String?, segments: [String], isError: Bool = false,
-        stage: RuleStage, rewrite: Bool
+        stage: RuleStage, rewrite: Bool, spendKind: String = "playground", profileId: String? = nil
     ) async -> PlaygroundResult {
         let text = segments.joined(separator: "\n\n")
         let input = toolInputJSON.flatMap { try? JSONValue.parse($0) } ?? .object([:])
@@ -61,6 +61,8 @@ extension DecisionEngine {
                 request.feedback = error
                 continue
             }
+            // No attempt record is written, so the budget ledger carries this spending.
+            store.recordSpend(kind: spendKind, profileId: profileId, costUSD: cost ?? 0)
             result.rewrite = PlaygroundRewrite(
                 status: status, replacementText: replacement, explanation: response.output?.explanation, edits: response.output?.edits ?? [],
                 error: error, model: response.modelServed ?? model, costUSD: cost, latencyMs: latency)

@@ -191,29 +191,48 @@ public final class DioramaDaemon: @unchecked Sendable {
         return SessionLaunch(session: try store.info(record), token: token, baseURL: base, environment: env, claudeArguments: ["--settings", json])
     }
 
+    // MARK: Budget
+
+    func spendSummary() throws -> SpendSummary {
+        let start = Calendar.current.startOfDay(for: Date())
+        let byProfile = store.spendByProfile(since: start)
+        let profiles = try store.profiles().compactMap { p -> SpendSummary.ProfileSpend? in
+            let budget = try store.resolveProfile(p.id)?.profile.defaults.dailyBudgetUSD
+            let today = byProfile[p.id] ?? 0
+            guard today > 0 || budget != nil else { return nil }
+            return SpendSummary.ProfileSpend(profileId: p.id, name: p.name, todayUSD: today, dailyBudgetUSD: budget)
+        }
+        return SpendSummary(since: start, todayUSD: store.spend(since: start), dailyBudgetUSD: store.settings().dailyBudgetUSD, profiles: profiles)
+    }
+
     // MARK: Rule playground
 
     func playground(_ req: PlaygroundRequest) async throws -> PlaygroundResult {
         var profile = req.profile
+        var profileId: String?
         if profile == nil, let ref = req.profileRef, !ref.isEmpty {
             guard let v = try store.resolveProfile(ref) else { throw StoreError("unknown profile '\(ref)'") }
             profile = v.profile
+            profileId = v.profileId
         }
         let rules = (profile?.rules ?? []) + (req.prompt.map { [$0.asRule(id: "session-prompt")] } ?? [])
         guard !rules.isEmpty else { throw StoreError("give a profile or a prompt to test") }
         let defaults = profile?.defaults ?? ProfileDefaults(model: store.settings().defaultModel)
+        if req.rewrite, let why = engine.budgetBlock(profileId: profileId, profileBudget: defaults.dailyBudgetUSD) {
+            throw StoreError("rewrite budget reached: \(why). Raise it in Settings or the profile's defaults, or wait until tomorrow")
+        }
         if let id = req.toolUseId, !id.isEmpty {
             guard let d = try store.decision(toolUseId: id) else { throw StoreError("no tool result \(id)") }
             let session = try store.session(id: d.sessionId)
             let stage: RuleStage = req.stage ?? (id.hasPrefix("page:") ? .page : .result)
             return await engine.playground(
                 rules: rules, defaults: defaults, toolName: (d.toolName ?? "tool").replacingOccurrences(of: " (page)", with: ""), toolInputJSON: d.toolInput,
-                segments: playgroundSegments(d, via: session?.via ?? .gateway), isError: d.isError, stage: stage, rewrite: req.rewrite)
+                segments: playgroundSegments(d, via: session?.via ?? .gateway), isError: d.isError, stage: stage, rewrite: req.rewrite, profileId: profileId)
         }
         guard let text = req.text, !text.isEmpty else { throw StoreError("give a past tool result (toolUseId) or text to test on") }
         return await engine.playground(
             rules: rules, defaults: defaults, toolName: req.toolName.flatMap { $0.isEmpty ? nil : $0 } ?? "WebFetch", toolInputJSON: req.toolInput,
-            segments: [text], stage: req.stage ?? .result, rewrite: req.rewrite)
+            segments: [text], stage: req.stage ?? .result, rewrite: req.rewrite, profileId: profileId)
     }
 
     // MARK: What-if replay
@@ -221,14 +240,17 @@ public final class DioramaDaemon: @unchecked Sendable {
     func whatIf(_ req: WhatIfRequest) async throws -> WhatIfResult {
         guard let session = try store.session(id: req.sessionId) else { throw StoreError("no session \(req.sessionId)") }
         var profile = req.profile
+        var profileId: String?
         var label = profile.map { "“\($0.name)” (draft)" }
         if profile == nil, let vid = req.profileVersionId, !vid.isEmpty {
             guard let v = try store.profileVersion(id: vid) else { throw StoreError("no profile version \(vid)") }
             profile = v.profile
+            profileId = v.profileId
             label = "“\(v.profile.name)” v\(v.number)"
         } else if profile == nil, let ref = req.profileRef, !ref.isEmpty {
             guard let v = try store.resolveProfile(ref) else { throw StoreError("unknown profile '\(ref)'") }
             profile = v.profile
+            profileId = v.profileId
             label = "“\(v.profile.name)” v\(v.number)"
         }
         if req.prompt != nil { label = (label.map { $0 + " + " } ?? "") + "session prompt" }
@@ -273,7 +295,17 @@ public final class DioramaDaemon: @unchecked Sendable {
             high += hi
         }
 
+        if req.rewrite, !toRun.isEmpty {
+            if let why = engine.budgetBlock(profileId: profileId, profileBudget: defaults.dailyBudgetUSD) {
+                throw StoreError("rewrite budget reached: \(why). Raise it in Settings or the profile's defaults, or wait until tomorrow")
+            }
+            if let left = engine.remainingBudget(profileId: profileId, profileBudget: defaults.dailyBudgetUSD), low > left {
+                throw StoreError(String(format: "this run (about $%.3f–$%.3f) would go over today's remaining rewrite budget ($%.3f); lower max_rewrites or raise the budget", low, high, left))
+            }
+        }
+
         // Rewrites, at most four at a time, when asked for.
+        let spendProfile = profileId
         var rewritten: [Int: PlaygroundRewrite] = [:]
         if req.rewrite, !toRun.isEmpty {
             rewritten = await withTaskGroup(of: (Int, PlaygroundRewrite?).self) { group in
@@ -286,7 +318,8 @@ public final class DioramaDaemon: @unchecked Sendable {
                     let src = checked[i].0
                     g.addTask {
                         let r = await self.engine.playground(rules: rules, defaults: defaults, toolName: src.toolName, toolInputJSON: src.decision.toolInput,
-                                                             segments: src.segments, isError: src.decision.isError, stage: src.stage, rewrite: true)
+                                                             segments: src.segments, isError: src.decision.isError, stage: src.stage, rewrite: true,
+                                                             spendKind: "whatif", profileId: spendProfile)
                         return (i, r.rewrite)
                     }
                 }

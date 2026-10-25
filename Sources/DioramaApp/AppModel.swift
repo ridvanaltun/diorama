@@ -43,6 +43,8 @@ final class AppModel {
     var wantsNewSession = false
     /// Shows the "Connect to Claude" (MCP) panel.
     var showMCPConnect = false
+    /// Today's rewrite spending against the caps.
+    var spend: SpendSummary?
     var focusSessionId: String?
     var updateError: String?
 
@@ -144,6 +146,7 @@ final class AppModel {
     func refreshSessions() async {
         guard let client else { return }
         do { sessions = try await client.sessions(limit: 300) } catch { report(error) }
+        spend = try? await client.spend()
     }
 
     func refreshProfiles() async {

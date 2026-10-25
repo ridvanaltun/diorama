@@ -76,6 +76,7 @@ struct ControlAPI: Sendable {
         if Self.match(method, route, "PUT", "settings") != nil {
             let s = try decode(DioramaSettings.self, req)
             guard s.retentionDays >= 1, s.retentionDays <= 3650 else { throw Failure(status: 400, message: "retentionDays must be 1–3650") }
+            if let b = s.dailyBudgetUSD, !(b >= 0) { throw Failure(status: 400, message: "dailyBudgetUSD must be zero or more") }
             try store.saveSettings(s)
             daemon.sessions.settingsChanged()
             return try ok(s)
@@ -143,6 +144,9 @@ struct ControlAPI: Sendable {
             return try ok(Timeline(
                 session: try store.info(s), exchanges: try store.exchanges(sessionId: id, afterId: after),
                 decisions: try store.decisions(sessionId: id).map(\.summary), events: try store.events(sessionId: id)))
+        }
+        if Self.match(method, route, "GET", "spend") != nil {
+            return try ok(try daemon.spendSummary())
         }
         if Self.match(method, route, "POST", "whatif") != nil {
             return try ok(try await daemon.whatIf(try decode(WhatIfRequest.self, req)))

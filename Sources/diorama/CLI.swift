@@ -12,7 +12,7 @@ struct Diorama: AsyncParsableCommand {
         discussion: "Diorama routes Claude Code sessions you start with `diorama run` through a local gateway that can rewrite tool results according to your rules, records everything, and runs A/B experiments.",
         version: DioramaVersion.current,
         subcommands: [
-            Run.self, Hook.self, MCP.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
+            Run.self, Hook.self, MCP.self, Spend.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
         ])
 }
 
@@ -603,7 +603,7 @@ struct Settings: AsyncParsableCommand {
     }
 
     struct SetValue: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(commandName: "set", abstract: "Set defaultModel, retentionDays, captureRawBodies, claudePath or ollamaURL.")
+        static let configuration = CommandConfiguration(commandName: "set", abstract: "Set defaultModel, retentionDays, captureRawBodies, claudePath, ollamaURL or dailyBudgetUSD (none = no cap).")
         @OptionGroup var global: GlobalOptions
         @Argument var key: String
         @Argument var value: String
@@ -616,6 +616,11 @@ struct Settings: AsyncParsableCommand {
                 guard let d = Int(value) else { throw ValidationError("retentionDays must be a number") }
                 s.retentionDays = d
             case "captureRawBodies": s.captureRawBodies = ["1", "true", "yes", "on"].contains(value.lowercased())
+            case "dailyBudgetUSD":
+                if ["", "none", "off"].contains(value.lowercased()) { s.dailyBudgetUSD = nil } else {
+                    guard let d = Double(value), d >= 0 else { throw ValidationError("dailyBudgetUSD must be a dollar amount, or none") }
+                    s.dailyBudgetUSD = d
+                }
             case "claudePath": s.claudePath = value.isEmpty ? nil : (value as NSString).expandingTildeInPath
             case "ollamaURL":
                 guard URL(string: value)?.scheme?.hasPrefix("http") == true else { throw ValidationError("ollamaURL must be an http(s) URL") }
@@ -757,5 +762,28 @@ struct Update: AsyncParsableCommand {
         print("Downloaded and verified \(dest.path).")
         print("To install: quit Diorama, run `diorama daemon stop`, unzip, replace /Applications/Diorama.app, then:")
         print("  xattr -dr com.apple.quarantine /Applications/Diorama.app")
+    }
+}
+
+struct Spend: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "Show today's rewrite-agent spending against the daily caps.",
+        discussion: """
+            Caps: `diorama settings set dailyBudgetUSD 2` (all interactive rewrites, the playground and what-if), and \
+            `defaults.dailyBudgetUSD` in a profile. When a cap is used up, matching tool results pass through unchanged \
+            and the session is flagged. Experiment runs don't count: they run against their own approved estimate.
+            """)
+    @OptionGroup var global: GlobalOptions
+    @Flag var json = false
+
+    func run() async throws {
+        let s = try await global.client().spend()
+        if json { return try printJSON(s) }
+        let cap = s.dailyBudgetUSD.map { " of \(money($0)) daily budget" + (s.isOverBudget ? " — used up, rewrites paused" : "") } ?? " (no daily cap)"
+        print("Today: \(money(s.todayUSD))\(cap)")
+        for p in s.profiles {
+            let pc = p.dailyBudgetUSD.map { " of \(money($0))" + (p.todayUSD >= $0 ? " — used up" : "") } ?? ""
+            print("  \(p.name): \(money(p.todayUSD))\(pc)")
+        }
     }
 }

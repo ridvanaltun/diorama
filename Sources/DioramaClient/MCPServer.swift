@@ -175,7 +175,9 @@ enum MCPTools {
             let health = try await c.health()
             let doctor = try await c.doctor()
             let checks = doctor.checks.map { "- [\($0.status.rawValue)] \($0.name): \($0.detail)" }.joined(separator: "\n")
-            return "Diorama \(health.version), daemon pid \(health.pid) on 127.0.0.1:\(health.port), \(health.activeSessions) active session(s), data in \(health.dataDirectory)\n\(checks)"
+            let spend = try await c.spend()
+            let budget = "Rewrite spending today: $\(String(format: "%.4f", spend.todayUSD))" + (spend.dailyBudgetUSD.map { String(format: " of a $%.2f daily cap", $0) + (spend.isOverBudget ? " (used up: rewrites are paused)" : "") } ?? " (no daily cap)")
+            return budget + "\n" + "Diorama \(health.version), daemon pid \(health.pid) on 127.0.0.1:\(health.port), \(health.activeSessions) active session(s), data in \(health.dataDirectory)\n\(checks)"
         },
         .init(
             name: "list_sessions", description: "Recent Diorama sessions with their profile, mode (gateway or hook) and counts of tool results, rewrites and failures.",

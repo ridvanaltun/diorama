@@ -70,6 +70,12 @@ public final class Store: @unchecked Sendable {
         """
         ALTER TABLE sessions ADD COLUMN via TEXT NOT NULL DEFAULT 'gateway';
         """,
+        // v3: spending that has no rewrite attempt record (playground, what-if)
+        """
+        CREATE TABLE spend_ledger(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, created_at REAL NOT NULL, kind TEXT NOT NULL, profile_id TEXT, cost_usd REAL NOT NULL);
+        CREATE INDEX spend_ledger_day ON spend_ledger(created_at);
+        """,
     ]
 
     public static var schemaVersion: Int { migrations.count }

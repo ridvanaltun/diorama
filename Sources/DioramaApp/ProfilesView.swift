@@ -147,6 +147,7 @@ struct ProfileEditor: View {
                         }
                         Stepper("Max input: \(draft.defaults.maxInputChars) chars", value: $draft.defaults.maxInputChars, in: 1000...2_000_000, step: 10_000)
                         Stepper("Timeout: \(Int(draft.defaults.timeoutSeconds)) s", value: $draft.defaults.timeoutSeconds, in: 5...120, step: 5)
+                        BudgetField(label: "Daily budget for this profile", value: $draft.defaults.dailyBudgetUSD)
                     }
                     Section {
                         ForEach($draft.rules) { $rule in

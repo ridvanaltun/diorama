@@ -123,13 +123,16 @@ public struct ProfileDefaults: Codable, Sendable, Hashable {
     public var maxInputChars: Int
     public var timeoutSeconds: Double
     public var maxOutputTokens: Int
+    /// Cap on this profile's rewrite spending per local calendar day (all its versions). Nil = no cap.
+    public var dailyBudgetUSD: Double?
 
     public static let defaultModel = "claude-haiku-5-5"
 
     public init(
         model: String = ProfileDefaults.defaultModel, effort: String? = nil, onFailure: FailurePolicy = .passOriginal,
-        maxInputChars: Int = 200_000, timeoutSeconds: Double = 45, maxOutputTokens: Int = 16_000
+        maxInputChars: Int = 200_000, timeoutSeconds: Double = 45, maxOutputTokens: Int = 16_000, dailyBudgetUSD: Double? = nil
     ) {
+        self.dailyBudgetUSD = dailyBudgetUSD
         self.model = model
         self.effort = effort
         self.onFailure = onFailure
@@ -147,6 +150,7 @@ public struct ProfileDefaults: Codable, Sendable, Hashable {
         maxInputChars = try c.decodeIfPresent(Int.self, forKey: .maxInputChars) ?? d.maxInputChars
         timeoutSeconds = try c.decodeIfPresent(Double.self, forKey: .timeoutSeconds) ?? d.timeoutSeconds
         maxOutputTokens = try c.decodeIfPresent(Int.self, forKey: .maxOutputTokens) ?? d.maxOutputTokens
+        dailyBudgetUSD = try c.decodeIfPresent(Double.self, forKey: .dailyBudgetUSD)
     }
 }
 
@@ -959,6 +963,9 @@ public struct DioramaSettings: Codable, Sendable, Hashable {
     public var claudePath: String?
     /// Ollama server for `ollama:` models.
     public var ollamaURL: String
+    /// Cap on rewrite-agent spending per local calendar day (interactive sessions, playground,
+    /// what-if; experiments are covered by their own approved estimate). Nil = no cap.
+    public var dailyBudgetUSD: Double?
 
     public static let defaultOllamaURL = "http://127.0.0.1:11434"
 
@@ -978,6 +985,39 @@ public struct DioramaSettings: Codable, Sendable, Hashable {
         captureRawBodies = try c.decodeIfPresent(Bool.self, forKey: .captureRawBodies) ?? d.captureRawBodies
         claudePath = try c.decodeIfPresent(String.self, forKey: .claudePath)
         ollamaURL = try c.decodeIfPresent(String.self, forKey: .ollamaURL) ?? DioramaSettings.defaultOllamaURL
+        dailyBudgetUSD = try c.decodeIfPresent(Double.self, forKey: .dailyBudgetUSD)
+    }
+}
+
+/// Rewrite-agent spending today (local calendar day) against the caps.
+public struct SpendSummary: Codable, Sendable, Hashable {
+    public struct ProfileSpend: Codable, Sendable, Hashable, Identifiable {
+        public var profileId: String
+        public var name: String
+        public var todayUSD: Double
+        public var dailyBudgetUSD: Double?
+        public var id: String { profileId }
+
+        public init(profileId: String, name: String, todayUSD: Double, dailyBudgetUSD: Double?) {
+            self.profileId = profileId
+            self.name = name
+            self.todayUSD = todayUSD
+            self.dailyBudgetUSD = dailyBudgetUSD
+        }
+    }
+
+    public var since: Date
+    public var todayUSD: Double
+    public var dailyBudgetUSD: Double?
+    public var profiles: [ProfileSpend]
+
+    public var isOverBudget: Bool { dailyBudgetUSD.map { todayUSD >= $0 } ?? false }
+
+    public init(since: Date, todayUSD: Double, dailyBudgetUSD: Double?, profiles: [ProfileSpend]) {
+        self.since = since
+        self.todayUSD = todayUSD
+        self.dailyBudgetUSD = dailyBudgetUSD
+        self.profiles = profiles
     }
 }
 
