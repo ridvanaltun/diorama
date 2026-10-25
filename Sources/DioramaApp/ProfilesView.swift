@@ -109,6 +109,7 @@ struct ProfileEditor: View {
     @State private var detail: ProfileDetail?
     @State private var draft = Profile(name: "")
     @State private var selectedRule: String?
+    @State private var showPlayground = false
 
     var dirty: Bool { detail.map { $0.current.profile != draft } ?? false }
 
@@ -123,6 +124,8 @@ struct ProfileEditor: View {
                             .help(detail.current.id)
                     }
                     Spacer()
+                    Button { showPlayground = true } label: { Label("Test Rules…", systemImage: "testtube.2") }
+                        .help("Try these rules (including unsaved changes) on a past tool result or pasted text")
                     if dirty {
                         Button("Revert") { draft = detail.current.profile }
                         Button("Save as v\(detail.current.number + 1)") { Task { await save() } }.keyboardShortcut("s").buttonStyle(.borderedProminent)
@@ -192,6 +195,7 @@ struct ProfileEditor: View {
                 }
                 .formStyle(.grouped)
             }
+            .sheet(isPresented: $showPlayground) { PlaygroundSheet(draft: draft) }
         } else {
             ProgressView().task { await load() }
         }

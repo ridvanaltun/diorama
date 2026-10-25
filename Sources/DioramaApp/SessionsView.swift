@@ -584,6 +584,7 @@ struct DecisionDetailView: View {
     @State private var detail: DecisionDetail?
     @State private var mode = 0
     @State private var showTechnical = false
+    @State private var showPlayground = false
 
     var body: some View {
         ScrollView {
@@ -652,6 +653,7 @@ struct DecisionDetailView: View {
             }
         }
         .task(id: model.eventTick) { detail = await model.perform { try await $0.decision(toolUseId) } }
+        .sheet(isPresented: $showPlayground) { PlaygroundSheet(toolUseId: toolUseId) }
     }
 
     func header(_ d: DecisionDetail) -> some View {
@@ -664,6 +666,8 @@ struct DecisionDetailView: View {
                 }
             }
             Spacer()
+            Button { showPlayground = true } label: { Image(systemName: "testtube.2") }
+                .buttonStyle(.borderless).help("Test rules on this tool result")
             if let onClose {
                 Button(action: onClose) { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }.buttonStyle(.plain).help("Close")
             }

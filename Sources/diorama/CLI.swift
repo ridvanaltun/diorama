@@ -359,7 +359,7 @@ struct Session: AsyncParsableCommand {
 struct Profiles: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Manage profiles (versioned sets of global rules).",
-        subcommands: [List.self, Show.self, Create.self, Update.self, Export.self, Delete.self, Templates.self], defaultSubcommand: List.self)
+        subcommands: [List.self, Show.self, Create.self, Update.self, Export.self, Delete.self, Templates.self, Test.self], defaultSubcommand: List.self)
 
     struct List: AsyncParsableCommand {
         @OptionGroup var global: GlobalOptions
@@ -444,6 +444,55 @@ struct Profiles: AsyncParsableCommand {
         func run() async throws {
             try await global.client().archiveProfile(id)
             print("Archived.")
+        }
+    }
+
+    struct Test: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Try a profile's rules on a past tool result or some text, without a session.",
+            discussion: """
+                Shows which rules match and why the others don't. With --rewrite, also calls the rewrite agent once \
+                (a small cost) and shows what Claude would see. Nothing is recorded.
+
+                Examples:
+                  diorama profiles test "Docs steer" --decision toolu_01abc
+                  diorama profiles test "Docs steer" --text "Version 1 is the current API" --tool WebFetch --input '{"url":"https://example.com/docs"}' --rewrite
+                  diorama profiles test --file draft.json --text-file page.txt
+                """)
+        @OptionGroup var global: GlobalOptions
+        @Argument(help: "Saved profile name or id.") var profile: String?
+        @Option(help: "A profile JSON file to test instead (e.g. an unsaved draft).") var file: String?
+        @Option(help: "A session prompt to test as well (applies to every tool).") var prompt: String?
+        @Option(help: "A past tool result to test on (tool_use_id, from `diorama session show`).") var decision: String?
+        @Option(help: "Text to test on.") var text: String?
+        @Option(help: "Read the text to test on from a file.") var textFile: String?
+        @Option(help: "The tool the text comes from.") var tool: String = "WebFetch"
+        @Option(help: "The tool input as JSON (rules can match on its fields).") var input: String?
+        @Option(help: "Test the page stage (WebFetch raw page) instead of tool results.") var stage: RuleStage?
+        @Flag(help: "Also run the rewrite agent (small cost).") var rewrite = false
+        @Flag var json = false
+
+        func run() async throws {
+            var req = PlaygroundRequest(profileRef: profile, prompt: prompt.map { SessionPrompt(text: $0, tools: ["*"]) }, toolUseId: decision,
+                                        toolName: tool, toolInput: input, stage: stage, rewrite: rewrite)
+            if let file { req.profile = try readJSONFile(file, as: Profile.self) }
+            if let textFile { req.text = try String(contentsOfFile: (textFile as NSString).expandingTildeInPath, encoding: .utf8) } else { req.text = text }
+            guard req.profile != nil || profile != nil || prompt != nil else { throw ValidationError("give a profile, --file or --prompt") }
+            guard decision != nil || req.text != nil else { throw ValidationError("give --decision, --text or --text-file") }
+            let r = try await global.client().playground(req)
+            if json { return try printJSON(r) }
+            print("\(r.toolName) \(r.stage == .page ? "page" : "result"), \(r.originalText.count) characters")
+            for c in r.checks { print("  \(c.matches ? "✓" : "·") \(c.name): \(c.reason)") }
+            if let note = r.note { print("\n\(note)") }
+            if let rw = r.rewrite {
+                print("\nRewrite: \(rw.status.rawValue) — \(rw.model), \(Int(rw.latencyMs)) ms, \(money(rw.costUSD))")
+                if let e = rw.explanation { print("  \(e)") }
+                if let err = rw.error { print("  error: \(err)") }
+                for e in rw.edits { print("  “\(short(e.find, 60))” → “\(short(e.replace, 60))”") }
+                if let t = rw.replacementText { print("\nWhat Claude would see:\n\(t)") }
+            } else if !rewrite, r.model != nil {
+                print("\nAdd --rewrite to see what the rewrite agent (\(r.model!)) would do.")
+            }
         }
     }
 

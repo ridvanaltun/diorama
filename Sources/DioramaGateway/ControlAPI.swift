@@ -144,6 +144,13 @@ struct ControlAPI: Sendable {
                 session: try store.info(s), exchanges: try store.exchanges(sessionId: id, afterId: after),
                 decisions: try store.decisions(sessionId: id).map(\.summary), events: try store.events(sessionId: id)))
         }
+        if Self.match(method, route, "POST", "playground") != nil {
+            return try ok(try await daemon.playground(try decode(PlaygroundRequest.self, req)))
+        }
+        if Self.match(method, route, "GET", "decisions") != nil {
+            let limit = min(max(Int(req.query["limit"] ?? "") ?? 50, 1), 500)
+            return try ok(try store.recentDecisions(limit: limit).map { RecentToolResult(decision: $0.0.summary, sessionName: $0.1) })
+        }
         if Self.match(method, route, "POST", "hook") != nil {
             return try ok(try await daemon.handleHook(try decode(HookEvent.self, req)))
         }

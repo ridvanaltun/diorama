@@ -74,6 +74,7 @@ In the app, click **Connect to Claude…** at the bottom of the sidebar (also in
 |---|---|
 | `diorama_status`, `list_sessions`, `get_session`, `get_decision` | Daemon health; sessions; one session's decisions; one result's full audit record (original, rewrite, rules, attempts, what Claude did next) |
 | `list_profiles`, `get_profile`, `list_rule_templates`, `create_profile`, `update_profile` | Read and write profiles. Every save is a new version. |
+| `test_rules` | The rule playground: which rules match a past result or some text, and (with `rewrite`) what the agent would produce. Nothing is recorded. A read-only server allows the free check only. |
 | `get_hook_status`, `install_hook`, `uninstall_hook` | Connect a project folder for hook mode (Claude desktop, IDEs) |
 | `end_session` | Mark a session ended |
 | `list_experiments`, `create_experiment`, `estimate_experiment_run`, `start_experiment_run`, `cancel_experiment_run`, `get_run_report` | The experiment workflow |
@@ -108,6 +109,21 @@ A profile is JSON (`diorama profiles export <name>` shows one). Example:
 - The rewrite agent prefers small, exact edits. Each `find` must occur exactly once in the result. If an edit doesn't apply, Diorama retries once and tells the agent what went wrong.
 
 Templates: `diorama profiles templates`, then `diorama profiles create --template N`.
+
+### Testing rules before you use them
+
+The rule playground tries rules on content without starting a session, and records nothing.
+
+- In the app, click **Test Rules…** in the profile editor; it uses your current draft, including unsaved changes. Or click the test-tube button on any tool result's detail to try rules on that result.
+- Pick a past tool result (its original, before any rewrite) or paste text with the tool it comes from and, optionally, its input JSON, such as `{"url": "https://docs.example.com"}`.
+- The playground shows which rules match, and for the others the first condition that failed, for example *input "url" (https://example.org) doesn't match /docs\./*. This check is free and updates as you edit.
+- **Run rewrite** calls the rewrite agent once, as a session would. It shows the diff, the agent's explanation and edits, the model, the latency and the cost.
+
+```bash
+diorama profiles test "Docs steer" --decision toolu_01abc
+diorama profiles test "Docs steer" --text "Version 1 is current" --input '{"url":"https://docs.example.com"}' --rewrite
+diorama profiles test --file draft.json --text-file page.txt
+```
 
 ### Where a rule applies: tool result or raw page
 

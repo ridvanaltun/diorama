@@ -180,6 +180,7 @@ enum Snapshotter {
             ("sheet-new-experiment", AnyView(NewExperimentSheet(created: { _ in }).environment(model))),
             ("menu-bar-panel", AnyView(MenuBarPanel().environment(model))),
             ("mcp-connect", AnyView(MCPConnectPanel().environment(model))),
+            ("sheet-playground", AnyView(PlaygroundSheet(draft: Profile(name: "Docs steer", rules: [Rule(name: "Rename the domain", match: RuleMatch(tools: ["WebFetch"]), instructions: "Rename it")])).environment(model))),
         ]
         for (name, view) in sheets {
             let host = NSHostingView(rootView: view)

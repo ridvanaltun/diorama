@@ -1,4 +1,5 @@
 import DioramaCore
+import DioramaJSON
 import DioramaEngine
 import DioramaRunner
 import DioramaStore
@@ -188,6 +189,49 @@ public final class DioramaDaemon: @unchecked Sendable {
         if !deny.isEmpty { settings["permissions"] = ["deny": deny] }
         let json = String(decoding: try JSONSerialization.data(withJSONObject: settings, options: [.sortedKeys, .withoutEscapingSlashes]), as: UTF8.self)
         return SessionLaunch(session: try store.info(record), token: token, baseURL: base, environment: env, claudeArguments: ["--settings", json])
+    }
+
+    // MARK: Rule playground
+
+    func playground(_ req: PlaygroundRequest) async throws -> PlaygroundResult {
+        var profile = req.profile
+        if profile == nil, let ref = req.profileRef, !ref.isEmpty {
+            guard let v = try store.resolveProfile(ref) else { throw StoreError("unknown profile '\(ref)'") }
+            profile = v.profile
+        }
+        let rules = (profile?.rules ?? []) + (req.prompt.map { [$0.asRule(id: "session-prompt")] } ?? [])
+        guard !rules.isEmpty else { throw StoreError("give a profile or a prompt to test") }
+        let defaults = profile?.defaults ?? ProfileDefaults(model: store.settings().defaultModel)
+        if let id = req.toolUseId, !id.isEmpty {
+            guard let d = try store.decision(toolUseId: id) else { throw StoreError("no tool result \(id)") }
+            let session = try store.session(id: d.sessionId)
+            let stage: RuleStage = req.stage ?? (id.hasPrefix("page:") ? .page : .result)
+            return await engine.playground(
+                rules: rules, defaults: defaults, toolName: (d.toolName ?? "tool").replacingOccurrences(of: " (page)", with: ""), toolInputJSON: d.toolInput,
+                segments: playgroundSegments(d, via: session?.via ?? .gateway), isError: d.isError, stage: stage, rewrite: req.rewrite)
+        }
+        guard let text = req.text, !text.isEmpty else { throw StoreError("give a past tool result (toolUseId) or text to test on") }
+        return await engine.playground(
+            rules: rules, defaults: defaults, toolName: req.toolName.flatMap { $0.isEmpty ? nil : $0 } ?? "WebFetch", toolInputJSON: req.toolInput,
+            segments: [text], stage: req.stage ?? .result, rewrite: req.rewrite)
+    }
+
+    /// The readable text of a recorded original, split the way the engine split it.
+    func playgroundSegments(_ d: DecisionRecord, via: SessionVia) -> [String] {
+        let original = (try? store.blobs.get(d.originalBlob)) ?? []
+        guard let v = try? JSONValue.parse(original) else { return [String(decoding: original, as: UTF8.self)] }
+        if via == .hook {
+            return HookOutputMapping.textPaths(toolName: d.toolName ?? "", response: v).compactMap { HookOutputMapping.get(v, $0)?.stringValue }
+        }
+        switch v {
+        case .string(let s): return [s]
+        case .array(let items):
+            return items.compactMap { item in
+                guard case .object(let o) = item, o["type"]?.stringValue == "text" else { return nil }
+                return o["text"]?.stringValue
+            }
+        default: return [String(decoding: original, as: UTF8.self)]
+        }
     }
 
     // MARK: Hook mode

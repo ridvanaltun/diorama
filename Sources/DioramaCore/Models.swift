@@ -420,6 +420,116 @@ public struct HookReply: Codable, Sendable {
     }
 }
 
+// MARK: - Rule playground
+
+/// Tries rules on one tool result without a session: which rules match (free) and, optionally,
+/// what the rewrite agent would do. Nothing is recorded.
+public struct PlaygroundRequest: Codable, Sendable {
+    /// Rules to try, e.g. the editor's unsaved draft. Takes precedence over `profileRef`.
+    public var profile: Profile?
+    /// A saved profile, by name or id.
+    public var profileRef: String?
+    public var prompt: SessionPrompt?
+    /// A past tool result to test on (its original, before any rewrite).
+    public var toolUseId: String?
+    /// Or pasted content, with the tool it pretends to come from.
+    public var text: String?
+    public var toolName: String?
+    /// Raw JSON of the tool input (rules can match on its fields).
+    public var toolInput: String?
+    public var stage: RuleStage?
+    /// False: only check which rules match (no API call, no cost).
+    public var rewrite: Bool
+
+    public init(
+        profile: Profile? = nil, profileRef: String? = nil, prompt: SessionPrompt? = nil, toolUseId: String? = nil, text: String? = nil,
+        toolName: String? = nil, toolInput: String? = nil, stage: RuleStage? = nil, rewrite: Bool = false
+    ) {
+        self.profile = profile
+        self.profileRef = profileRef
+        self.prompt = prompt
+        self.toolUseId = toolUseId
+        self.text = text
+        self.toolName = toolName
+        self.toolInput = toolInput
+        self.stage = stage
+        self.rewrite = rewrite
+    }
+}
+
+public struct RuleCheck: Codable, Sendable, Hashable {
+    public var ruleId: String
+    public var name: String
+    public var matches: Bool
+    /// Why it matches, or the first condition that failed.
+    public var reason: String
+
+    public init(ruleId: String, name: String, matches: Bool, reason: String) {
+        self.ruleId = ruleId
+        self.name = name
+        self.matches = matches
+        self.reason = reason
+    }
+}
+
+public struct PlaygroundRewrite: Codable, Sendable, Hashable {
+    public var status: RewriteAttemptStatus
+    public var replacementText: String?
+    public var explanation: String?
+    public var edits: [ContentEdit]
+    public var error: String?
+    public var model: String
+    public var costUSD: Double?
+    public var latencyMs: Double
+
+    public init(status: RewriteAttemptStatus, replacementText: String?, explanation: String?, edits: [ContentEdit], error: String?, model: String, costUSD: Double?, latencyMs: Double) {
+        self.status = status
+        self.replacementText = replacementText
+        self.explanation = explanation
+        self.edits = edits
+        self.error = error
+        self.model = model
+        self.costUSD = costUSD
+        self.latencyMs = latencyMs
+    }
+}
+
+public struct PlaygroundResult: Codable, Sendable, Hashable {
+    public var toolName: String
+    public var toolInput: String?
+    public var stage: RuleStage
+    public var originalText: String
+    public var checks: [RuleCheck]
+    /// The model a rewrite would use (nil when no rule matches).
+    public var model: String?
+    /// Why no rewrite was attempted, when `rewrite` was requested but skipped.
+    public var note: String?
+    public var rewrite: PlaygroundRewrite?
+
+    public init(toolName: String, toolInput: String?, stage: RuleStage, originalText: String, checks: [RuleCheck], model: String?, note: String? = nil, rewrite: PlaygroundRewrite? = nil) {
+        self.toolName = toolName
+        self.toolInput = toolInput
+        self.stage = stage
+        self.originalText = originalText
+        self.checks = checks
+        self.model = model
+        self.note = note
+        self.rewrite = rewrite
+    }
+}
+
+/// A recent decision with its session's name (the playground's "past tool result" picker).
+public struct RecentToolResult: Codable, Sendable, Hashable, Identifiable {
+    public var decision: DecisionSummary
+    public var sessionName: String
+    public var id: String { decision.toolUseId }
+
+    public init(decision: DecisionSummary, sessionName: String) {
+        self.decision = decision
+        self.sessionName = sessionName
+    }
+}
+
 /// Returned once when a session is created; the token is a credential for the gateway.
 public struct SessionLaunch: Codable, Sendable {
     public var session: SessionInfo

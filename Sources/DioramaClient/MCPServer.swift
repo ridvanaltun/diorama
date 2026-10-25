@@ -24,7 +24,7 @@ public actor MCPServer {
 
     let connect: @Sendable () async throws -> ControlClient
     let cliPath: String
-    let readOnly: Bool
+    nonisolated let readOnly: Bool
     private var client: ControlClient?
 
     /// `cliPath` is the `diorama` executable that hook installs point at.
@@ -267,6 +267,43 @@ enum MCPTools {
             let url = HookInstaller.projectSettings(try arg(a, "folder"))
             guard let command = HookInstaller.installedCommand(settings: url) else { return "No Diorama hook in \(url.path)" }
             return "Diorama hook installed in \(url.path):\n\(command)"
+        },
+
+        MCPServer.Tool(
+            name: "test_rules",
+            description: "Try rules on a past tool result or on text, without a session: which rules match and why the others don't. With rewrite=true, also runs the rewrite agent once (a small cost) and returns what Claude would see. Nothing is recorded. Use it to iterate on a profile before saving it.",
+            schema: schema([
+                "profile": string("Saved profile name or id."),
+                "profile_draft": ["type": "object", "description": "An unsaved profile to test instead ({name, rules: [...]})."],
+                "prompt": string("A session prompt to test as well."),
+                "tool_use_id": string("A past tool result to test on (from get_session)."),
+                "text": string("Text to test on, instead of a past result."),
+                "tool_name": string("The tool the text comes from (default WebFetch)."),
+                "tool_input": ["type": "object", "description": "The tool input (rules can match on its fields), e.g. {\"url\": \"https://…\"}."],
+                "rewrite": ["type": "boolean", "description": "Also run the rewrite agent (default false)."],
+            ]),
+            readOnly: true, openWorld: true
+        ) { s, a in
+            var req = PlaygroundRequest(
+                profileRef: a["profile"] as? String, prompt: (a["prompt"] as? String).flatMap { $0.isEmpty ? nil : SessionPrompt(text: $0, tools: ["*"]) },
+                toolUseId: a["tool_use_id"] as? String, text: a["text"] as? String, toolName: a["tool_name"] as? String, rewrite: a["rewrite"] as? Bool ?? false)
+            if a["profile_draft"] != nil { req.profile = try object(a, "profile_draft", as: Profile.self) }
+            if let input = a["tool_input"], JSONSerialization.isValidJSONObject(input) {
+                req.toolInput = String(decoding: try JSONSerialization.data(withJSONObject: input), as: UTF8.self)
+            }
+            if req.rewrite, s.readOnly { throw MCPServer.ToolError("this server is read-only: rewrite=true calls the paid rewrite agent; use rewrite=false") }
+            let r = try await s.daemon().playground(req)
+            var out = ["\(r.toolName) \(r.stage.rawValue), \(r.originalText.count) characters"]
+            out += r.checks.map { "- \($0.matches ? "MATCH" : "no match") \($0.name): \($0.reason)" }
+            if let note = r.note { out.append(note) }
+            if let rw = r.rewrite {
+                out.append("Rewrite \(rw.status.rawValue) with \(rw.model), \(Int(rw.latencyMs)) ms\(rw.costUSD.map { String(format: ", $%.4f", $0) } ?? ""): \(rw.explanation ?? rw.error ?? "")")
+                out += rw.edits.map { "  edit: “\($0.find)” → “\($0.replace)”" }
+                if let t = rw.replacementText { out.append("What Claude would see:\n" + clip(t)) }
+            } else {
+                out.append("Content:\n" + clip(r.originalText, 2000))
+            }
+            return out.joined(separator: "\n")
         },
 
         // Changes

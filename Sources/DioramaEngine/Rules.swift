@@ -23,27 +23,35 @@ public struct MatchContext: Sendable {
 
 public enum RuleMatcher {
     /// Returns whether `rule` applies to `ctx`. Invalid regexes never match.
-    public static func matches(_ rule: Rule, _ ctx: MatchContext) -> Bool {
-        guard rule.enabled else { return false }
+    public static func matches(_ rule: Rule, _ ctx: MatchContext) -> Bool { mismatch(rule, ctx) == nil }
+
+    /// Nil when `rule` applies to `ctx`; otherwise the first condition that fails, in words.
+    public static func mismatch(_ rule: Rule, _ ctx: MatchContext) -> String? {
+        guard rule.enabled else { return "the rule is disabled" }
         let m = rule.match
-        guard m.stage == ctx.stage else { return false }
-        guard m.tools.contains(where: { Glob.matches($0, ctx.toolName) }) else { return false }
-        if ctx.isError, !m.includeErrors { return false }
+        guard m.stage == ctx.stage else {
+            return m.stage == .page ? "the rule applies to WebFetch pages before summarization, not tool results" : "the rule applies to tool results, not raw WebFetch pages"
+        }
+        guard m.tools.contains(where: { Glob.matches($0, ctx.toolName) }) else {
+            return "\(ctx.toolName) isn't in the rule's tools (\(m.tools.joined(separator: ", ")))"
+        }
+        if ctx.isError, !m.includeErrors { return "the result is an error and the rule excludes errors" }
         if let classes = m.requestClasses, !classes.isEmpty {
-            guard let rc = ctx.requestClass, classes.contains(rc) else { return false }
+            guard let rc = ctx.requestClass, classes.contains(rc) else { return "the request class isn't one of \(classes.joined(separator: ", "))" }
         }
         let chars = ctx.text.count
-        if let min = m.minChars, chars < min { return false }
-        if let max = m.maxChars, chars > max { return false }
-        for (path, pattern) in m.input {
-            guard let regex = try? Regex(pattern) else { return false }
-            guard let value = lookup(ctx.toolInput, path: path) else { return false }
-            guard value.contains(regex) else { return false }
+        if let min = m.minChars, chars < min { return "the content is shorter than \(min) characters (\(chars))" }
+        if let max = m.maxChars, chars > max { return "the content is longer than \(max) characters (\(chars))" }
+        for (path, pattern) in m.input.sorted(by: { $0.key < $1.key }) {
+            guard let regex = try? Regex(pattern) else { return "the input pattern for “\(path)” isn't a valid regex" }
+            guard let value = lookup(ctx.toolInput, path: path) else { return "the tool input has no “\(path)” field" }
+            guard value.contains(regex) else { return "input “\(path)” (\(value.count > 80 ? String(value.prefix(80)) + "…" : value)) doesn't match /\(pattern)/" }
         }
         if let pattern = m.content {
-            guard let regex = try? Regex(pattern), ctx.text.contains(regex) else { return false }
+            guard let regex = try? Regex(pattern) else { return "the content regex isn't valid" }
+            guard ctx.text.contains(regex) else { return "the content doesn't match /\(pattern)/" }
         }
-        return true
+        return nil
     }
 
     /// Resolves a dot-separated path in a JSON value to a string (numbers/bools stringified).

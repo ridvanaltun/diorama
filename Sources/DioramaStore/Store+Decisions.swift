@@ -176,6 +176,14 @@ extension Store {
 
     // MARK: Detail
 
+    /// The latest decisions across sessions, newest first, with their session's name.
+    public func recentDecisions(limit: Int = 50) throws -> [(DecisionRecord, String)] {
+        try db.query(
+            "SELECT d.*, s.name AS session_name FROM decisions d JOIN sessions s ON s.id = d.session_id ORDER BY d.created_at DESC LIMIT ?",
+            [.int(Int64(limit))]
+        ).map { (try decisionRecord($0), $0.string("session_name") ?? "") }
+    }
+
     public func decisionDetail(toolUseId: String) throws -> DecisionDetail? {
         guard let d = try decision(toolUseId: toolUseId) else { return nil }
         let original = (try? blobs.getString(d.originalBlob)) ?? ""
