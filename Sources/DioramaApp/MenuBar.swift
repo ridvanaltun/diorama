@@ -105,24 +105,27 @@ enum MenuBarIcon {
             NSColor.black.setStroke()
             NSColor.black.setFill()
             let outer = NSRect(x: 1.5, y: 1.5, width: 15, height: 13)
-            let inner = NSRect(x: 5, y: 4.5, width: 8, height: 7)
-            let frame = NSBezierPath(roundedRect: outer, xRadius: 1, yRadius: 1)
+            let inner = NSRect(x: 5.5, y: 5, width: 7, height: 6)
+            let frame = NSBezierPath(roundedRect: outer, xRadius: 2.5, yRadius: 2.5)
             frame.lineWidth = 1.5
             frame.stroke()
-            let back = NSBezierPath(rect: inner)
+            let back = NSBezierPath(roundedRect: inner, xRadius: 0.5, yRadius: 0.5)
             back.lineWidth = 1
             back.stroke()
             let edges = NSBezierPath()
             edges.lineWidth = 1
-            for (a, b) in [(NSPoint(x: outer.minX, y: outer.minY), NSPoint(x: inner.minX, y: inner.minY)),
-                           (NSPoint(x: outer.maxX, y: outer.minY), NSPoint(x: inner.maxX, y: inner.minY)),
-                           (NSPoint(x: outer.minX, y: outer.maxY), NSPoint(x: inner.minX, y: inner.maxY)),
-                           (NSPoint(x: outer.maxX, y: outer.maxY), NSPoint(x: inner.maxX, y: inner.maxY))] {
+            edges.lineCapStyle = .round
+            // Start just inside the rounded corners.
+            let c = 0.8
+            for (a, b) in [(NSPoint(x: outer.minX + c, y: outer.minY + c), NSPoint(x: inner.minX, y: inner.minY)),
+                           (NSPoint(x: outer.maxX - c, y: outer.minY + c), NSPoint(x: inner.maxX, y: inner.minY)),
+                           (NSPoint(x: outer.minX + c, y: outer.maxY - c), NSPoint(x: inner.minX, y: inner.maxY)),
+                           (NSPoint(x: outer.maxX - c, y: outer.maxY - c), NSPoint(x: inner.maxX, y: inner.maxY))] {
                 edges.move(to: a)
                 edges.line(to: b)
             }
             edges.stroke()
-            let dot = NSBezierPath(ovalIn: NSRect(x: 7.25, y: 5.5, width: 3.5, height: 3.5))
+            let dot = NSBezierPath(ovalIn: NSRect(x: 7.25, y: 5.75, width: 3.5, height: 3.5))
             if active { dot.fill() } else { dot.lineWidth = 1; dot.stroke() }
             return true
         }

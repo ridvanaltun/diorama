@@ -22,27 +22,32 @@ ctx.drawLinearGradient(gradient, start: CGPoint(x: 0, y: inset), end: CGPoint(x:
 ctx.setFillColor(NSColor(calibratedWhite: 1, alpha: 0.12).cgColor)
 ctx.fill(CGRect(x: inset, y: inset, width: size - 2 * inset, height: 230))
 
-// Box frame (the diorama).
-ctx.setStrokeColor(NSColor(calibratedWhite: 1, alpha: 0.92).cgColor)
-ctx.setLineWidth(34)
-ctx.setLineJoin(.round)
+// The diorama: a rounded box frame with perspective lines to a small, deep back panel.
 let box = CGRect(x: 250, y: 300, width: 524, height: 430)
-ctx.stroke(box)
-// Perspective lines to the back panel.
-let back = box.insetBy(dx: 95, dy: 80).offsetBy(dx: 0, dy: 25)
+let back = CGRect(x: 391, y: 440, width: 241, height: 193)
 ctx.setLineWidth(18)
+ctx.setLineCap(.round)
 ctx.setStrokeColor(NSColor(calibratedWhite: 1, alpha: 0.55).cgColor)
-for (a, b) in [(CGPoint(x: box.minX, y: box.minY), CGPoint(x: back.minX, y: back.minY)), (CGPoint(x: box.maxX, y: box.minY), CGPoint(x: back.maxX, y: back.minY)),
-               (CGPoint(x: box.minX, y: box.maxY), CGPoint(x: back.minX, y: back.maxY)), (CGPoint(x: box.maxX, y: box.maxY), CGPoint(x: back.maxX, y: back.maxY))] {
+// Lines start just inside the frame's rounded corners.
+let c = 14.0
+for (a, b) in [(CGPoint(x: box.minX + c, y: box.minY + c), CGPoint(x: back.minX, y: back.minY)), (CGPoint(x: box.maxX - c, y: box.minY + c), CGPoint(x: back.maxX, y: back.minY)),
+               (CGPoint(x: box.minX + c, y: box.maxY - c), CGPoint(x: back.minX, y: back.maxY)), (CGPoint(x: box.maxX - c, y: box.maxY - c), CGPoint(x: back.maxX, y: back.maxY))] {
     ctx.move(to: a)
     ctx.addLine(to: b)
 }
 ctx.strokePath()
-ctx.stroke(back)
+ctx.addPath(CGPath(roundedRect: back, cornerWidth: 12, cornerHeight: 12, transform: nil))
+ctx.strokePath()
+ctx.setLineWidth(34)
+ctx.setStrokeColor(NSColor(calibratedWhite: 1, alpha: 0.95).cgColor)
+ctx.addPath(CGPath(roundedRect: box, cornerWidth: 42, cornerHeight: 42, transform: nil))
+ctx.strokePath()
 
-// A spotlight dot inside: the agent being observed.
+// A spotlight dot inside: the agent being observed, with a soft shadow on the floor.
+ctx.setFillColor(NSColor(calibratedWhite: 0, alpha: 0.28).cgColor)
+ctx.fillEllipse(in: CGRect(x: 452, y: 377, width: 120, height: 30))
 ctx.setFillColor(NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.35, alpha: 1).cgColor)
-ctx.fillEllipse(in: CGRect(x: 462, y: 410, width: 100, height: 100))
+ctx.fillEllipse(in: CGRect(x: 458, y: 404, width: 108, height: 108))
 
 image.unlockFocus()
 guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff), let png = rep.representation(using: .png, properties: [:]) else {
