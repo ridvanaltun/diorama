@@ -211,8 +211,10 @@ enum MCPTools {
             let notices = t.events.filter { $0.kind == .anomaly || $0.kind == .rewriteFailed }
             if !notices.isEmpty { out.append("Notices:\n" + notices.map { "- \($0.message)" }.joined(separator: "\n")) }
             out.append("Decisions:")
+            let impacts = Dictionary(((try? await s.daemon().impact(info.id)) ?? []).map { ($0.toolUseId, $0) }, uniquingKeysWith: { a, _ in a })
             for d in t.decisions.sorted(by: { $0.createdAt < $1.createdAt }) {
-                out.append("- \(d.toolUseId) \(d.toolName ?? "tool")\(target(d.toolName, d.toolInput).map { " (\($0))" } ?? ""): \(d.outcome.rawValue) — \(d.reason)")
+                let impact = impacts[d.toolUseId].map { i in " [Claude's use (heuristic): \(i.label)\(i.evidence.isEmpty ? "" : "; " + i.evidence.joined(separator: "; "))]" } ?? ""
+                out.append("- \(d.toolUseId) \(d.toolName ?? "tool")\(target(d.toolName, d.toolInput).map { " (\($0))" } ?? ""): \(d.outcome.rawValue) — \(d.reason)\(impact)")
             }
             return out.joined(separator: "\n")
         },

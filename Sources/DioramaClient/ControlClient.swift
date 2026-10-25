@@ -178,6 +178,8 @@ public struct ControlClient: Sendable {
     }
     public func setSteeringPaused(_ paused: Bool) async throws -> DioramaSettings { try await request("POST", "steering/\(paused ? "pause" : "resume")") }
     public func timeline(_ id: String) async throws -> Timeline { try await request("GET", "sessions/\(id)/timeline") }
+    /// Whether each rewritten result in a session shows up in what Claude did next (heuristic).
+    public func impact(_ sessionId: String) async throws -> [DecisionImpact] { try await request("GET", "sessions/\(sessionId)/impact") }
     /// Two sessions side by side (built from their timelines).
     public func compareSessions(_ a: String, _ b: String) async throws -> SessionComparison {
         async let x = timeline(a)

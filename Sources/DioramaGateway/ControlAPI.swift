@@ -265,6 +265,10 @@ struct ControlAPI: Sendable {
         if let c = Self.match(method, route, "GET", "sessions/:id/experiment-draft") {
             return try ok(try daemon.experimentDraft(sessionId: c[0], trialsPerVariant: Int(req.query["trials"] ?? "") ?? 5))
         }
+        if let c = Self.match(method, route, "GET", "sessions/:id/impact") {
+            guard try store.session(id: c[0]) != nil else { throw notFound("session") }
+            return try ok(try daemon.impact(sessionId: c[0]))
+        }
         if let c = Self.match(method, route, "GET", "sessions/:id/timeline") {
             let id = c[0]
             guard let s = try store.session(id: id) else { throw notFound("session") }

@@ -521,6 +521,27 @@ public final class DioramaDaemon: @unchecked Sendable {
         return t
     }
 
+    /// Impact of each rewritten result in a session (see `ImpactAnalysis`).
+    func impact(sessionId: String) throws -> [DecisionImpact] { try Self.impact(sessionId: sessionId, store: store) }
+
+    static func impact(sessionId: String, store: Store) throws -> [DecisionImpact] {
+        guard let s = try store.session(id: sessionId) else { throw StoreError("no session \(sessionId)") }
+        let info = try store.info(s)
+        let timeline = Timeline(session: info, exchanges: try store.exchanges(sessionId: sessionId),
+                                decisions: try store.decisions(sessionId: sessionId).map(\.summary), events: [])
+        let outputs = ImpactAnalysis.outputs(timeline)
+        return try store.decisions(sessionId: sessionId).filter { $0.outcome == .rewritten && !$0.toolUseId.hasPrefix("input:") }.map { d in
+            let original = Self.readableSegments(d, via: s.via, store: store).joined(separator: "\n\n")
+            var copy = d
+            copy.originalBlob = d.replacementBlob ?? d.originalBlob
+            let replacement = Self.readableSegments(copy, via: s.via, store: store).joined(separator: "\n\n")
+            return ImpactAnalysis.analyze(
+                ImpactAnalysis.Rewrite(toolUseId: d.toolUseId, exchangeId: d.exchangeId, decidedAt: d.createdAt, toolName: d.toolName,
+                                       toolInput: d.toolInput, original: original, replacement: replacement),
+                outputs: outputs, repliesVisible: !info.isHook)
+        }
+    }
+
     static func testName(tool: String, input: String?) -> String {
         guard let data = input?.data(using: .utf8), let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return tool }
         for key in ["url", "query", "file_path", "command", "pattern"] {

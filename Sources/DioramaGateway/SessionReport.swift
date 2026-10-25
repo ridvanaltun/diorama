@@ -18,6 +18,7 @@ struct SessionReport {
     var notices: [SessionEvent]
     var rules: [RuleRef]
     var requests: Int
+    var impacts: [String: DecisionImpact] = [:]
     var generatedAt = Date()
 
     static func build(sessionId: String, store: Store) throws -> SessionReport {
@@ -44,7 +45,9 @@ struct SessionReport {
         }
         let notices = try store.events(sessionId: sessionId).filter { $0.kind == .anomaly || $0.kind == .rewriteFailed || $0.kind == .warning }
         let requests = try store.exchanges(sessionId: sessionId).filter { $0.method == "POST" && $0.path == "/v1/messages" }.count
-        return SessionReport(session: info, changes: changes, unchanged: unchanged, notices: notices, rules: rules.values.sorted { $0.name < $1.name }, requests: requests)
+        let impacts = Dictionary(((try? DioramaDaemon.impact(sessionId: sessionId, store: store)) ?? []).map { ($0.toolUseId, $0) }, uniquingKeysWith: { a, _ in a })
+        return SessionReport(session: info, changes: changes, unchanged: unchanged, notices: notices, rules: rules.values.sorted { $0.name < $1.name },
+                             requests: requests, impacts: impacts)
     }
 
     // MARK: Shared pieces
@@ -103,6 +106,9 @@ struct SessionReport {
         if !s.isHook { md += "- Model requests: \(requests)\n" }
         md += "- Tool results decided: \(s.stats.toolResults) — \(s.stats.rewrites) rewritten, \(s.stats.failures) failed, \(unchanged.count) left unchanged\n"
         md += String(format: "- Rewrite-agent cost: $%.4f\n", s.stats.rewriteCostUSD)
+        if !impacts.isEmpty {
+            md += "- Rewrites Claude used (heuristic): \(impacts.values.filter { $0.signals.contains(.used) }.count) of \(impacts.count)\n"
+        }
         if !rules.isEmpty { md += "- Rules that applied: " + rules.map { "\($0.name) (`\($0.ruleHash)`)" }.joined(separator: ", ") + "\n" }
         if !notices.isEmpty {
             md += "\n## Notices\n\n" + notices.map { "- \(Self.time($0.createdAt)) — \($0.kind.rawValue): \($0.message)" }.joined(separator: "\n") + "\n"
@@ -123,6 +129,9 @@ struct SessionReport {
             }
             if let f = c.detail.followUp, !(f.text.isEmpty && f.toolUses.isEmpty) {
                 md += "\nWhat Claude did next: " + Self.followUp(f) + "\n"
+            }
+            if let i = impacts[c.detail.summary.toolUseId] {
+                md += "\nDid Claude use it (heuristic): **\(i.label)**" + (i.evidence.isEmpty ? "" : " — " + i.evidence.joined(separator: "; ")) + "\n"
             }
             md += "\n"
         }
@@ -209,6 +218,9 @@ struct SessionReport {
             if let r = c.replacement { h += "<div class=\"diff\">\(Self.htmlDiff(c.original, r))</div>" }
             if let f = c.detail.followUp, !(f.text.isEmpty && f.toolUses.isEmpty) {
                 h += "<p class=\"muted\">What Claude did next: \(e(Self.followUp(f)))</p>"
+            }
+            if let i = impacts[c.detail.summary.toolUseId] {
+                h += "<p class=\"muted\">Did Claude use it (heuristic): <b>\(e(i.label))</b>\(i.evidence.isEmpty ? "" : " — " + e(i.evidence.joined(separator: "; ")))</p>"
             }
             h += "</div>"
         }

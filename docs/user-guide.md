@@ -323,6 +323,22 @@ diorama sessions --tag baseline
 
 The MCP tool `annotate_session` sets a session's name, notes or tags, and `list_sessions` takes a `tag` filter.
 
+### Did Claude use it?
+
+Every rewritten tool result gets an **impact** label from what Claude wrote and did afterwards, starting with the response that received it:
+
+| Label | Meaning |
+|---|---|
+| **used** | Text the rewrite introduced shows up in Claude's later replies or tool inputs. |
+| **questioned** | Claude's later text questions the content ("looks altered", "can't verify", …). |
+| **checked** | Claude fetched the same URL again or ran a network command afterwards. |
+| **original surfaced** | Text the rewrite removed shows up in what Claude wrote later. |
+| **no sign** | Claude responded, without any of these. |
+
+The label appears next to **rewritten** in the timeline. The session header shows **used by Claude** (for example 2/3), and the audit record has a **Did Claude use it?** section with the evidence. Session reports and MCP `get_session` include it too.
+
+It's a heuristic, not a fact. It matches text, so a paraphrase can read as **no sign**. When several rewrites introduce the same words, it can't tell which one Claude used. Very short edits are matched together with a neighboring word, for example "version 2.4". Hook-mode sessions don't see Claude's replies, so they show only what later tool calls reveal. For measured effects, use experiments, which compare against a control.
+
 ### Session reports
 
 **Export** in a session's header saves the session's audit trail as **Markdown** or **self-contained HTML**, or opens the HTML in your browser. The report has:

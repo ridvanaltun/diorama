@@ -366,6 +366,7 @@ struct TimelineView: View {
     @State private var timeline: Timeline?
     @State private var selectedDecision: String?
     @State private var showReplays = false
+    @State private var impacts: [String: DecisionImpact] = [:]
     @FocusState private var focused: Bool
 
     /// Tool results in the order the timeline shows them, for ↑/↓.
@@ -458,9 +459,11 @@ struct TimelineView: View {
             selectedDecision = id
             model.focusDecisionId = nil
         }
+        .environment(\.impacts, impacts)
         .task(id: model.eventTick) {
             if model.lastEvent?.sessionId == nil || model.lastEvent?.sessionId == sessionId || timeline == nil {
                 timeline = await model.perform { try await $0.timeline(sessionId) }
+                impacts = Dictionary(((try? await model.client?.impact(sessionId)) ?? []).map { ($0.toolUseId, $0) }, uniquingKeysWith: { a, _ in a })
                 if model.snapshotDir != nil, selectedDecision == nil {
                     selectedDecision = timeline?.decisions.first { $0.outcome == .rewritten }?.toolUseId
                 }
@@ -505,6 +508,7 @@ struct SessionHeader: View {
     @State private var draft: ExperimentDraft?
     @State private var renaming: String?
     @State private var compareWith: String?
+    @Environment(\.impacts) private var impacts
     /// The rules of the profile version this session uses (for the Rules menu).
     @State private var sessionRules: [Rule] = []
 
@@ -608,6 +612,11 @@ struct SessionHeader: View {
                 StatTile(value: "\(session.stats.rewrites)", label: "rewritten", tint: session.stats.rewrites > 0 ? .purple : nil)
                 StatTile(value: "\(session.stats.failures)", label: "failed", tint: session.stats.failures > 0 ? .red : nil)
                 StatTile(value: Fmt.money(session.stats.rewriteCostUSD), label: "rewrite cost")
+                if !impacts.isEmpty, !session.isHook {
+                    let used = impacts.values.filter { $0.signals.contains(.used) }.count
+                    StatTile(value: "\(used)/\(impacts.count)", label: "used by Claude", tint: used > 0 ? .green : nil)
+                        .help("Rewritten results whose new text shows up in what Claude wrote or did afterwards (heuristic)")
+                }
             }
             if !session.flags.isEmpty {
                 Label(session.flags.joined(separator: ", "), systemImage: "flag").font(.caption).foregroundStyle(.orange)
@@ -793,6 +802,7 @@ struct ToolResultRow: View {
                         if entry.toolUseId.hasPrefix("input:") { Badge(text: "input", color: .blue).help("The tool call's input, changed before it ran") }
                         if let target { Text(target).font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
                         Badge(text: entry.handling.label, color: entry.handling.color)
+                        if entry.handling == .decidedRewritten { ImpactBadge(toolUseId: entry.toolUseId) }
                         if decision?.reason.contains("shadow mode, would rewrite") == true {
                             Badge(text: "shadow", color: .indigo).help("Shadow mode: the rewrite was computed but not sent")
                         }
@@ -967,6 +977,7 @@ struct DecisionDetailView: View {
                                 .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
                         }
                     }
+                    ImpactSection(toolUseId: d.summary.toolUseId)
                     if let f = d.followUp, !(f.text.isEmpty && f.toolUses.isEmpty) {
                         section("What Claude did next") {
                             AssistantBlock(assistant: f)
