@@ -21,6 +21,9 @@ extension Store {
             if !ids.insert(r.id).inserted { problems.append("duplicate rule id \(r.id)") }
             if r.name.trimmingCharacters(in: .whitespaces).isEmpty { problems.append("rule \(r.id) has no name") }
             if r.match.tools.isEmpty { problems.append("rule '\(r.name)' matches no tools") }
+            if r.match.stage == .page, !r.match.tools.allSatisfy({ Glob.matches($0, "WebFetch") }) {
+                problems.append("rule '\(r.name)': the page stage applies only to WebFetch (tools must match WebFetch)")
+            }
             if r.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { problems.append("rule '\(r.name)' has empty instructions") }
             for (field, pattern) in r.match.input where (try? Regex(pattern)) == nil {
                 problems.append("rule '\(r.name)': invalid regex for input field '\(field)'")

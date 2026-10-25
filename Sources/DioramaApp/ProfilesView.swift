@@ -204,6 +204,10 @@ struct RuleEditor: View {
                     rule.match.input = d
                 }), axis: .vertical)
             TextField("Content regex (optional)", text: Binding(get: { rule.match.content ?? "" }, set: { rule.match.content = $0.isEmpty ? nil : $0 }))
+            Picker("Applies to", selection: $rule.match.stage) {
+                Text("Tool result (what Claude receives)").tag(RuleStage.result)
+                Text("WebFetch page, before summarization").tag(RuleStage.page)
+            }
             Toggle("Also rewrite error results", isOn: $rule.match.includeErrors)
             Text("Instructions for the rewrite agent").font(.caption)
             TextEditor(text: $rule.instructions).frame(minHeight: 80).overlay(RoundedRectangle(cornerRadius: 4).stroke(.quaternary))

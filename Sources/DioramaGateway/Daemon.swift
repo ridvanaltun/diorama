@@ -68,7 +68,7 @@ public final class DioramaDaemon: @unchecked Sendable {
                 }
             }
         }
-        engine = DecisionEngine(store: store) { provider }
+        engine = DecisionEngine(store: store) { (_: String) in provider }
         server = HTTPServer(maxBodyBytes: options.maxBodyBytes)
         let factory = SessionFactoryBox()
         runner = ExperimentRunner(

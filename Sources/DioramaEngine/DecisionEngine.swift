@@ -16,13 +16,20 @@ public struct ProcessResult: Sendable {
 /// every later request carries exactly the same bytes for it (decisions D9/D10).
 public final class DecisionEngine: Sendable {
     let store: Store
-    let providerFor: @Sendable () -> RewriteProvider
+    let providerFor: @Sendable (_ model: String) -> RewriteProvider
     let inflight = Inflight()
     let anomalies = AnomalyMemory()
+    let pendingFetches = PendingFetches()
 
-    public init(store: Store, provider: @escaping @Sendable () -> RewriteProvider) {
+    /// `provider` picks the backend for a model id (e.g. `ollama:` models go to a local server).
+    public init(store: Store, provider: @escaping @Sendable (_ model: String) -> RewriteProvider) {
         self.store = store
         self.providerFor = provider
+    }
+
+    /// Convenience for a single backend regardless of model.
+    public convenience init(store: Store, provider: @escaping @Sendable () -> RewriteProvider) {
+        self.init(store: store, provider: { (_: String) in provider() })
     }
 
     actor Inflight {
@@ -56,6 +63,12 @@ public final class DecisionEngine: Sendable {
                 store.addEvent(sessionId: session.id, kind: .anomaly, message: "Could not parse a request body; forwarded unchanged (\(error))", refId: String(exchangeId))
             }
             return ProcessResult(forwardedBody: nil, entries: [], model: nil, scanError: String(describing: error))
+        }
+        if scan.toolResults.isEmpty, allowNewDecisions,
+           let page = await processExtraction(body: body, session: session, exchangeId: exchangeId, requestClass: requestClass) {
+            var result = page
+            result.model = scan.model
+            return result
         }
         let ids = scan.toolResults.map(\.toolUseId)
         let existing = (try? store.decisions(toolUseIds: ids)) ?? [:]
@@ -116,8 +129,9 @@ public final class DecisionEngine: Sendable {
                 for p in pending {
                     let content = p.result.content!
                     group.addTask {
+                        let target = self.toolResultTarget(p.result, original: p.original, hash: p.hash, scan: scan, body: body)
                         let d = await self.inflight.decision(for: p.result.toolUseId) {
-                            await self.decide(p.result, original: p.original, hash: p.hash, scan: scan, body: body, session: session, exchangeId: exchangeId, requestClass: requestClass)
+                            await self.decide(target, session: session, exchangeId: exchangeId, requestClass: requestClass)
                         }
                         return (p.index, d, content.range)
                     }
@@ -179,24 +193,55 @@ public final class DecisionEngine: Sendable {
         return Applicable(rules: rules, refs: refs, defaults: defaults)
     }
 
-    func decide(
-        _ tr: ScannedToolResult, original: [UInt8], hash: String, scan: ScannedRequest, body: [UInt8], session: SessionRecord,
-        exchangeId: Int64, requestClass: String?
-    ) async -> DecisionRecord {
-        // A concurrent request may already have decided this id: the first decision wins.
-        if let existing = try? store.decision(toolUseId: tr.toolUseId) { return existing }
+    /// Everything `decide` needs about one thing that may be rewritten: a tool result, or (in
+    /// pre-extraction mode) the raw page inside WebFetch's summarizing request.
+    struct DecisionTarget: Sendable {
+        var decisionId: String
+        var toolName: String?
+        var toolInputJSON: String?
+        /// Fields rules match against (`match.input`).
+        var matchInput: JSONValue
+        /// Fields that identify the treatment across trials (frozen treatment key).
+        var treatmentInput: JSONValue
+        var isError: Bool
+        var stage: RuleStage
+        /// Bytes stored as the decision's original blob.
+        var original: [UInt8]
+        var hash: String
+        var segments: [String]
+        var taskText: String?
+        var missingReason: String?
+        /// Builds the bytes stored as the replacement blob from the new segment texts.
+        var buildReplacement: @Sendable ([String]) throws -> [UInt8]
+    }
+
+    func toolResultTarget(_ tr: ScannedToolResult, original: [UInt8], hash: String, scan: ScannedRequest, body: [UInt8]) -> DecisionTarget {
         let toolUse = scan.toolUses[tr.toolUseId]
-        let originalBlob = (try? store.blobs.put(original)) ?? hash
-        let segments: [String] = tr.textSegments.compactMap { try? JSONIndex.decodeString(body, $0) }
+        let input = toolUse.flatMap { try? JSONValue.parse($0.inputJSON) } ?? .object([:])
+        let content = tr.content!
+        let nodes = tr.textSegments
+        return DecisionTarget(
+            decisionId: tr.toolUseId, toolName: toolUse?.name, toolInputJSON: toolUse?.inputJSON, matchInput: input, treatmentInput: input,
+            isError: tr.isError, stage: .result, original: original, hash: hash,
+            segments: nodes.compactMap { try? JSONIndex.decodeString(body, $0) }, taskText: scan.taskText,
+            missingReason: toolUse == nil ? "no matching tool_use block in the request" : nil,
+            buildReplacement: { try Self.replacementBytes(body: body, content: content, segments: nodes, newTexts: $0) })
+    }
+
+    func decide(_ t: DecisionTarget, session: SessionRecord, exchangeId: Int64, requestClass: String?) async -> DecisionRecord {
+        // A concurrent request may already have decided this id: the first decision wins.
+        if let existing = try? store.decision(toolUseId: t.decisionId) { return existing }
+        let originalBlob = (try? store.blobs.put(t.original)) ?? t.hash
+        let label = t.stage == .page ? "\(t.toolName ?? "tool") page" : "\(t.toolName ?? "tool") result"
         func record(_ outcome: DecisionOutcome, _ reason: String, replacement: String? = nil, refs: [RuleRef] = [], instructions: [String] = [], treatmentKey: String? = nil) -> DecisionRecord {
             let d = DecisionRecord(
-                toolUseId: tr.toolUseId, sessionId: session.id, exchangeId: exchangeId, toolName: toolUse?.name, toolInput: toolUse?.inputJSON,
-                isError: tr.isError, originalHash: hash, originalBlob: originalBlob, outcome: outcome, reason: reason,
+                toolUseId: t.decisionId, sessionId: session.id, exchangeId: exchangeId, toolName: t.toolName, toolInput: t.toolInputJSON,
+                isError: t.isError, originalHash: t.hash, originalBlob: originalBlob, outcome: outcome, reason: reason,
                 replacementBlob: replacement, rules: refs, instructions: instructions, treatmentKey: treatmentKey)
             // Persisted before the request is forwarded (FR-19). If persistence fails we must not
             // rewrite, because the rewrite could not be replayed.
             guard let saved = try? store.insertDecision(d) else {
-                store.addEvent(sessionId: session.id, kind: .anomaly, message: "Could not persist decision for \(tr.toolUseId); forwarded unchanged", refId: tr.toolUseId)
+                store.addEvent(sessionId: session.id, kind: .anomaly, message: "Could not persist decision for \(t.decisionId); forwarded unchanged", refId: t.decisionId)
                 var fallback = d
                 fallback.outcome = .failed
                 fallback.replacementBlob = nil
@@ -205,18 +250,19 @@ public final class DecisionEngine: Sendable {
             }
             if saved.outcome == .rewritten || saved.outcome == .failed {
                 store.addEvent(sessionId: session.id, kind: saved.outcome == .failed ? .rewriteFailed : .decisionMade,
-                               message: "\(saved.toolName ?? "tool") result \(saved.outcome.rawValue): \(saved.reason)", refId: saved.toolUseId)
+                               message: "\(label) \(saved.outcome.rawValue): \(saved.reason)", refId: saved.toolUseId)
             } else {
-                store.addEvent(sessionId: session.id, kind: .decisionMade, message: "\(saved.toolName ?? "tool") result unchanged: \(saved.reason)", refId: saved.toolUseId)
+                store.addEvent(sessionId: session.id, kind: .decisionMade, message: "\(label) unchanged: \(saved.reason)", refId: saved.toolUseId)
             }
             return saved
         }
 
-        guard let toolUse else { return record(.unchanged, "no matching tool_use block in the request") }
-        guard !segments.isEmpty else { return record(.unchanged, "tool result has no text content") }
-        let inputValue = (try? JSONValue.parse(toolUse.inputJSON)) ?? .object([:])
+        if let missing = t.missingReason { return record(.unchanged, missing) }
+        guard let toolName = t.toolName else { return record(.unchanged, "unknown tool") }
+        guard !t.segments.isEmpty else { return record(.unchanged, "tool result has no text content") }
+        let segments = t.segments
         let text = segments.joined(separator: "\n\n")
-        let ctx = MatchContext(toolName: toolUse.name, toolInput: inputValue, text: text, requestClass: requestClass, isError: tr.isError)
+        let ctx = MatchContext(toolName: toolName, toolInput: t.matchInput, text: text, requestClass: requestClass, isError: t.isError, stage: t.stage)
         let app = applicableRules(session: session, ctx: ctx)
         if app.rules.isEmpty {
             let hasRules = !(session.profileVersion?.profile.rules.isEmpty ?? true) || session.prompt != nil
@@ -225,13 +271,13 @@ public final class DecisionEngine: Sendable {
         let instructions = app.rules.map { RuleInstruction(name: $0.name, text: $0.instructions) }
         let instructionTexts = instructions.map { "[\($0.name)] \($0.text)" }
         if text.count > app.defaults.maxInputChars {
-            return record(.unchanged, "tool result too large to rewrite (\(text.count) > \(app.defaults.maxInputChars) characters)", refs: app.refs, instructions: instructionTexts)
+            return record(.unchanged, "content too large to rewrite (\(text.count) > \(app.defaults.maxInputChars) characters)", refs: app.refs, instructions: instructionTexts)
         }
 
         // Frozen experiment treatment: identical inputs reuse the stored rewrite (decision D11).
         var treatmentKey: String?
         if let scope = session.treatmentScope {
-            let key = Hashing.sha256Hex([scope, RewritePrompt.version, app.refs.map(\.ruleHash).joined(separator: ","), toolUse.name, inputValue.canonicalString, hash].joined(separator: "\u{1F}"))
+            let key = Hashing.sha256Hex([scope, RewritePrompt.version, t.stage.rawValue, app.refs.map(\.ruleHash).joined(separator: ","), toolName, t.treatmentInput.canonicalString, t.hash].joined(separator: "\u{1F}"))
             treatmentKey = key
             if let cached = try? store.treatment(key: key), store.blobs.exists(cached.replacementBlob) {
                 return record(.rewritten, "frozen treatment reused", replacement: cached.replacementBlob, refs: app.refs, instructions: instructionTexts, treatmentKey: key)
@@ -242,11 +288,11 @@ public final class DecisionEngine: Sendable {
         let effort = app.rules.last(where: { $0.effort != nil })?.effort ?? app.defaults.effort
         let wantsTask = app.rules.contains { $0.context == .task }
         var request = RewriteRequest(
-            toolName: toolUse.name, toolInput: toolUse.inputJSON, segments: segments, instructions: instructions,
-            taskContext: wantsTask ? scan.taskText : nil, model: model, effort: effort,
+            toolName: t.stage == .page ? "\(toolName) (raw page, before extraction)" : toolName, toolInput: t.toolInputJSON ?? "{}",
+            segments: segments, instructions: instructions, taskContext: wantsTask ? t.taskText : nil, model: model, effort: effort,
             maxOutputTokens: app.defaults.maxOutputTokens, timeout: app.defaults.timeoutSeconds)
 
-        let provider = providerFor()
+        let provider = providerFor(model)
         let started = Date()
         let budget = max(app.defaults.timeoutSeconds * 2, 30)
         var lastError = "rewrite failed"
@@ -274,14 +320,12 @@ public final class DecisionEngine: Sendable {
                 createdAt: Date())
             let reqBlob = response.rawRequest.flatMap { try? store.blobs.put($0) }
             let resBlob = response.rawResponse.flatMap { try? store.blobs.put($0) }
-            try? store.insertAttempt(AttemptRecord(info: info, toolUseId: tr.toolUseId, sessionId: session.id, requestBlob: reqBlob, responseBlob: resBlob))
+            try? store.insertAttempt(AttemptRecord(info: info, toolUseId: t.decisionId, sessionId: session.id, requestBlob: reqBlob, responseBlob: resBlob))
 
             switch status {
             case .succeeded:
                 guard let newSegments else { break }
-                guard let replacement = try? Self.replacementBytes(body: body, content: tr.content!, segments: tr.textSegments, newTexts: newSegments),
-                      let blob = try? store.blobs.put(replacement)
-                else {
+                guard let replacement = try? t.buildReplacement(newSegments), let blob = try? store.blobs.put(replacement) else {
                     lastError = "could not build replacement content"
                     break
                 }

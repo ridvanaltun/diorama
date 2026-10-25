@@ -343,3 +343,98 @@ func makeSession(_ store: Store, profile: ProfileVersionInfo?, prompt: SessionPr
         #expect(s.taskText == "Compare the headings")
     }
 }
+
+// MARK: - Pre-extraction (page stage)
+
+func extractionBody(page: String, prompt: String) -> [UInt8] {
+    let text = "\nWeb page content:\n---\n\(page)\n---\n\n\(prompt)\n\nProvide a concise response based only on the content above. In your response:\n - Use quotation marks.\n"
+    let encoded = String(decoding: JSONEncoding.string(text), as: UTF8.self)
+    return Array(#"{"model":"claude-haiku-5-5","messages":[{"role":"user","content":[{"type":"text","text":\#(encoded)}]}],"system":[{"type":"text","text":"You are a Claude agent."}],"tools":[],"metadata":{"user_id":"u"},"max_tokens":32000,"stream":true}"#.utf8)
+}
+
+@Suite struct PageExtractionTests {
+    @Test func detectsPageWithInternalRules() throws {
+        let page = "Title\n---\nIntro\n\n---\n\nMore text"
+        let ex = try #require(ExtractionRequest.detect(extractionBody(page: page, prompt: "What is the title?")))
+        #expect(ex.page == page)
+        #expect(ex.prompt == "What is the title?")
+        #expect(ex.prefix + ex.page + ex.suffix == ex.text)
+        #expect(ExtractionRequest.detect(messagesBody(turns: [("toolu_a", "https://e.com", "x")])) == nil)
+        #expect(ExtractionRequest.detect(Array(#"{"messages":[{"role":"user","content":"hello"}]}"#.utf8)) == nil)
+    }
+
+    func pageProfile(_ store: Store, url: String = "example\\.com") throws -> ProfileVersionInfo {
+        try store.createProfile(Profile(name: "page-\(UUID().uuidString.prefix(6))", rules: [
+            Rule(id: "p1", name: "Rename on page", match: RuleMatch(tools: ["WebFetch"], input: ["url": url], stage: .page), instructions: "rename"),
+        ]))
+    }
+
+    @Test func rewritesRawPageAndReplaysRetries() async throws {
+        let store = try tempStore()
+        let session = try makeSession(store, profile: try pageProfile(store))
+        let counter = CallCounter()
+        let engine = DecisionEngine(store: store) { countingProvider(counter, ScriptedRewriteProvider.replacing("Example Domain", with: "Morph Test Domain")) }
+        await engine.noteToolUses(sessionId: session.id, toolUses: [ToolUseSummary(id: "toolu_w1", name: "WebFetch", input: #"{"url":"https://example.com","prompt":"Heading?"}"#)])
+        let body = extractionBody(page: "# Example Domain\n\nThis domain is for examples.", prompt: "Heading?")
+        let r = await engine.process(body: body, session: session, exchangeId: 1, requestClass: "auxiliary")
+        #expect(r.entries.map(\.handling) == [.decidedRewritten])
+        #expect(r.entries.first?.toolUseId == "page:toolu_w1")
+        let out = try #require(r.forwardedBody)
+        let ex = try #require(ExtractionRequest.detect(out))
+        #expect(ex.page == "# Morph Test Domain\n\nThis domain is for examples.")
+        #expect(counter.all.first?.toolName.contains("raw page") == true)
+        // Only the text string changed: everything after it is byte-identical.
+        let tail = #"}]}],"system":[{"type":"text","text":"You are a Claude agent."}],"tools":[],"metadata":{"user_id":"u"},"max_tokens":32000,"stream":true}"#
+        #expect(String(decoding: out, as: UTF8.self).hasSuffix(tail))
+        // A retried identical request replays without another rewrite call.
+        let again = await engine.process(body: body, session: session, exchangeId: 2, requestClass: "auxiliary")
+        #expect(again.forwardedBody == out)
+        #expect(again.entries.map(\.handling) == [.replayedRewritten])
+        #expect(counter.count == 1)
+        let detail = try #require(try store.decisionDetail(toolUseId: "page:toolu_w1"))
+        #expect(detail.originalText.contains("Example Domain"))
+        #expect(detail.toolInput?.contains("example.com") == true)
+    }
+
+    @Test func urlPatternsUseTheMatchedFetchAndNonMatchingUrlsPassThrough() async throws {
+        let store = try tempStore()
+        let session = try makeSession(store, profile: try pageProfile(store, url: "docs\\.example"))
+        let counter = CallCounter()
+        let engine = DecisionEngine(store: store) { countingProvider(counter, ScriptedRewriteProvider.replacing("Example", with: "X")) }
+        await engine.noteToolUses(sessionId: session.id, toolUses: [ToolUseSummary(id: "toolu_w2", name: "WebFetch", input: #"{"url":"https://example.com","prompt":"Q"}"#)])
+        let r = await engine.process(body: extractionBody(page: "Example", prompt: "Q"), session: session, exchangeId: 1, requestClass: "auxiliary")
+        #expect(r.forwardedBody == nil)
+        #expect(r.entries.map(\.handling) == [.decidedUnchanged])
+        #expect(counter.count == 0)
+    }
+
+    @Test func frozenPageTreatmentIgnoresPromptWording() async throws {
+        let store = try tempStore()
+        let profile = try pageProfile(store)
+        let counter = CallCounter()
+        let engine = DecisionEngine(store: store) { countingProvider(counter, ScriptedRewriteProvider.replacing("Example Domain", with: "Morph")) }
+        for (i, prompt) in ["What is the heading?", "Tell me the page title", "Summarize"].enumerated() {
+            let s = try makeSession(store, profile: profile, scope: "run9:steered")
+            await engine.noteToolUses(sessionId: s.id, toolUses: [ToolUseSummary(id: "toolu_t\(i)", name: "WebFetch", input: #"{"url":"https://example.com","prompt":"\#(prompt)"}"#)])
+            let r = await engine.process(body: extractionBody(page: "Example Domain page", prompt: prompt), session: s, exchangeId: Int64(i), requestClass: "auxiliary")
+            #expect(r.entries.map(\.handling) == [.decidedRewritten])
+        }
+        #expect(counter.count == 1)
+    }
+
+    @Test func stagesAreSeparate() async throws {
+        let store = try tempStore()
+        // A result-stage rule must not touch extraction requests; a page-stage rule must not touch tool results.
+        let resultSession = try makeSession(store, profile: try webProfile(store))
+        let engine = DecisionEngine(store: store) { ScriptedRewriteProvider.replacing("Example", with: "X") }
+        let r1 = await engine.process(body: extractionBody(page: "Example", prompt: "Q"), session: resultSession, exchangeId: 1, requestClass: "auxiliary")
+        #expect(r1.forwardedBody == nil && r1.entries.isEmpty)
+        let pageSession = try makeSession(store, profile: try pageProfile(store))
+        let r2 = await engine.process(body: messagesBody(turns: [("toolu_s1", "https://example.com", "Example")]), session: pageSession, exchangeId: 2, requestClass: "main")
+        #expect(r2.forwardedBody == nil)
+        #expect(r2.entries.map(\.handling) == [.decidedUnchanged])
+        #expect(throws: StoreError.self) {
+            try store.createProfile(Profile(name: "bad", rules: [Rule(name: "r", match: RuleMatch(tools: ["Bash"], stage: .page), instructions: "x")]))
+        }
+    }
+}

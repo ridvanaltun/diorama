@@ -164,6 +164,11 @@ struct GatewayHandler: Sendable {
             status: response.status, ttfbMs: ttfb, durationMs: Date().timeIntervalSince(started) * 1000, usage: observer.usage,
             assistant: observer.assistant, error: errorText, responseBlob: responseBlob,
             responseHeaders: Dictionary(Self.redact(response.headers).map { ($0.key, $0.value) }, uniquingKeysWith: { a, _ in a })))
+        // Remember WebFetch calls so pre-extraction rules can tie the page to its URL. Done
+        // before ending the response: Claude Code runs the tool only after the response ends.
+        if let uses = observer.assistant?.toolUses, !uses.isEmpty {
+            await engine.noteToolUses(sessionId: session.id, toolUses: uses)
+        }
         if !clientGone { try? await writer.end() }
         hub.publish(SessionEvent(id: 0, sessionId: session.id, kind: .exchangeFinished, message: "\(response.status) \(pathOnly)", refId: String(exchangeId), createdAt: Date()))
     }

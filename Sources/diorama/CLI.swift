@@ -76,6 +76,7 @@ func table(_ headers: [String], _ rows: [[String]]) {
 }
 
 extension ContextMode: ExpressibleByArgument {}
+extension RuleStage: ExpressibleByArgument {}
 extension LockdownPreset: ExpressibleByArgument {}
 extension SessionKind: ExpressibleByArgument {}
 
@@ -102,6 +103,7 @@ struct Run: AsyncParsableCommand {
     @Option(help: "Tools the session prompt applies to (comma-separated globs).") var promptTools: String = SessionPrompt.defaultTools.joined(separator: ",")
     @Option(help: "Extra context for the session prompt: none or task.") var promptContext: ContextMode = .none
     @Option(help: "Rewrite model for the session prompt (default: profile/global default).") var promptModel: String?
+    @Option(help: "Where the session prompt applies: result (tool results) or page (WebFetch raw page, before summarization).") var promptStage: RuleStage = .result
     @Option(help: "Block shell network tools that bypass rewrites: none or network.") var lockdown: LockdownPreset = .none
     @Option(help: "Path to the claude executable.") var claude: String?
     @Argument(parsing: .postTerminator, help: "Arguments passed to Claude Code.") var claudeArguments: [String] = []
@@ -111,7 +113,7 @@ struct Run: AsyncParsableCommand {
         var promptText = prompt
         if let f = promptFile { promptText = try String(contentsOfFile: (f as NSString).expandingTildeInPath, encoding: .utf8) }
         let sessionPrompt = promptText.map {
-            SessionPrompt(text: $0, tools: promptTools.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }, context: promptContext, model: promptModel)
+            SessionPrompt(text: $0, tools: promptTools.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }, context: promptContext, model: promptModel, stage: promptStage)
         }
         if claudeArguments.contains("--settings") {
             eprint("diorama: note: you passed --settings to Claude Code; Diorama also passes --settings to route this session. If yours sets ANTHROPIC_BASE_URL the session may bypass Diorama.")
@@ -127,7 +129,7 @@ struct Run: AsyncParsableCommand {
         let s = launch.session
         eprint("◆ Diorama session \"\(s.name)\" (\(s.id))")
         var bits = ["profile: \(s.profileName.map { "\($0) v\(s.profileVersionNumber ?? 0)" } ?? "none")"]
-        bits.append("session prompt: \(s.prompt == nil ? "none" : "on (\(s.prompt!.tools.joined(separator: ", ")))")")
+        bits.append("session prompt: \(s.prompt == nil ? "none" : s.prompt!.stage == .page ? "on (WebFetch pages, before summarization)" : "on (\(s.prompt!.tools.joined(separator: ", ")))")")
         if lockdown != .none { bits.append("lockdown: \(lockdown.rawValue)") }
         eprint("  " + bits.joined(separator: " · "))
         if s.profileName != nil || s.prompt != nil {
@@ -381,7 +383,7 @@ struct Profiles: AsyncParsableCommand {
             print("defaults: model \(p.defaults.model), on failure \(p.defaults.onFailure.rawValue), max input \(p.defaults.maxInputChars) chars, timeout \(Int(p.defaults.timeoutSeconds))s")
             for r in p.rules {
                 print("\n• \(r.name)\(r.enabled ? "" : " (disabled)") [\(r.id)]")
-                print("  tools: \(r.match.tools.joined(separator: ", "))\(r.match.input.isEmpty ? "" : " · input: \(r.match.input)")\(r.match.content.map { " · content: /\($0)/" } ?? "")")
+                print("  stage: \(r.match.stage.rawValue) · tools: \(r.match.tools.joined(separator: ", "))\(r.match.input.isEmpty ? "" : " · input: \(r.match.input)")\(r.match.content.map { " · content: /\($0)/" } ?? "")")
                 print("  context: \(r.context.rawValue)\(r.model.map { " · model: \($0)" } ?? "")")
                 print("  instructions: \(r.instructions)")
             }

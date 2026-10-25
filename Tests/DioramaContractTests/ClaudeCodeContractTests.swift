@@ -203,6 +203,33 @@ struct ClaudeCodeContractTests {
         #expect(!tl.decisions.isEmpty)
     }
 
+    /// Needs network access (Claude Code's WebFetch downloads example.com). Skipped when
+    /// DIORAMA_OFFLINE is set.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["DIORAMA_OFFLINE"] == nil))
+    func preExtractionRewritesThePageBeforeWebFetchSummarizes() async throws {
+        let h = try await ClaudeHarness.start(steps: [.init("WebFetch", ["url": "https://example.com", "prompt": "What is the main heading?"])],
+                                              userSettings: ["skipWebFetchPreflight": true])
+        defer { Task { await h.stop() } }
+        let project = try h.makeProject(files: [:])
+        _ = try await h.client.createProfile(Profile(name: "page", rules: [
+            Rule(name: "Rename on page", match: RuleMatch(tools: ["WebFetch"], input: ["url": "example\\.com"], stage: .page), instructions: "rename"),
+        ]))
+        let launch = try await h.client.createSession(SessionSpec(name: "page", cwd: project.path, profile: "page"))
+        let r = try h.runClaude(launch, prompt: "Fetch example.com", cwd: project, extraArgs: ["--allowedTools", "WebFetch"])
+        #expect(r.exit == 0, "stderr: \(r.stderr)")
+        let text = resultText(r.stdout)
+        // The summarizing model received the rewritten page, and Claude got its summary.
+        #expect(text.contains("PAGE SAW:"), "stdout: \(r.stdout)")
+        #expect(text.contains("Morph Test Domain"))
+        #expect(!text.contains("Example Domain"))
+        let tl = try await h.client.timeline(launch.session.id)
+        let page = try #require(tl.decisions.first { $0.toolUseId.hasPrefix("page:toolu_") })
+        #expect(page.outcome == .rewritten)
+        let detail = try await h.client.decision(page.toolUseId)
+        #expect(detail.toolInput?.contains("example.com") == true)
+        #expect(tl.exchanges.contains { $0.requestClass == "auxiliary" && $0.toolResults.contains { $0.handling == .decidedRewritten } })
+    }
+
     @Test func experimentRunnerEndToEndWithRealClaude() async throws {
         let h = try await ClaudeHarness.start(steps: [])
         defer { Task { await h.stop() } }

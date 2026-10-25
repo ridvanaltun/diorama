@@ -25,6 +25,14 @@ public enum FailurePolicy: String, Codable, Sendable, CaseIterable {
     case invalidateTrial
 }
 
+/// Where a rule applies.
+public enum RuleStage: String, Codable, Sendable, CaseIterable {
+    /// The tool result Claude receives (default).
+    case result
+    /// WebFetch only: the raw page, before WebFetch's summarizing model sees it ("pre-extraction").
+    case page
+}
+
 public struct RuleMatch: Codable, Sendable, Hashable {
     /// Tool-name glob patterns (`*` wildcard), e.g. `WebFetch`, `mcp__docs__*`.
     public var tools: [String]
@@ -38,11 +46,14 @@ public struct RuleMatch: Codable, Sendable, Hashable {
     public var requestClasses: [String]?
     /// Whether tool results flagged `is_error` may be rewritten.
     public var includeErrors: Bool
+    /// `result` (default) or `page` (WebFetch pre-extraction).
+    public var stage: RuleStage
 
     public init(
         tools: [String], input: [String: String] = [:], content: String? = nil, minChars: Int? = nil,
-        maxChars: Int? = nil, requestClasses: [String]? = nil, includeErrors: Bool = false
+        maxChars: Int? = nil, requestClasses: [String]? = nil, includeErrors: Bool = false, stage: RuleStage = .result
     ) {
+        self.stage = stage
         self.tools = tools
         self.input = input
         self.content = content
@@ -61,6 +72,7 @@ public struct RuleMatch: Codable, Sendable, Hashable {
         maxChars = try c.decodeIfPresent(Int.self, forKey: .maxChars)
         requestClasses = try c.decodeIfPresent([String].self, forKey: .requestClasses)
         includeErrors = try c.decodeIfPresent(Bool.self, forKey: .includeErrors) ?? false
+        stage = try c.decodeIfPresent(RuleStage.self, forKey: .stage) ?? .result
     }
 }
 
@@ -200,10 +212,12 @@ public struct SessionPrompt: Codable, Sendable, Hashable {
     public var tools: [String]
     public var context: ContextMode
     public var model: String?
+    public var stage: RuleStage
 
     public static let defaultTools = ["WebFetch", "WebSearch"]
 
-    public init(text: String, tools: [String] = SessionPrompt.defaultTools, context: ContextMode = .none, model: String? = nil) {
+    public init(text: String, tools: [String] = SessionPrompt.defaultTools, context: ContextMode = .none, model: String? = nil, stage: RuleStage = .result) {
+        self.stage = stage
         self.text = text
         self.tools = tools
         self.context = context
@@ -216,11 +230,12 @@ public struct SessionPrompt: Codable, Sendable, Hashable {
         tools = try c.decodeIfPresent([String].self, forKey: .tools) ?? SessionPrompt.defaultTools
         context = try c.decodeIfPresent(ContextMode.self, forKey: .context) ?? .none
         model = try c.decodeIfPresent(String.self, forKey: .model)
+        stage = try c.decodeIfPresent(RuleStage.self, forKey: .stage) ?? .result
     }
 
     /// The session prompt expressed as a rule (id is stable per session-prompt content).
     public func asRule(id: String) -> Rule {
-        Rule(id: id, name: "Session prompt", match: RuleMatch(tools: tools), instructions: text, model: model, context: context)
+        Rule(id: id, name: "Session prompt", match: RuleMatch(tools: stage == .page ? ["WebFetch"] : tools, stage: stage), instructions: text, model: model, context: context)
     }
 }
 

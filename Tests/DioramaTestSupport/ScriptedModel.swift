@@ -32,6 +32,13 @@ public final class ScriptedModel: @unchecked Sendable {
         let messages = body["messages"] as? [[String: Any]] ?? []
         let isMain = tools.contains("Read") || tools.contains("Bash")
         guard isMain else {
+            // WebFetch's summarizing request: answer with the page we were given, so tests can
+            // see exactly what the extraction model received.
+            if let first = messages.first, let text = Self.firstText(first["content"]), text.contains("Web page content:\n---\n"),
+               let start = text.range(of: "Web page content:\n---\n"),
+               let end = text.range(of: "\n---\n\n", options: .backwards) {
+                return reply(text: "PAGE SAW: " + String(text[start.upperBound..<end.lowerBound]), stream: stream)
+            }
             let wantsJSON = (body["output_config"] as? [String: Any])?["format"] != nil
             return reply(text: wantsJSON ? #"{"title":"test"}"# : "ok", stream: stream)
         }
@@ -49,6 +56,11 @@ public final class ScriptedModel: @unchecked Sendable {
         }
         let saw = results.enumerated().map { "#\($0.offset + 1) \($0.element)" }.joined(separator: "\n")
         return reply(text: "MODEL SAW:\n" + saw, stream: stream)
+    }
+
+    static func firstText(_ content: Any?) -> String? {
+        if let s = content as? String { return s }
+        return (content as? [[String: Any]])?.first { $0["type"] as? String == "text" }?["text"] as? String
     }
 
     static func text(of content: Any?) -> String {
