@@ -12,7 +12,10 @@ struct DioramaApp: App {
             RootView()
                 .environment(model)
                 .frame(minWidth: 1000, minHeight: 640)
-                .task { await model.connect() }
+                .task {
+                    await model.connect()
+                    await model.checkForUpdates()
+                }
         }
         .commands {
             CommandGroup(replacing: .newItem) {}
@@ -59,7 +62,18 @@ struct RootView: View {
                 Label(s.rawValue, systemImage: s.icon).tag(s)
             }
             .navigationSplitViewColumnWidth(min: 160, ideal: 180)
-            .safeAreaInset(edge: .bottom) { ConnectionBadge().padding(8) }
+            .safeAreaInset(edge: .bottom) {
+                VStack(alignment: .leading, spacing: 6) {
+                    if let u = model.update, u.isNewer {
+                        Link(destination: URL(string: u.pageURL) ?? URL(string: "https://github.com")!) {
+                            Label("Diorama \(u.latest) available", systemImage: "arrow.down.circle.fill")
+                        }
+                        .font(.caption)
+                    }
+                    ConnectionBadge()
+                }
+                .padding(8)
+            }
         } detail: {
             Group {
                 switch model.connection {

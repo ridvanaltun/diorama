@@ -12,7 +12,7 @@ struct Diorama: AsyncParsableCommand {
         discussion: "Diorama routes Claude Code sessions you start with `diorama run` through a local gateway that can rewrite tool results according to your rules, records everything, and runs A/B experiments.",
         version: DioramaVersion.current,
         subcommands: [
-            Run.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self,
+            Run.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
         ])
 }
 
@@ -641,5 +641,26 @@ struct Doctor: AsyncParsableCommand {
             print("\(icon) \(c.name): \(c.detail)")
         }
         if checks.contains(where: { $0.status == .failure }) { throw ExitCode(1) }
+    }
+}
+
+// MARK: - update
+
+struct Update: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Check GitHub Releases for a newer Diorama (and optionally download it).")
+    @Flag(help: "Download the latest release zip to ~/Downloads and verify its checksum.") var download = false
+    @Option(help: .hidden) var assumeCurrent: String?
+    @Option(help: .hidden) var directory: String?
+
+    func run() async throws {
+        let info = try await UpdateChecker.check(current: assumeCurrent ?? DioramaVersion.current)
+        guard info.isNewer else { return print("Diorama \(info.current) is up to date (latest release: \(info.latest)).") }
+        print("Diorama \(info.latest) is available (you have \(info.current)): \(info.pageURL)")
+        guard download else { return print("Download it with: diorama update --download") }
+        let target = directory.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) } ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
+        let dest = try await UpdateChecker.download(info, to: target)
+        print("Downloaded and verified \(dest.path).")
+        print("To install: quit Diorama, run `diorama daemon stop`, unzip, replace /Applications/Diorama.app, then:")
+        print("  xattr -dr com.apple.quarantine /Applications/Diorama.app")
     }
 }

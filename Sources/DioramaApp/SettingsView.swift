@@ -50,6 +50,21 @@ struct SettingsView: View {
                 }
                 if let m = maintenance { Text(m).font(.caption).foregroundStyle(.secondary) }
             }
+            Section("Updates") {
+                Toggle("Check for updates daily", isOn: Binding(
+                    get: { UserDefaults.standard.object(forKey: "autoUpdateCheck") as? Bool ?? true },
+                    set: { UserDefaults.standard.set($0, forKey: "autoUpdateCheck") }))
+                HStack {
+                    Button("Check now") { Task { await model.checkForUpdates(force: true) } }
+                    if let u = model.update {
+                        Text(u.isNewer ? "Diorama \(u.latest) is available" : "Up to date (\(u.current))").foregroundStyle(u.isNewer ? .blue : .secondary)
+                        if u.isNewer, let url = URL(string: u.pageURL) { Link("Open release", destination: url) }
+                    } else if let e = model.updateError {
+                        Text(e).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Text("Updates are downloaded manually; Diorama never replaces itself. `diorama update --download` fetches and verifies the zip.").font(.caption).foregroundStyle(.secondary)
+            }
             Section("Diagnostics") {
                 if let d = doctor {
                     ForEach(d.checks, id: \.self) { c in

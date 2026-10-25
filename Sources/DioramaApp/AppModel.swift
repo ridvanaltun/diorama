@@ -34,6 +34,8 @@ final class AppModel {
     /// Bumped whenever an event arrives; detail views observe it to refresh.
     var eventTick = 0
     var lastEvent: SessionEvent?
+    var update: UpdateInfo?
+    var updateError: String?
 
     private var eventsTask: Task<Void, Never>?
     let paths = DioramaPaths.default()
@@ -51,6 +53,22 @@ final class AppModel {
             subscribe()
         } catch {
             connection = .failed(String(describing: error))
+        }
+    }
+
+    /// Checks GitHub Releases at most once a day (or immediately when `force`).
+    func checkForUpdates(force: Bool = false) async {
+        let defaults = UserDefaults.standard
+        guard force || defaults.object(forKey: "autoUpdateCheck") as? Bool ?? true else { return }
+        let last = defaults.double(forKey: "lastUpdateCheck")
+        guard force || Date().timeIntervalSince1970 - last > 86_400 else { return }
+        do {
+            let info = try await UpdateChecker.check()
+            update = info
+            updateError = nil
+            defaults.set(Date().timeIntervalSince1970, forKey: "lastUpdateCheck")
+        } catch {
+            updateError = (error as? ClientError)?.message ?? error.localizedDescription
         }
     }
 

@@ -5,6 +5,8 @@ import Foundation
 
 public enum DioramaVersion {
     public static let current = "1.0.0"
+    /// GitHub repository checked for updates (override with DIORAMA_UPDATE_REPO).
+    public static let repository = "ridvanaltun/diorama"
     /// Version of the rewrite-agent system prompt + output contract. Bump on any change.
     public static let rewritePromptVersion = "rewrite-v1"
 }

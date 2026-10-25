@@ -437,3 +437,14 @@ func crc32(_ bytes: [UInt8]) -> UInt32 {
         #expect(r.error?.contains("not running") == true)
     }
 }
+
+
+@Suite struct UpdateCheckerTests {
+    @Test func semverComparison() {
+        #expect(UpdateChecker.compare("1.1.0", "1.0.9") > 0)
+        #expect(UpdateChecker.compare("1.0.0", "1.0.0") == 0)
+        #expect(UpdateChecker.compare("1.0.0-beta.1", "1.0.0") < 0)
+        #expect(UpdateChecker.compare("1.10.0", "1.9.0") > 0)
+        #expect(UpdateChecker.compare("2.0", "1.99.99") > 0)
+    }
+}
