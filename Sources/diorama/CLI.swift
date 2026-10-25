@@ -264,7 +264,7 @@ struct Sessions: AsyncParsableCommand {
 }
 
 struct Session: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Inspect a session.", subcommands: [Show.self, Decision.self, Watch.self, End.self, Pause.self, Resume.self, WhatIf.self, ToExperiment.self, Report.self, Note.self, Tag.self, Rename.self, Compare.self, Archive.self, Unarchive.self, RuleSwitch.self])
+    static let configuration = CommandConfiguration(abstract: "Inspect a session.", subcommands: [Show.self, Decision.self, Watch.self, End.self, Pause.self, Resume.self, WhatIf.self, ToExperiment.self, Report.self, Note.self, Tag.self, Rename.self, Compare.self, Archive.self, Unarchive.self, RuleSwitch.self, AuditBundleCommand.self])
 
     struct Show: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Show a session's timeline.")
@@ -365,6 +365,23 @@ struct Session: AsyncParsableCommand {
             for try await e in c.eventStream(session: id) {
                 print("\(e.createdAt.formatted(date: .omitted, time: .standard)) \(e.sessionId ?? "-") \(e.kind.rawValue): \(e.message)")
             }
+        }
+    }
+
+    struct AuditBundleCommand: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "bundle",
+            abstract: "Write a session's audit bundle: reports, decisions with texts, profile version, metadata and a SHA-256 manifest, as one zip.",
+            discussion: "diorama session bundle ses_abc --output ~/Desktop/run.zip   (contains tool results as Claude received them; share with care)")
+        @OptionGroup var global: GlobalOptions
+        @Argument var id: String
+        @Option(help: "Zip file to write (default: in the current folder).") var output: String?
+        func run() async throws {
+            let client = try await global.client()
+            let s = try await client.session(id)
+            let url = URL(fileURLWithPath: ((output ?? AuditBundle.defaultFileName(s)) as NSString).expandingTildeInPath)
+            let m = try await AuditBundle.write(client: client, sessionId: id, to: url)
+            print("✓ Wrote \(url.path) (\(m.files.count + 1) files: \(m.files.keys.sorted().joined(separator: ", ")), manifest.json)")
         }
     }
 

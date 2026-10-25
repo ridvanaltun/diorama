@@ -6,6 +6,7 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 ## Unreleased
 
 ### New
+- **Audit bundles.** Export a session as one zip (reports, decisions with texts, the profile version used, metadata, and a SHA-256 manifest) from **Export → Audit bundle** or `diorama session bundle`.
 - **Switch single rules off per session.** **Rules** in a running session's header (or `diorama session rule … --off|--on`, MCP `set_session_rule`) turns one rule or the session prompt off for that session only, without a new profile version.
 - **Doctor checks configuration.** `diorama doctor` (and Settings → Diagnostics) now warns about steering paused everywhere, a budget at 80% or more, folder defaults whose profile or folder is gone, failing rule tests, and old hook installs, and notes profiles in shadow or review mode.
 - **Archive sessions.** Hide ended sessions from the list, one at a time (right-click) or all older than 7/30/90 days, and show them again from the toolbar. Nothing is deleted. Also `diorama session archive|unarchive` and `diorama sessions --archived`.

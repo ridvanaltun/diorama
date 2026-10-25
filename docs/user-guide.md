@@ -347,6 +347,17 @@ diorama export --output decisions.csv
 diorama export --format jsonl --days 7 --profile "Docs steer" --rewritten-only --texts --output week.jsonl
 ```
 
+### Audit bundles
+
+**Export → Audit bundle (.zip)…** in a session's header, or `diorama session bundle <id> --output run.zip`, writes one zip with:
+- `report.html` and `report.md`;
+- `decisions.jsonl`: every decided tool result with its original and rewritten text;
+- `profile.json`: the exact profile version the session used;
+- `session.json` and `timeline.json`;
+- `manifest.json`: the SHA-256 of every other file, plus the Diorama and rewrite-prompt versions.
+
+Use it to share or archive a run. The manifest lets anyone check that the files weren't changed. The bundle holds tool results as Claude received them, so share it with care. It never contains API keys or Claude Code's credentials, because Diorama doesn't store them.
+
 ### Search
 
 The search field on the Sessions screen searches every session, with the best matches first:

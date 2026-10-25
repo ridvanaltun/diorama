@@ -555,6 +555,9 @@ struct SessionHeader: View {
                     Button("HTML report…") { Task { await export("html") } }
                     Divider()
                     Button("Open HTML report in browser") { Task { await openHTML() } }
+                    Divider()
+                    Button("Audit bundle (.zip)…") { Task { await exportBundle() } }
+                        .help("Reports, every decision with its texts, the profile version, metadata and a SHA-256 manifest")
                 } label: {
                     Label("Export", systemImage: "square.and.arrow.up")
                 }
@@ -627,6 +630,15 @@ extension SessionHeader {
         if panel.runModal() == .OK, let url = panel.url {
             do { try text.write(to: url, atomically: true, encoding: .utf8) } catch { model.report(error) }
         }
+    }
+
+    func exportBundle() async {
+        guard let client = model.client else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = AuditBundle.defaultFileName(session)
+        panel.allowedContentTypes = [.zip]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try await AuditBundle.write(client: client, sessionId: session.id, to: url) } catch { model.report(error) }
     }
 
     /// Writes the HTML report to a temporary file and opens it in the default browser.
