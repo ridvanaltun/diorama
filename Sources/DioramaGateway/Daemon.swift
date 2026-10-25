@@ -53,7 +53,23 @@ public final class DioramaDaemon: @unchecked Sendable {
     public init(options: Options) throws {
         self.options = options
         try options.paths.ensureDirectories()
-        store = try Store(paths: options.paths)
+        // Take the single-instance lock before touching the database: a second daemon that
+        // opened it first could race the first one's migrations, or mistake a busy database
+        // for a corrupt one and move it aside.
+        if options.writeDaemonInfo {
+            let fd = open(options.paths.daemonLock.path, O_CREAT | O_RDWR, 0o600)
+            guard fd >= 0, flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+                if fd >= 0 { close(fd) }
+                throw RunnerError("another Diorama daemon is already running for \(options.paths.home.path)")
+            }
+            lockFD = fd
+        }
+        do {
+            store = try Store(paths: options.paths)
+        } catch {
+            if lockFD >= 0 { close(lockFD) }
+            throw error
+        }
         sessions = SessionCache(store: store)
         let secrets = options.secrets ?? LayeredSecretStore(override: EnvironmentSecretStore(environment: options.environment), primary: KeychainSecretStore())
         self.secrets = secrets
@@ -92,14 +108,8 @@ public final class DioramaDaemon: @unchecked Sendable {
 
     // MARK: Lifecycle
 
-    /// Acquires the single-instance lock, binds the port and writes `daemon.json`.
+    /// Binds the port and writes `daemon.json` (the single-instance lock is taken in `init`).
     public func start() async throws -> Int {
-        if options.writeDaemonInfo {
-            lockFD = open(options.paths.daemonLock.path, O_CREAT | O_RDWR, 0o600)
-            guard lockFD >= 0, flock(lockFD, LOCK_EX | LOCK_NB) == 0 else {
-                throw RunnerError("another Diorama daemon is already running for \(options.paths.home.path)")
-            }
-        }
         port = try await server.bind(port: options.port, exactPort: options.exactPort)
         if options.writeDaemonInfo {
             try DaemonInfo(pid: getpid(), port: port, controlToken: controlToken, version: DioramaVersion.current, startedAt: startedAt)

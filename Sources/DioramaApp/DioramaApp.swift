@@ -6,14 +6,15 @@ import SwiftUI
 struct DioramaApp: App {
     @State private var model = AppModel()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
+    @AppStorage(AppDelegate.menuBarKey) private var showMenuBar = true
 
     var body: some Scene {
-        WindowGroup("Diorama") {
+        Window("Diorama", id: AppDelegate.mainWindowId) {
             RootView()
                 .environment(model)
                 .frame(minWidth: 1000, minHeight: 640)
                 .task {
-                    await model.connect()
+                    await model.connectIfNeeded()
                     await model.checkForUpdates()
                 }
         }
@@ -26,17 +27,59 @@ struct DioramaApp: App {
         Settings {
             SettingsView().environment(model).frame(width: 560, height: 520)
         }
+        // Snapshot mode renders windows only; no status item there. It shares the user's
+        // defaults, so it must not write the hidden state back to the preference.
+        MenuBarExtra(isInserted: Binding(get: { showMenuBar && model.snapshotDir == nil }, set: { if model.snapshotDir == nil { showMenuBar = $0 } })) {
+            MenuBarPanel().environment(model)
+        } label: {
+            Image(nsImage: MenuBarIcon.image(active: model.sessions.contains { $0.status == .active }))
+                .task { await model.connectIfNeeded() }
+        }
+        .menuBarExtraStyle(.window)
     }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    static let mainWindowId = "main"
+    static let menuBarKey = "showMenuBarIcon"
+    static var menuBarEnabled: Bool { UserDefaults.standard.object(forKey: menuBarKey) as? Bool ?? true }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // A SwiftPM-built executable starts as a background app; make it a regular app.
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { note in
+            let closing = note.object as? NSWindow
+            MainActor.assumeIsolated { Self.windowWillClose(closing) }
+        }
+        // However a window comes back (menu bar, reopening the app from Finder), the Dock icon
+        // comes back with it.
+        NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { note in
+            let window = note.object as? NSWindow
+            MainActor.assumeIsolated {
+                if window?.canBecomeMain == true, NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) }
+            }
+        }
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    /// With the menu bar icon on, closing the last window keeps Diorama running there and
+    /// hides it from the Dock; without it, closing the window quits as before.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { !Self.menuBarEnabled }
+
+    @MainActor
+    static func windowWillClose(_ closing: NSWindow?) {
+        guard menuBarEnabled, ProcessInfo.processInfo.environment["DIORAMA_SNAPSHOT_DIR"] == nil else { return }
+        let others = NSApp.windows.filter { $0 !== closing && $0.isVisible && $0.canBecomeMain }
+        if others.isEmpty { NSApp.setActivationPolicy(.accessory) }
+    }
+
+    /// Brings the main window back (and the Dock icon with it).
+    @MainActor
+    static func showMainWindow(_ openWindow: OpenWindowAction) {
+        NSApp.setActivationPolicy(.regular)
+        openWindow(id: mainWindowId)
+        NSApp.activate()
+    }
 }
 
 enum SidebarSection: String, CaseIterable, Identifiable {
@@ -133,6 +176,7 @@ enum Snapshotter {
             ("sheet-new-session", AnyView(NewSessionSheet().environment(model))),
             ("sheet-new-profile", AnyView(NewProfileSheet(selection: .constant(nil)).environment(model))),
             ("sheet-new-experiment", AnyView(NewExperimentSheet(created: { _ in }).environment(model))),
+            ("menu-bar-panel", AnyView(MenuBarPanel().environment(model))),
         ]
         for (name, view) in sheets {
             let host = NSHostingView(rootView: view)

@@ -339,6 +339,21 @@ func sampleBody(results: [(id: String, text: String)] = [("toolu_x", "Example Do
         await env.mock.stop()
     }
 
+    @Test func secondDaemonFailsBeforeOpeningTheDatabase() async throws {
+        let env = try await TestEnv.start()
+        defer { Task { await env.stop() } }
+        let db = DioramaPaths(home: env.home).database
+        let before = try FileManager.default.attributesOfItem(atPath: db.path)[.modificationDate] as? Date
+        var o = DioramaDaemon.Options(paths: DioramaPaths(home: env.home))
+        o.secrets = MemorySecretStore("sk-ant-test-key-not-real-000000")
+        #expect(throws: (any Error).self) { _ = try DioramaDaemon(options: o) }
+        // The running daemon's database was neither migrated again nor moved aside.
+        let files = try FileManager.default.contentsOfDirectory(atPath: env.home.path)
+        #expect(!files.contains { $0.contains("corrupt") })
+        #expect(try FileManager.default.attributesOfItem(atPath: db.path)[.modificationDate] as? Date == before)
+        #expect(try await env.client.health().pid == getpid())
+    }
+
     @Test func passThroughAddsLittleLatency() async throws {
         let env = try await TestEnv.start()
         defer { Task { await env.stop() } }

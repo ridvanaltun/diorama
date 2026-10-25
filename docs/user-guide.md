@@ -150,6 +150,12 @@ Key fields:
 | `claudePath` | Path to the `claude` executable |
 | `ollamaURL` | Ollama server for `ollama:` models (default `http://127.0.0.1:11434`) |
 
+## Menu bar
+
+Diorama puts a small diorama-box icon in the menu bar. Its dot fills while a routed session is running. The panel lists running sessions; click one to open it in the app. The panel also has New Session, Open Diorama and Quit.
+
+Closing the window doesn't quit Diorama: it keeps running in the menu bar, without a Dock icon, until you choose Quit (⌘Q). To get the old behavior back, turn off **Settings → App → Show Diorama in the menu bar**; closing the window then quits the app. Either way the daemon keeps running, and so do routed sessions, until you run `diorama daemon stop`.
+
 ## Updates
 
 ```bash

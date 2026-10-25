@@ -39,6 +39,9 @@ final class AppModel {
     var section: SidebarSection? = .sessions
     /// Set by the getting-started guide to open the new-profile sheet.
     var wantsNewProfile = false
+    /// Set by the menu bar panel: open the new-session sheet / select this session.
+    var wantsNewSession = false
+    var focusSessionId: String?
     var updateError: String?
 
     private var eventsTask: Task<Void, Never>?
@@ -47,7 +50,23 @@ final class AppModel {
     /// verify the UI without screen-recording permission.
     let snapshotDir: URL? = ProcessInfo.processInfo.environment["DIORAMA_SNAPSHOT_DIR"].map { URL(fileURLWithPath: $0) }
 
+    /// Connects once; reopening the window must not reset a live connection.
+    func connectIfNeeded() async {
+        if client == nil { await connect() }
+    }
+
+    private var connecting: Task<Void, Never>?
+
+    /// Concurrent callers (window, menu bar) share one attempt, so only one daemon is spawned.
     func connect() async {
+        if let connecting { return await connecting.value }
+        let task = Task { await self.performConnect() }
+        connecting = task
+        await task.value
+        connecting = nil
+    }
+
+    private func performConnect() async {
         connection = .connecting
         do {
             let c = try await ControlClient.connect(paths: paths, autostart: true)

@@ -103,6 +103,7 @@ func copyToPasteboard(_ s: String) {
     NSPasteboard.general.setString(s, forType: .string)
 }
 
+@MainActor
 func chooseFolder(prompt: String = "Choose") -> String? {
     let panel = NSOpenPanel()
     panel.canChooseDirectories = true

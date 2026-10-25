@@ -56,6 +56,18 @@ struct SessionsView: View {
         }
         .sheet(isPresented: $showNew) { NewSessionSheet() }
         .navigationTitle("Sessions")
+        .onChange(of: model.wantsNewSession, initial: true) { _, wants in
+            if wants {
+                showNew = true
+                model.wantsNewSession = false
+            }
+        }
+        .onChange(of: model.focusSessionId, initial: true) { _, id in
+            guard let id else { return }
+            if let s = model.sessions.first(where: { $0.id == id }), kindFilter != nil { kindFilter = s.kind }
+            selection = id
+            model.focusSessionId = nil
+        }
         .task(id: model.sessions.count) {
             if selection == nil, let first = filtered.first(where: { $0.stats.rewrites > 0 }) ?? filtered.first, model.snapshotDir != nil || filtered.count == 1 {
                 selection = first.id

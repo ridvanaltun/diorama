@@ -51,6 +51,16 @@ struct SettingsView: View {
                 }
                 if let m = maintenance { Text(m).font(.caption).foregroundStyle(.secondary) }
             }
+            Section("App") {
+                Toggle("Show Diorama in the menu bar", isOn: Binding(
+                    get: { AppDelegate.menuBarEnabled },
+                    set: {
+                        UserDefaults.standard.set($0, forKey: AppDelegate.menuBarKey)
+                        if !$0 { NSApp.setActivationPolicy(.regular) }
+                    }))
+                Text("With the menu bar icon, closing the window keeps Diorama running there. Without it, closing the window quits the app. Either way the daemon, and your routed sessions, keep running.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("Updates") {
                 Toggle("Check for updates daily", isOn: Binding(
                     get: { UserDefaults.standard.object(forKey: "autoUpdateCheck") as? Bool ?? true },
