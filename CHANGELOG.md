@@ -1,31 +1,27 @@
 # Changelog
 
-## 1.0.0 — unreleased
+Release notes are generated from this file. Add changes under **Unreleased**;
+`scripts/release.sh X.Y.Z` stamps that section with the version and date.
 
-### Since the initial commit
-- Fixed: the daemon didn't exit on SIGTERM or `diorama daemon stop` while client connections or event streams were open. Shutdown now closes connections before stopping the event loops, and all callers wait for one shared shutdown.
-- Added: `rewritesReused` in trial facts, and a comparison caveat when a frozen treatment couldn't be reused because tool results differed between trials.
-- CI runs on a self-hosted macOS runner, using actions v7 (Node 24).
-- Verified against the real Anthropic API: rewrites, replay with warm cache, WebSearch result shape, and a live pilot experiment.
+## Unreleased
 
-The first complete version.
+The first complete version of Diorama.
 
-### Gateway
-- A local Anthropic Messages gateway for sessions started with `diorama run`, using byte-exact pass-through and unbuffered streaming.
+### Steering
+- A local Anthropic Messages gateway for Claude Code sessions started with `diorama run` or the app. Diorama changes no global settings: routing applies only to sessions it starts.
+- Tool results (WebFetch, WebSearch, Read, Bash, Grep, MCP…) are rewritten by a separate rewrite agent that uses your own Anthropic API key, stored in the macOS Keychain.
+- Global rules come as versioned profiles, plus per-session prompts. Rewrite context is minimal by default, and a rule can opt in to see the session's task.
+- Reproducible: each tool-result decision is made once and replayed byte-for-byte on later turns, which keeps the history consistent and the prompt cache warm.
 
-### Rewriting
-- Tool-result rewriting by a separate rewrite agent that uses the user's own API key from the Keychain, behind a pluggable provider interface.
-- Versioned profiles of rules, plus per-session prompts. Rewrite context is minimal by default, and a rule can opt in to see the session's task.
-- Each tool result is decided once and replayed byte-for-byte on later turns; frozen experiment treatments reuse one rewrite across trials.
-
-### Audit trail
-- A full record of every exchange, decision, rewrite attempt, rule version and explanation, with diffs and Claude's next response.
-- A live timeline in the SwiftUI app.
-
-### CLI and daemon
-- A CLI covering run, sessions, profiles, key, settings, daemon, doctor and experiment.
-- The background daemon is supervised and restarted on crash, and the database recovers from corruption.
+### Auditing
+- A live session timeline: requests, tool results, rewrites, cache usage, added latency, and what Claude did next.
+- For every rewrite: the original and rewritten text with a diff, the rules with their content hashes and versions, the instructions, the rewrite attempts with model, cost and latency, and the explanation.
 
 ### Experiments
-- An experiment runner with APFS clones, blocked randomization, manifests and cost estimates that must be confirmed.
-- Comparisons and reports keep facts and heuristics separate.
+- A/B experiments: an unmodified control plus steered variants, with repeated `claude -p` trials in APFS clones of your project.
+- Blocked randomization, frozen treatments, a reproducibility manifest for each trial, and a cost estimate that must be confirmed before a run starts.
+- Comparisons keep observed facts separate from heuristic signals, with Wilson intervals, small-sample caveats and no causal claims. Reports can be exported as Markdown or JSON.
+
+### Tooling
+- A `diorama` CLI covering run, sessions, profiles, key, settings, daemon, doctor and experiment, plus a SwiftUI app and the `dioramad` background service, which is restarted if it crashes.
+- Verified against the real Anthropic API with Claude Code 2.1.296.
