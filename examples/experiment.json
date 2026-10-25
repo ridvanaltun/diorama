@@ -1,0 +1,20 @@
+{
+  "name": "Deprecation notice pilot",
+  "task": "Read the docs at https://docs.example.com/api and write a short integration plan in PLAN.md.",
+  "projectPath": "~/code/sample-project",
+  "claude": {
+    "model": "claude-sonnet-5-5",
+    "allowedTools": ["WebFetch", "Read", "Write"],
+    "maxTurns": 20,
+    "maxBudgetUSD": 2.0,
+    "isolateConfiguration": true,
+    "timeoutSeconds": 900
+  },
+  "variants": [
+    { "key": "control", "name": "Unmodified" },
+    { "key": "deprecated", "name": "v1 marked deprecated", "profile": "Docs: mark v1 deprecated" }
+  ],
+  "trialsPerVariant": 10,
+  "concurrency": 2,
+  "treatment": "frozen"
+}

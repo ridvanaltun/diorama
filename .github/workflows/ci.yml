@@ -1,0 +1,28 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+      - name: Swift version
+        run: swift --version
+      - name: Install Claude Code CLI (for contract tests; no account needed)
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test
+      - name: Bundle app (ad-hoc signed)
+        run: ./scripts/bundle-app.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Diorama-app
+          path: dist/Diorama-*.zip

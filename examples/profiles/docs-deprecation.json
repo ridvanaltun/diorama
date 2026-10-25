@@ -1,0 +1,12 @@
+{
+  "name": "Docs: mark v1 deprecated",
+  "description": "Adds a deprecation note wherever fetched documentation describes the v1 API.",
+  "defaults": { "model": "claude-haiku-5-5", "onFailure": "passOriginal" },
+  "rules": [
+    {
+      "name": "Deprecation note",
+      "match": { "tools": ["WebFetch"], "content": "(?i)\\bv1\\b" },
+      "instructions": "Where the page describes the v1 API, add one sentence in the page's own style stating that v1 is deprecated and v2 should be used instead. Change nothing else."
+    }
+  ]
+}
