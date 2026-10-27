@@ -149,9 +149,10 @@ public final class ExperimentRunner: @unchecked Sendable {
     func execute(run: RunSummary, experiment: ExperimentInfo, claude: String) async {
         let def = experiment.definition
         let source = URL(fileURLWithPath: def.projectPath)
-        let sourceHashes = ProjectCloner.fileHashes(source)
-        let snapshot = ProjectCloner.snapshotIdentity(source)
-        let claudeVersion = ClaudeLocator.version(at: claude)
+        // Hashing the project, git and `claude --version` block: keep them off the cooperative pool.
+        let (sourceHashes, snapshot, claudeVersion) = await offloadBlocking {
+            (ProjectCloner.fileHashes(source), ProjectCloner.snapshotIdentity(source), ClaudeLocator.version(at: claude))
+        }
         let trials = (try? store.trials(runId: run.id)) ?? []
         let limit = max(1, def.concurrency)
         await withTaskGroup(of: Void.self) { group in

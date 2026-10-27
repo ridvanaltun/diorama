@@ -1,3 +1,4 @@
+import DioramaCore
 import AppKit
 import DioramaClient
 import SwiftUI
@@ -73,7 +74,7 @@ struct MCPConnectPanel: View {
         busy = true
         defer { busy = false }
         let cli = model.cliPath
-        let (status, output) = await Task.detached { () -> (Int32, String) in
+        let (status, output) = await offloadBlocking { () -> (Int32, String) in
             let p = Process()
             p.executableURL = URL(fileURLWithPath: cli)
             p.arguments = args
@@ -88,7 +89,7 @@ struct MCPConnectPanel: View {
             } catch {
                 return (-1, "Couldn't run \(cli): \(error)")
             }
-        }.value
+        }
         let text = output.trimmingCharacters(in: .whitespacesAndNewlines)
         // The CLI prints the manual command when it can't find `claude`; show that as a problem.
         let ok = status == 0 && !text.contains("Couldn't find")

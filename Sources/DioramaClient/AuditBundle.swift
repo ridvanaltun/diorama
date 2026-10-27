@@ -43,12 +43,16 @@ public enum AuditBundle {
         defer { try? fm.removeItem(at: work) }
         for (name, data) in files { try data.write(to: folder.appendingPathComponent(name)) }
         try? fm.removeItem(at: zip)
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-        p.arguments = ["-c", "-k", "--keepParent", folder.path, zip.path]
-        try p.run()
-        p.waitUntilExit()
-        guard p.terminationStatus == 0 else { throw ClientError("could not create \(zip.path) (ditto exited with \(p.terminationStatus))") }
+        let (src, dst) = (folder.path, zip.path)
+        let status = try await offloadBlocking { () throws -> Int32 in
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+            p.arguments = ["-c", "-k", "--keepParent", src, dst]
+            try p.run()
+            p.waitUntilExit()
+            return p.terminationStatus
+        }
+        guard status == 0 else { throw ClientError("could not create \(zip.path) (ditto exited with \(status))") }
         return manifest
     }
 

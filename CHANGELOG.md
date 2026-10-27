@@ -16,6 +16,10 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 - **Homebrew tap.** This repository is the tap: `brew tap ridvanaltun/diorama https://github.com/ridvanaltun/diorama`, then `brew install --cask ridvanaltun/diorama/diorama`, installs the app and the `diorama` command. Each release commits its cask to `Casks/diorama.rb`; the cask passes `brew audit --strict` and explains the first launch for unsigned builds.
 - Community files for going public: `SECURITY.md` (private vulnerability reporting), a code of conduct, issue forms and a fuller pull-request checklist. CI runs fork pull requests only in a public repository, on hosted runners, with a read-only token.
 - The release notes' Gatekeeper step now describes **Open Anyway** in System Settings (right-click → Open no longer works on macOS 15).
+- Releases now run the whole CI pipeline (build, tests, bundle, UI smoke test) first and publish only if it passes; the "Release vX.Y.Z" commit no longer starts a second, separate CI run.
+
+### Fixed
+- On machines with few CPU cores (such as CI's 3-core Macs), the daemon could stall: a few blocking waits (`doctor`'s `claude --version`, experiment setup, `gh` in the update check, zipping audit bundles) held Swift's small cooperative thread pool. Blocking work now runs on its own threads. The test suite passes with the pool limited to its minimum (`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`).
 
 ## 1.6.0 — 2026-10-25
 

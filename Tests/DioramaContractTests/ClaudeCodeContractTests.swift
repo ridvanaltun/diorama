@@ -76,11 +76,11 @@ struct ClaudeHarness {
     }
 
     /// Runs `claude -p` in `cwd` through the given session launch; returns the JSON result text.
-    func runClaude(_ launch: SessionLaunch, prompt: String, cwd: URL, extraArgs: [String] = []) throws -> (exit: Int32, stdout: String, stderr: String) {
+    func runClaude(_ launch: SessionLaunch, prompt: String, cwd: URL, extraArgs: [String] = []) async throws -> (exit: Int32, stdout: String, stderr: String) {
         var env = Self.claudeEnvironment(home: fakeUserHome)
         for (k, v) in launch.environment { env[k] = v }
         let args = ["-p", prompt, "--output-format", "json"] + extraArgs + launch.claudeArguments
-        let r = try ProcessRunner.run(claudePath!, args, cwd: cwd.path, environment: env, timeout: 120)
+        let r = try await ProcessRunner.runAsync(claudePath!, args, cwd: cwd.path, environment: env, timeout: 120)
         return (r.exitCode, r.stdout, r.stderr)
     }
 
@@ -114,7 +114,7 @@ struct ClaudeCodeContractTests {
         h.mock.setHandler { model.respond($0) }
         _ = try await h.client.createProfile(Profile(name: "read-bash", rules: [Rule(name: "r", match: RuleMatch(tools: ["Read", "Bash"]), instructions: "rename the domain")]))
         let launch = try await h.client.createSession(SessionSpec(name: "contract", cwd: project.path, profile: "read-bash"))
-        let r = try h.runClaude(launch, prompt: "Read notes.txt then echo", cwd: project, extraArgs: ["--allowedTools", "Read,Bash(echo:*)"])
+        let r = try await h.runClaude(launch, prompt: "Read notes.txt then echo", cwd: project, extraArgs: ["--allowedTools", "Read,Bash(echo:*)"])
         #expect(r.exit == 0, "stderr: \(r.stderr)")
         let text = resultText(r.stdout)
         #expect(text.contains("MODEL SAW:"), "stdout: \(r.stdout)")
@@ -143,7 +143,7 @@ struct ClaudeCodeContractTests {
         defer { Task { await h.stop() } }
         let project = try h.makeProject(files: [:])
         let launch = try await h.client.createSession(SessionSpec(name: "precedence", cwd: project.path))
-        let r = try h.runClaude(launch, prompt: "hello", cwd: project)
+        let r = try await h.runClaude(launch, prompt: "hello", cwd: project)
         #expect(r.exit == 0, "stderr: \(r.stderr)")
         #expect(resultText(r.stdout).contains("MODEL SAW"))
         #expect(!h.mock.requests.isEmpty)
@@ -157,7 +157,7 @@ struct ClaudeCodeContractTests {
         defer { Task { await h.stop() } }
         let project = try h.makeProject(files: [:])
         let launch = try await h.client.createSession(SessionSpec(name: "lockdown", cwd: project.path, lockdown: .network))
-        let r = try h.runClaude(launch, prompt: "fetch example.com with curl", cwd: project, extraArgs: ["--allowedTools", "Bash"])
+        let r = try await h.runClaude(launch, prompt: "fetch example.com with curl", cwd: project, extraArgs: ["--allowedTools", "Bash"])
         #expect(r.exit == 0, "stderr: \(r.stderr)")
         let text = resultText(r.stdout)
         #expect(text.contains("[is_error]"), "the curl call must be refused; got: \(text)")
@@ -181,7 +181,7 @@ struct ClaudeCodeContractTests {
         h.mock.setHandler { model.respond($0) }
         _ = try await h.client.createProfile(Profile(name: "all", rules: [Rule(name: "r", match: RuleMatch(tools: ["*"]), instructions: "x")]))
         let launch = try await h.client.createSession(SessionSpec(name: "shapes", cwd: project.path, profile: "all"))
-        let r = try h.runClaude(launch, prompt: "go", cwd: project, extraArgs: ["--allowedTools", "Read,Bash(echo:*),Grep"])
+        let r = try await h.runClaude(launch, prompt: "go", cwd: project, extraArgs: ["--allowedTools", "Read,Bash(echo:*),Grep"])
         #expect(r.exit == 0, "stderr: \(r.stderr)")
         let last = try #require(model.mainRequests.last)
         var shapes: [String: String] = [:]
@@ -216,7 +216,7 @@ struct ClaudeCodeContractTests {
             Rule(name: "Rename on page", match: RuleMatch(tools: ["WebFetch"], input: ["url": "example\\.com"], stage: .page), instructions: "rename"),
         ]))
         let launch = try await h.client.createSession(SessionSpec(name: "page", cwd: project.path, profile: "page"))
-        let r = try h.runClaude(launch, prompt: "Fetch example.com", cwd: project, extraArgs: ["--allowedTools", "WebFetch"])
+        let r = try await h.runClaude(launch, prompt: "Fetch example.com", cwd: project, extraArgs: ["--allowedTools", "WebFetch"])
         #expect(r.exit == 0, "stderr: \(r.stderr)")
         let text = resultText(r.stdout)
         // The summarizing model received the rewritten page, and Claude got its summary.

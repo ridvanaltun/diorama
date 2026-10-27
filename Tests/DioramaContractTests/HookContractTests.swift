@@ -23,12 +23,12 @@ struct HookContractTests {
     }
 
     /// Claude Code talking straight to the (mock) model, like a Claude desktop session: only the hook involves Diorama.
-    func runDirect(_ h: ClaudeHarness, prompt: String, cwd: URL, args: [String]) throws -> ProcessRunner.Result {
+    func runDirect(_ h: ClaudeHarness, prompt: String, cwd: URL, args: [String]) async throws -> ProcessRunner.Result {
         var env = ClaudeHarness.claudeEnvironment(home: h.fakeUserHome)
         env["ANTHROPIC_BASE_URL"] = h.mock.url.absoluteString
         env["DIORAMA_HOME"] = h.home.appendingPathComponent("diorama").path
         env["CLAUDE_CODE_ENTRYPOINT"] = "claude-desktop"
-        return try ProcessRunner.run(claudePath!, ["-p", prompt, "--output-format", "json"] + args, cwd: cwd.path, environment: env, timeout: 120)
+        return try await ProcessRunner.runAsync(claudePath!, ["-p", prompt, "--output-format", "json"] + args, cwd: cwd.path, environment: env, timeout: 120)
     }
 
     @Test func hookRewritesToolResultsInASessionDioramaDoesNotRoute() async throws {
@@ -40,7 +40,7 @@ struct HookContractTests {
         _ = try await h.client.createProfile(Profile(name: "read", rules: [Rule(name: "r", match: RuleMatch(tools: ["Read"]), instructions: "rename the domain")]))
         try install(h, project: project, profile: "read")
 
-        let r = try runDirect(h, prompt: "Read notes.txt", cwd: project, args: ["--allowedTools", "Read"])
+        let r = try await runDirect(h, prompt: "Read notes.txt", cwd: project, args: ["--allowedTools", "Read"])
         #expect(r.exitCode == 0, "stderr: \(r.stderr)")
         let text = resultText(r.stdout)
         #expect(text.contains("Morph Test Domain"), "stdout: \(r.stdout)")
@@ -75,7 +75,7 @@ struct HookContractTests {
         var env = ClaudeHarness.claudeEnvironment(home: h.fakeUserHome)
         env["DIORAMA_HOME"] = h.home.appendingPathComponent("diorama").path
         for (k, v) in launch.environment { env[k] = v }
-        let r = try ProcessRunner.run(claudePath!, ["-p", "Read notes.txt", "--output-format", "json", "--allowedTools", "Read"] + launch.claudeArguments,
+        let r = try await ProcessRunner.runAsync(claudePath!, ["-p", "Read notes.txt", "--output-format", "json", "--allowedTools", "Read"] + launch.claudeArguments,
                                       cwd: project.path, environment: env, timeout: 120)
         #expect(r.exitCode == 0, "stderr: \(r.stderr)")
         #expect(resultText(r.stdout).contains("Morph Test Domain"))
@@ -103,7 +103,7 @@ struct MCPContractTests {
         let configJSON = String(decoding: try JSONSerialization.data(withJSONObject: config), as: UTF8.self)
         var env = ClaudeHarness.claudeEnvironment(home: h.fakeUserHome)
         env["ANTHROPIC_BASE_URL"] = h.mock.url.absoluteString
-        let r = try ProcessRunner.run(
+        let r = try await ProcessRunner.runAsync(
             claudePath!, ["-p", "Which Diorama profiles exist?", "--output-format", "json", "--mcp-config", configJSON, "--strict-mcp-config",
                           "--allowedTools", "mcp__diorama__list_profiles"],
             cwd: project.path, environment: env, timeout: 120)
@@ -129,7 +129,7 @@ struct LockdownHookContractTests {
         env["ANTHROPIC_BASE_URL"] = h.mock.url.absoluteString
         env["DIORAMA_HOME"] = h.home.appendingPathComponent("diorama").path
         env["CLAUDE_CODE_ENTRYPOINT"] = "claude-desktop"
-        let r = try ProcessRunner.run(claudePath!, ["-p", "fetch example.com", "--output-format", "json", "--allowedTools", "Bash"], cwd: project.path, environment: env, timeout: 120)
+        let r = try await ProcessRunner.runAsync(claudePath!, ["-p", "fetch example.com", "--output-format", "json", "--allowedTools", "Bash"], cwd: project.path, environment: env, timeout: 120)
         #expect(r.exitCode == 0, "stderr: \(r.stderr)")
         let text = resultText(r.stdout)
         #expect(text.contains("blocked in this session (Diorama lockdown)"), "got: \(text)")
@@ -156,7 +156,7 @@ struct InputHookContractTests {
         var env = ClaudeHarness.claudeEnvironment(home: h.fakeUserHome)
         env["ANTHROPIC_BASE_URL"] = h.mock.url.absoluteString
         env["DIORAMA_HOME"] = h.home.appendingPathComponent("diorama").path
-        let r = try ProcessRunner.run(claudePath!, ["-p", "Read the file", "--output-format", "json", "--allowedTools", "Read"], cwd: project.path, environment: env, timeout: 120)
+        let r = try await ProcessRunner.runAsync(claudePath!, ["-p", "Read the file", "--output-format", "json", "--allowedTools", "Read"], cwd: project.path, environment: env, timeout: 120)
         let text = resultText(r.stdout)
         #expect(r.exitCode == 0, "stderr: \(r.stderr)")
         // Under -p nobody can answer the prompt, so Claude Code denies the call and shows the model our reason.

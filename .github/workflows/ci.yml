@@ -4,6 +4,8 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # The Release workflow runs this whole pipeline first and publishes only if it passes.
+  workflow_call:
 
 # Read-only token: CI never needs to write to the repository.
 permissions:
@@ -19,10 +21,15 @@ jobs:
     # Pull requests from forks: only in a public repository, so only on GitHub's hosted runners, never
     # the self-hosted Mac. `pull_request` gives them no secrets and a read-only token, and first-time
     # contributors' runs wait for a maintainer's approval (repository setting).
+    #
+    # The "Release vX.Y.Z" commit that scripts/release.sh pushes to main is skipped here: its tag starts
+    # the Release workflow, which runs this pipeline itself (there github.ref is the tag, not main).
     if: >-
-      github.event_name != 'pull_request'
-      || github.event.pull_request.head.repo.full_name == github.repository
-      || !github.event.repository.private
+      (github.event_name != 'pull_request'
+        || github.event.pull_request.head.repo.full_name == github.repository
+        || !github.event.repository.private)
+      && !(github.event_name == 'push' && github.ref == 'refs/heads/main'
+        && startsWith(github.event.head_commit.message, 'Release v'))
     # Private repository: the maintainer's self-hosted Mac. Public repository: GitHub's free
     # hosted macOS runner. Self-hosted runners must never serve a public repository.
     runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted","macOS","ARM64"]') || 'macos-26' }}

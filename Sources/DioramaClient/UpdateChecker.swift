@@ -45,7 +45,8 @@ public enum UpdateChecker {
         guard let gh = findGH() else {
             throw ClientError("could not read releases of \(repository) (private repository? install and sign in to the GitHub CLI `gh`)")
         }
-        let out = try runGH(gh, ["api", "repos/\(repository)/releases/latest"])
+        let repo = repository
+        let out = try await offloadBlocking { try runGH(gh, ["api", "repos/\(repo)/releases/latest"]) }
         return Data(out.utf8)
     }
 
@@ -57,7 +58,8 @@ public enum UpdateChecker {
         let dest = directory.appendingPathComponent(name)
         let shaName = name + ".sha256"
         if let gh = findGH() {
-            _ = try runGH(gh, ["release", "download", "v\(info.latest)", "--repo", repository, "--pattern", name, "--pattern", shaName, "--dir", directory.path, "--clobber"])
+            let args = ["release", "download", "v\(info.latest)", "--repo", repository, "--pattern", name, "--pattern", shaName, "--dir", directory.path, "--clobber"]
+            _ = try await offloadBlocking { try runGH(gh, args) }
         } else if let urlString = info.zipDownloadURL, let url = URL(string: urlString) {
             let (tmp, _) = try await URLSession.shared.download(from: url)
             try? FileManager.default.removeItem(at: dest)

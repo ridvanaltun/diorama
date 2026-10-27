@@ -65,7 +65,13 @@ final class TestEnv: @unchecked Sendable {
 }
 
 /// Sends a raw HTTP/1.1 request (lets tests control Host/Origin) and returns the response text.
-func rawHTTP(port: Int, _ request: String) throws -> String {
+/// A raw HTTP/1.1 exchange over a socket. It waits on a GCD thread: the daemon answering it runs in
+/// this process, on the cooperative pool a blocking `recv` would hold.
+func rawHTTP(port: Int, _ request: String) async throws -> String {
+    try await offloadBlocking { try rawHTTPBlocking(port: port, request) }
+}
+
+func rawHTTPBlocking(port: Int, _ request: String) throws -> String {
     let fd = socket(AF_INET, SOCK_STREAM, 0)
     defer { close(fd) }
     var addr = sockaddr_in()
@@ -179,13 +185,13 @@ func sampleBody(results: [(id: String, text: String)] = [("toolu_x", "Example Do
         #expect(env.mock.requests.isEmpty)
 
         let launch = try await env.client.createSession(SessionSpec(name: "x", cwd: "/tmp"))
-        let badHost = try rawHTTP(port: env.port, "GET /s/\(launch.token)/v1/models HTTP/1.1\r\nHost: evil.example:80\r\nConnection: close\r\n\r\n")
+        let badHost = try await rawHTTP(port: env.port, "GET /s/\(launch.token)/v1/models HTTP/1.1\r\nHost: evil.example:80\r\nConnection: close\r\n\r\n")
         #expect(badHost.hasPrefix("HTTP/1.1 403"))
-        let origin = try rawHTTP(port: env.port, "GET /api/v1/health HTTP/1.1\r\nHost: 127.0.0.1\r\nOrigin: https://evil.example\r\nAuthorization: Bearer \(env.client.info.controlToken)\r\nConnection: close\r\n\r\n")
+        let origin = try await rawHTTP(port: env.port, "GET /api/v1/health HTTP/1.1\r\nHost: 127.0.0.1\r\nOrigin: https://evil.example\r\nAuthorization: Bearer \(env.client.info.controlToken)\r\nConnection: close\r\n\r\n")
         #expect(origin.hasPrefix("HTTP/1.1 403"))
-        let noAuth = try rawHTTP(port: env.port, "GET /api/v1/health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        let noAuth = try await rawHTTP(port: env.port, "GET /api/v1/health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
         #expect(noAuth.hasPrefix("HTTP/1.1 401"))
-        let ok = try rawHTTP(port: env.port, "GET /api/v1/health HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer \(env.client.info.controlToken)\r\nConnection: close\r\n\r\n")
+        let ok = try await rawHTTP(port: env.port, "GET /api/v1/health HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer \(env.client.info.controlToken)\r\nConnection: close\r\n\r\n")
         #expect(ok.hasPrefix("HTTP/1.1 200"))
         #expect(env.mock.requests.isEmpty)
     }

@@ -19,11 +19,14 @@ import Testing
         #expect(Set(m.files.keys) == ["report.html", "report.md", "decisions.jsonl", "session.json", "timeline.json", "profile.json"])
 
         let out = dir.appendingPathComponent("x")
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-        p.arguments = ["-x", "-k", zip.path, out.path]
-        try p.run()
-        p.waitUntilExit()
+        let (zipPath, outPath) = (zip.path, out.path)
+        try await offloadBlocking { () throws -> Void in
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+            p.arguments = ["-x", "-k", zipPath, outPath]
+            try p.run()
+            p.waitUntilExit()
+        }
         let folder = out.appendingPathComponent("diorama-bundle-me-\(s.session.id)")
         for (name, hash) in m.files {
             #expect(Hashing.sha256Hex(try Data(contentsOf: folder.appendingPathComponent(name))) == hash, "\(name) matches the manifest")

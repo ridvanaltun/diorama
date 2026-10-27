@@ -36,7 +36,12 @@ public enum ProcessRunner {
         public var timedOut: Bool
     }
 
-    /// Synchronous helper for short commands.
+    /// `run` from async code: waits on a GCD thread, not on Swift's cooperative pool (see `offloadBlocking`).
+    public static func runAsync(_ path: String, _ args: [String], cwd: String? = nil, environment: [String: String]? = nil, timeout: TimeInterval) async throws -> Result {
+        try await offloadBlocking { try run(path, args, cwd: cwd, environment: environment, timeout: timeout) }
+    }
+
+    /// Synchronous helper for short commands. From async code, use `runAsync`.
     public static func run(_ path: String, _ args: [String], cwd: String? = nil, environment: [String: String]? = nil, timeout: TimeInterval) throws -> Result {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: path)

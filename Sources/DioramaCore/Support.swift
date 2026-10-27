@@ -231,3 +231,22 @@ public enum Glob {
         return pi == p.count
     }
 }
+
+/// Runs blocking work (waiting for a subprocess, a semaphore, a slow file scan) on a GCD thread
+/// instead of Swift's cooperative thread pool. That pool has about one thread per CPU core; a few
+/// blocked threads on a small machine (CI's 3-core Macs) starve every other task, including the
+/// daemon serving the very request being waited for.
+public func offloadBlocking<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+    try await withCheckedThrowingContinuation { continuation in
+        DispatchQueue.global(qos: .userInitiated).async {
+            do { continuation.resume(returning: try work()) } catch { continuation.resume(throwing: error) }
+        }
+    }
+}
+
+/// `offloadBlocking` for work that can't throw.
+public func offloadBlocking<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+    await withCheckedContinuation { continuation in
+        DispatchQueue.global(qos: .userInitiated).async { continuation.resume(returning: work()) }
+    }
+}

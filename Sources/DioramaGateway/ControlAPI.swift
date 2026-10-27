@@ -365,7 +365,9 @@ struct ControlAPI: Sendable {
             return try ok(try store.events(sessionId: req.query["session"], afterId: Int64(req.query["after"] ?? "") ?? 0))
         }
         if Self.match(method, route, "GET", "doctor") != nil {
-            return try ok(daemon.doctor())
+            // doctor runs `claude --version` and probes Ollama: blocking work, off the cooperative pool.
+            let daemon = self.daemon
+            return try ok(await offloadBlocking { daemon.doctor() })
         }
         if Self.match(method, route, "POST", "maintenance/retention") != nil {
             let r = try store.applyRetention(days: store.settings().retentionDays)
