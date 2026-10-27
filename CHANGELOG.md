@@ -11,7 +11,7 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 - **Replacement rules (no AI).** A rule can find exact text (or a regex) and replace it locally: every occurrence by default, with whole-word, ignore-case and first-only options. Free and instant, no model call; runs after redaction and before AI rules; stops while paused, only recorded in shadow mode. New template "Web: replace a fact without AI".
 
 ### Distribution
-- **Homebrew tap.** `brew install --cask ridvanaltun/diorama/diorama` installs the app and the `diorama` command. Releases update the tap automatically when the `HOMEBREW_TAP_TOKEN` secret is set; the cask passes `brew audit --strict` and explains the first launch for unsigned builds.
+- **Homebrew tap.** This repository is the tap: `brew tap ridvanaltun/diorama https://github.com/ridvanaltun/diorama`, then `brew install --cask ridvanaltun/diorama/diorama`, installs the app and the `diorama` command. Each release commits its cask to `Casks/diorama.rb`; the cask passes `brew audit --strict` and explains the first launch for unsigned builds.
 - Community files for going public: `SECURITY.md` (private vulnerability reporting), a code of conduct, issue forms and a fuller pull-request checklist. CI runs fork pull requests only in a public repository, on hosted runners, with a read-only token.
 - The release notes' Gatekeeper step now describes **Open Anyway** in System Settings (right-click → Open no longer works on macOS 15).
 

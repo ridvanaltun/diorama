@@ -1,6 +1,6 @@
 # Homebrew cask template. scripts/release-notes.sh fills in OWNER, the version and the sha256 for each
-# release (and adds first-launch caveats to unsigned builds); the release workflow pushes the result to
-# the tap repository (OWNER/homebrew-diorama, Casks/diorama.rb).
+# release (and adds first-launch caveats to unsigned builds); the release workflow commits the result to
+# Casks/diorama.rb on main, since this repository is the tap.
 cask "diorama" do
   version "1.0.0"
   sha256 "REPLACE_WITH_SHA256_OF_ZIP"

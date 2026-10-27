@@ -49,13 +49,14 @@ Optionally, set the repository **variable** `BUNDLE_ID` (default `io.github.dior
 
 ## Homebrew
 
-Each release includes `diorama.rb`, a cask pinned to that release's zip and checksum (unsigned builds get `caveats` explaining the first launch). The Release workflow also writes it to the tap repository, `<owner>/homebrew-diorama` at `Casks/diorama.rb`, when the `HOMEBREW_TAP_TOKEN` secret is set. Without the secret, that step is skipped and you copy `diorama.rb` there by hand. Users install with:
+This repository is the Homebrew tap: its `Casks/diorama.rb` is the cask. Each release includes `diorama.rb`, a cask pinned to that release's zip and checksum (unsigned builds get `caveats` explaining the first launch). The Release workflow commits it to `Casks/diorama.rb` on `main`, using the workflow's own token, so no secret is needed. A branch rule that blocks direct pushes to `main` would block this step; allow GitHub Actions to push, or copy the file by hand. Users install with:
 
 ```bash
+brew tap <owner>/diorama https://github.com/<owner>/diorama
 brew install --cask <owner>/diorama/diorama
 ```
 
-Installing by the full name also tells Homebrew to trust that cask (Homebrew 7 refuses to load untrusted third-party casks), so no separate `brew trust` is needed. The cask passes `brew style` and `brew audit --cask --strict` (checked with Homebrew 7.0.11). For a private repository, users need access to the release assets.
+The tap needs its URL because the repository's name doesn't start with `homebrew-` (the short form, `brew install --cask <owner>/diorama/diorama` alone, would look for `<owner>/homebrew-diorama`). Homebrew clones the whole repository as the tap, and `brew update` fetches its new commits. Installing by the full name also tells Homebrew to trust that cask (Homebrew 7 refuses to load untrusted third-party casks), so no separate `brew trust` is needed. The cask passes `brew style` and `brew audit --cask --strict` (checked with Homebrew 7.0.11). For a private repository, users need access to the release assets.
 
 ## Going public
 
@@ -72,5 +73,5 @@ Diorama's use (a developer research tool for AI agents) is a different market. E
 3. **Remove the self-hosted runner** from the repository (Settings → Actions → Runners), and on the Mac run `cd ~/actions-runner && ./svc.sh uninstall`. A self-hosted runner on a public repository would let anyone's pull request run code on your Mac.
 4. Enable private vulnerability reporting (Settings → Security). `SECURITY.md` points reporters there.
 5. Under Settings → Actions → General → "Approval for running fork pull request workflows", choose **Require approval for first-time contributors** (or all outside collaborators). CI runs fork PRs only in a public repository, on hosted runners, with a read-only token and no secrets.
-6. **Homebrew tap:** create the public repository `<owner>/homebrew-diorama` (the `homebrew-` prefix is required). Create a fine-grained personal access token with **Contents: Read and write** on that repository only, and add it to this repository as the secret `HOMEBREW_TAP_TOKEN`. The next release writes `Casks/diorama.rb` there. Then check `brew install --cask <owner>/diorama/diorama` on a clean Mac.
+6. **Homebrew:** nothing to set up; this repository is the tap, and each release updates `Casks/diorama.rb` on `main`. Once public, check the two install commands above on a clean Mac.
 7. Without an Apple Developer ID, releases stay ad-hoc signed, and the release notes and the cask include the Gatekeeper instructions. Homebrew's official `homebrew-cask` repository no longer accepts casks that aren't signed and notarized, so the app stays in your own tap.

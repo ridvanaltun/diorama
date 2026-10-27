@@ -25,6 +25,7 @@ $SECTION
 With [Homebrew](https://brew.sh) (installs the app and the \`diorama\` command):
 
 \`\`\`bash
+brew tap ${REPO%%/*}/diorama https://github.com/$REPO
 brew install --cask ${REPO%%/*}/diorama/diorama
 \`\`\`
 

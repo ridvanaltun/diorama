@@ -53,9 +53,10 @@ diorama run ──▶ claude (your terminal)
 
 ## Install
 
-**With [Homebrew](https://brew.sh)** (installs the app and the `diorama` command):
+**With [Homebrew](https://brew.sh)** (installs the app and the `diorama` command). This repository is the tap, so add it once by its URL, then install:
 
 ```bash
+brew tap ridvanaltun/diorama https://github.com/ridvanaltun/diorama
 brew install --cask ridvanaltun/diorama/diorama
 ```
 
