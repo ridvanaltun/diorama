@@ -129,7 +129,17 @@ diorama run ──▶ claude (your terminal)
 
 ## Install
 
-**From a release:** download `Diorama-<version>.zip`, unzip it, move `Diorama.app` to `/Applications`, and link the CLI:
+**With [Homebrew](https://brew.sh)** (installs the app and the `diorama` command):
+
+```bash
+brew install --cask ridvanaltun/diorama/diorama
+```
+
+Updates come with `brew upgrade --cask diorama`, and `brew uninstall --cask diorama` removes it (add `--zap` to delete its data too).
+
+**First launch.** Diorama isn't notarized by Apple (it's ad-hoc signed), so macOS blocks the first launch. Open **System Settings → Privacy & Security**, find the message about Diorama and click **Open Anyway**. You only do this once. From a terminal, `xattr -dr com.apple.quarantine /Applications/Diorama.app` does the same.
+
+**From a release zip:** download `Diorama-<version>.zip` from [Releases](https://github.com/ridvanaltun/diorama/releases), unzip it, move `Diorama.app` to `/Applications`, and link the CLI:
 
 ```bash
 sudo ln -sf /Applications/Diorama.app/Contents/Helpers/diorama /usr/local/bin/diorama
@@ -138,7 +148,7 @@ sudo ln -sf /Applications/Diorama.app/Contents/Helpers/diorama /usr/local/bin/di
 **From source:**
 
 ```bash
-git clone https://github.com/<owner>/diorama.git && cd diorama
+git clone https://github.com/ridvanaltun/diorama.git && cd diorama
 ./scripts/bundle-app.sh          # builds dist/Diorama.app (ad-hoc signed)
 ```
 
@@ -187,6 +197,7 @@ An example report from a real run is in [docs/assets/example-report.md](docs/ass
 - [Architecture](docs/architecture.md) · [Decisions](docs/decisions.md) · [Requirements](docs/requirements.md)
 - [Proof of concept and compatibility findings](docs/poc-findings.md)
 - [Release process](docs/release.md) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
+- [Security policy](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md)
 
 ## Responsible use
 

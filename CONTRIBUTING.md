@@ -1,6 +1,6 @@
 # Contributing to Diorama
 
-Thanks for helping! Diorama is a macOS-only Swift project.
+Thanks for helping! Diorama is a macOS-only Swift project. Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md). Please report security problems privately, as described in [SECURITY.md](SECURITY.md), not as issues.
 
 ## Build and test
 

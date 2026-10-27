@@ -5,6 +5,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Read-only token: CI never needs to write to the repository.
+permissions:
+  contents: read
+
 # One run at a time on the self-hosted Mac; a newer push cancels the older run.
 concurrency:
   group: ci-${{ github.ref }}
@@ -12,8 +16,13 @@ concurrency:
 
 jobs:
   build-and-test:
-    # Never run for pull requests from forks.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Pull requests from forks: only in a public repository, so only on GitHub's hosted runners, never
+    # the self-hosted Mac. `pull_request` gives them no secrets and a read-only token, and first-time
+    # contributors' runs wait for a maintainer's approval (repository setting).
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+      || !github.event.repository.private
     # Private repository: the maintainer's self-hosted Mac. Public repository: GitHub's free
     # hosted macOS runner. Self-hosted runners must never serve a public repository.
     runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted","macOS","ARM64"]') || 'macos-26' }}

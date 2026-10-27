@@ -1,0 +1,56 @@
+name: Bug report
+description: Something doesn't work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please **don't** paste API keys, tokens, raw captures or transcripts with private code.
+        Security problems go to the Security tab ("Report a vulnerability"), not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: And what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. diorama run --profile ...
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: diorama
+    attributes:
+      label: Diorama version
+      placeholder: diorama --version
+    validations:
+      required: true
+  - type: input
+    id: claude
+    attributes:
+      label: Claude Code version
+      placeholder: claude --version
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+  - type: dropdown
+    id: mode
+    attributes:
+      label: How was the session started?
+      options:
+        - diorama run (terminal)
+        - Hook mode (Claude desktop app or an IDE)
+        - Experiment run
+        - Not session-related
+  - type: textarea
+    id: doctor
+    attributes:
+      label: diorama doctor output
+      description: Remove anything private first.
+      render: text
