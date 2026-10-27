@@ -4,7 +4,7 @@ import Foundation
 // one vocabulary over the control API.
 
 public enum DioramaVersion {
-    public static let current = "1.6.0"
+    public static let current = "1.7.0"
     /// GitHub repository checked for updates (override with DIORAMA_UPDATE_REPO).
     public static let repository = "ridvanaltun/diorama"
     /// Version of the rewrite-agent system prompt + output contract. Bump on any change.

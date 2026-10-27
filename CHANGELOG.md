@@ -5,6 +5,8 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+## 1.7.0 — 2026-10-28
+
 ### New
 - **Claude's replies in the Claude desktop app.** Hook-mode sessions now read Claude's replies from its local transcript when needed (reply text and tool calls only, never thinking), so **Did Claude use it?**, **What Claude did next** and reports work there too. Verified with the real Claude Code.
 - **Lockdown in the Claude desktop app.** `diorama hook install --lockdown network` (or the desktop mode's Lockdown picker, MCP `install_hook` `lockdown`) makes the hook refuse curl, wget and similar commands anywhere in a command line, tells Claude why, and records each refusal. Verified with the real Claude Code.
