@@ -612,7 +612,7 @@ struct SessionHeader: View {
                 StatTile(value: "\(session.stats.rewrites)", label: "rewritten", tint: session.stats.rewrites > 0 ? .purple : nil)
                 StatTile(value: "\(session.stats.failures)", label: "failed", tint: session.stats.failures > 0 ? .red : nil)
                 StatTile(value: Fmt.money(session.stats.rewriteCostUSD), label: "rewrite cost")
-                if !impacts.isEmpty, !session.isHook {
+                if !impacts.isEmpty, impacts.values.contains(where: { $0.status != .notVisible }) {
                     let used = impacts.values.filter { $0.signals.contains(.used) }.count
                     StatTile(value: "\(used)/\(impacts.count)", label: "used by Claude", tint: used > 0 ? .green : nil)
                         .help("Rewritten results whose new text shows up in what Claude wrote or did afterwards (heuristic)")

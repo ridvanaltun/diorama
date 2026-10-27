@@ -344,7 +344,11 @@ struct ControlAPI: Sendable {
         }
         if let c = Self.match(method, route, "GET", "decisions/:id") {
             let id = c[0]
-            guard let d = try store.decisionDetail(toolUseId: id) else { throw notFound("decision") }
+            guard var d = try store.decisionDetail(toolUseId: id) else { throw notFound("decision") }
+            // Hook mode has no model traffic: read what Claude did next from its transcript.
+            if d.followUp == nil, let s = try store.session(id: d.summary.sessionId), s.via == .hook, let path = s.transcriptPath {
+                d.followUp = Transcript.firstReply(path: path, after: d.summary.createdAt)
+            }
             return try ok(d)
         }
         if let c = Self.match(method, route, "GET", "exchanges/:id") {

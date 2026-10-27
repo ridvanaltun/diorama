@@ -55,6 +55,10 @@ struct HookContractTests {
         let detail = try await h.client.decision(decision.toolUseId)
         #expect(detail.originalText.contains("Example Domain"))
         #expect(detail.replacementText?.contains("Morph Test Domain") == true)
+        // Claude's reply, read from the real Claude Code transcript (hook mode sees no model traffic).
+        #expect(detail.followUp?.text.contains("Morph Test Domain") == true, "followUp: \(String(describing: detail.followUp))")
+        let impact = try #require(try await h.client.impact(session.id).first { $0.toolUseId == decision.toolUseId })
+        #expect(impact.label == "used", "\(impact)")
     }
 
     @Test func installedHookStaysOutOfGatewaySessions() async throws {

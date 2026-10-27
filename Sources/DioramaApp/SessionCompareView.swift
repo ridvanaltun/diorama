@@ -119,7 +119,7 @@ struct SessionCompareSheet: View {
     func answer(_ label: String, _ text: String?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label).font(.caption.bold()).foregroundStyle(.secondary)
-            MonoBlock(text: text ?? "(no final answer recorded; hook-mode sessions don't see Claude's replies)").frame(minHeight: 120, maxHeight: 260)
+            MonoBlock(text: text ?? "(no final answer recorded)").frame(minHeight: 120, maxHeight: 260)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

@@ -563,7 +563,13 @@ public final class DioramaDaemon: @unchecked Sendable {
         let info = try store.info(s)
         let timeline = Timeline(session: info, exchanges: try store.exchanges(sessionId: sessionId),
                                 decisions: try store.decisions(sessionId: sessionId).map(\.summary), events: [])
-        let outputs = ImpactAnalysis.outputs(timeline)
+        // Hook mode: Claude's replies come from its transcript, when it can be read.
+        var outputs = ImpactAnalysis.outputs(timeline)
+        var repliesVisible = !info.isHook
+        if info.isHook, let path = s.transcriptPath, let replies = Transcript.replies(path: path) {
+            outputs = replies.map { ImpactAnalysis.Output(exchangeId: nil, at: $0.at, text: $0.text, toolCalls: $0.toolUses.map { (name: $0.name, input: $0.input) }) }
+            repliesVisible = true
+        }
         return try store.decisions(sessionId: sessionId).filter { $0.outcome == .rewritten && !$0.toolUseId.hasPrefix("input:") }.map { d in
             let original = Self.readableSegments(d, via: s.via, store: store).joined(separator: "\n\n")
             var copy = d
@@ -572,7 +578,7 @@ public final class DioramaDaemon: @unchecked Sendable {
             return ImpactAnalysis.analyze(
                 ImpactAnalysis.Rewrite(toolUseId: d.toolUseId, exchangeId: d.exchangeId, decidedAt: d.createdAt, toolName: d.toolName,
                                        toolInput: d.toolInput, original: original, replacement: replacement),
-                outputs: outputs, repliesVisible: !info.isHook)
+                outputs: outputs, repliesVisible: repliesVisible)
         }
     }
 

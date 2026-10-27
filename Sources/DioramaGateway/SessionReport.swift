@@ -30,7 +30,7 @@ struct SessionReport {
         var rules: [String: RuleRef] = [:]
         for d in decisions {
             for r in d.rules { rules[r.ruleHash] = r }
-            guard d.outcome != .unchanged, let detail = try store.decisionDetail(toolUseId: d.toolUseId) else {
+            guard d.outcome != .unchanged, var detail = try store.decisionDetail(toolUseId: d.toolUseId) else {
                 unchanged.append(d.summary)
                 continue
             }
@@ -40,6 +40,9 @@ struct SessionReport {
                 var copy = d
                 copy.originalBlob = blob
                 return DioramaDaemon.readableSegments(copy, via: record.via, store: store).joined(separator: "\n\n")
+            }
+            if detail.followUp == nil, record.via == .hook, let path = record.transcriptPath {
+                detail.followUp = Transcript.firstReply(path: path, after: d.createdAt)
             }
             changes.append(Change(detail: detail, original: original, replacement: replacement))
         }

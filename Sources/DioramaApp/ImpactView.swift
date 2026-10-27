@@ -28,7 +28,7 @@ extension DecisionImpact {
         case "original surfaced": "Text the rewrite removed shows up in what Claude wrote later (heuristic)"
         case "no sign": "Claude responded, with no sign of the rewritten text (heuristic)"
         case "pending": "Claude hasn't responded yet"
-        default: "Hook mode doesn't see Claude's replies; later tool calls showed nothing"
+        default: "Claude's replies aren't available (its transcript couldn't be read); later tool calls showed nothing"
         }
     }
 }
