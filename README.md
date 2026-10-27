@@ -20,14 +20,7 @@ Diorama is a research and experimentation tool. It only affects Claude Code sess
 
 When Claude Code works, it uses **tools**: it fetches web pages, reads files and runs commands. Diorama sits in the middle. It can change what a tool returns **before Claude sees it**, then records what changed and what Claude did with it.
 
-```mermaid
-flowchart LR
-    C["🤖 Claude Code"] -- "fetch the weather page" --> T["🌐 Tool"]
-    T -- "It is 30°C today" --> D{"🎭 Diorama<br/>your rules"}
-    D -- "It is 5°C today" --> C2["🤖 Claude Code"]
-    C2 --> A["💬 Take a warm coat!"]
-    D -. records .-> L["📒 What changed,<br/>and did Claude use it?"]
-```
+<p align="center"><img src="docs/assets/diagrams/overview.svg" width="720" alt="Claude Code fetches a weather page that says 30°C; Diorama's rule changes it to 5°C, Claude tells you to take a warm coat, and Diorama records what changed"></p>
 
 That's the whole idea. You decide **what** to change with simple rules, and Diorama shows you **how Claude reacts**.
 
@@ -37,10 +30,7 @@ That's the whole idea. You decide **what** to change with simple rules, and Dior
 
 *"What does Claude do if the docs say version 2.4 instead of 2.3?"*
 
-```mermaid
-flowchart LR
-    P["📄 Page says<br/>version 2.3"] --> R["🔁 Rule: replace<br/>2.3 → 2.4"] --> C["🤖 Claude reads<br/>version 2.4"]
-```
+<p align="center"><img src="docs/assets/diagrams/replace.svg" width="780" alt="The page says version 2.3, a replace rule changes it to 2.4 without AI, and Claude reads version 2.4"></p>
 
 1. Save this as `bump.json`:
    ```json
@@ -69,11 +59,7 @@ diorama key set                       # your own Anthropic API key, kept in the 
 diorama run --prompt "Say the library is deprecated and suggest v3" --prompt-tools WebFetch,WebSearch
 ```
 
-```mermaid
-flowchart LR
-    P["📄 Original page"] --> AI["🧠 Rewrite agent<br/>follows your prompt"] --> C["🤖 Claude sees<br/>the rewritten page"]
-    AI -. explains .-> L["📒 What it changed and why"]
-```
+<p align="center"><img src="docs/assets/diagrams/rewrite.svg" width="780" alt="The original page goes to the rewrite agent, which follows your instructions; Claude sees the new page, and the agent explains what it changed"></p>
 
 Every change comes with a word diff and the agent's explanation. Not sure about a rule yet? Try it first in the app's **Test Rules…** playground, or turn on **shadow mode**: the changes are computed and shown to you, but Claude gets the original.
 
@@ -86,10 +72,7 @@ diorama profiles create --template 5 --name privacy   # "Privacy: redact secrets
 diorama run --profile privacy
 ```
 
-```mermaid
-flowchart LR
-    F["📄 config.env<br/>KEY=sk-ant-abc123…"] --> R["🛡️ Redact"] --> C["🤖 Claude sees<br/>KEY=[REDACTED:anthropic-key]"]
-```
+<p align="center"><img src="docs/assets/diagrams/redact.svg" width="780" alt="A config file holds an API key; the redact rule masks it locally, so Claude sees KEY=[REDACTED:anthropic-key]"></p>
 
 Redaction is local and free, and it keeps working even when steering is paused.
 
@@ -108,15 +91,7 @@ Then start a **new** Code session in that folder in the Claude app. Diorama appl
 
 One session can be luck. An **experiment** runs the same task many times, with and without your rules, and compares the results:
 
-```mermaid
-flowchart TB
-    T["📝 Same task, same project"] --> A["🅰️ Control<br/>no changes"]
-    T --> B["🅱️ Steered<br/>your rules"]
-    A --> A1["run 1 · run 2 · run 3 …"]
-    B --> B1["run 1 · run 2 · run 3 …"]
-    A1 --> R["📊 Compare: success, steps, cost,<br/>did Claude repeat the change?"]
-    B1 --> R
-```
+<p align="center"><img src="docs/assets/diagrams/experiment.svg" width="700" alt="The same task runs many times as a control with no changes and as a steered variant with your rules, and the results are compared"></p>
 
 ```bash
 diorama experiment init > exp.json     # write the task and the two variants
@@ -124,6 +99,8 @@ diorama experiment run exp.json        # shows the cost first and asks before st
 ```
 
 Each run works in a throwaway copy of your project, so your files are never touched.
+
+<sub>Diagrams are drawn in [Excalidraw](https://excalidraw.com)'s style: open `docs/assets/diagrams/*.excalidraw` there to edit, or change `scripts/diagrams/render.mjs` and run `npm run render` in that folder.</sub>
 
 ## Under the hood
 

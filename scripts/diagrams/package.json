@@ -1,0 +1,8 @@
+{
+  "name": "diorama-diagrams",
+  "private": true,
+  "type": "module",
+  "description": "Renders the README diagrams in Excalidraw's hand-drawn style (SVG) and as editable .excalidraw files.",
+  "scripts": { "render": "node render.mjs" },
+  "dependencies": { "roughjs": "4.6.6" }
+}
