@@ -42,6 +42,8 @@ final class AppModel {
     var wantsNewProfile = false
     /// Set by the menu bar panel: open the new-session sheet / select this session.
     var wantsNewSession = false
+    /// Help → Getting Started: the welcome screen, also when there are sessions.
+    var showGettingStarted = false
     /// Shows the "Connect to Claude" (MCP) panel.
     var showMCPConnect = false
     /// Today's rewrite spending against the caps.

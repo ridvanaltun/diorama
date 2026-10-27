@@ -23,6 +23,12 @@ struct DioramaApp: App {
             CommandMenu("Session") {
                 Button("Refresh") { Task { await model.refreshAll() } }.keyboardShortcut("r")
             }
+            CommandGroup(replacing: .help) {
+                Button("Getting Started") {
+                    model.section = .sessions
+                    model.showGettingStarted = true
+                }
+            }
         }
         Settings {
             SettingsView().environment(model).frame(width: 560, height: 520)
@@ -193,6 +199,7 @@ enum Snapshotter {
             if let view = main?.contentView { capture(view, dir.appendingPathComponent("\(section.rawValue.lowercased()).png")) }
         }
         var sheets: [(String, AnyView)] = [
+            ("getting-started", AnyView(GettingStartedView(onNewSession: {}, onClose: {}).environment(model).frame(width: 900, height: 640))),
             ("sheet-new-session", AnyView(NewSessionSheet().environment(model))),
             ("sheet-new-session-desktop", AnyView(NewSessionSheet(mode: .desktop).environment(model))),
             ("sheet-new-profile", AnyView(NewProfileSheet(selection: .constant(nil)).environment(model))),

@@ -30,8 +30,11 @@ struct SessionsView: View {
 
     var body: some View {
         Group {
-            if model.sessions.isEmpty {
-                GettingStartedView(onNewSession: { showNew = true })
+            if model.sessions.isEmpty || model.showGettingStarted {
+                GettingStartedView(onNewSession: { showNew = true; model.showGettingStarted = false },
+                                   onClose: model.sessions.isEmpty ? nil : { model.showGettingStarted = false })
+                    // Its steps open Settings or Profiles; coming back shows the sessions again.
+                    .onDisappear { model.showGettingStarted = false }
             } else {
                 HSplitView {
                     VStack(spacing: 0) {
@@ -157,13 +160,21 @@ struct SessionsView: View {
 struct GettingStartedView: View {
     @Environment(AppModel.self) private var model
     let onNewSession: () -> Void
+    /// Set when it was opened from Help → Getting Started over existing sessions.
+    var onClose: (() -> Void)?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Welcome to Diorama").font(.largeTitle.bold())
-                    Text("Stage what your coding agent sees. Measure what it does.").font(.title3).foregroundStyle(.secondary)
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Welcome to Diorama").font(.largeTitle.bold())
+                        Text("Stage what your coding agent sees. Measure what it does.").font(.title3).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if let onClose {
+                        Button("Back to Sessions", action: onClose).keyboardShortcut(.cancelAction)
+                    }
                 }
                 VStack(spacing: 12) {
                     StepCard(number: 1, done: model.keyStatus?.configured == true, title: "Add an API key for the rewrite agent",
