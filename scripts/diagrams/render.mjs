@@ -14,76 +14,92 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const outDir = path.resolve(here, "../../docs/assets/diagrams");
 const font = fs.readFileSync(path.join(here, "fonts/Excalifont-Regular.woff2")).toString("base64");
 
-// Excalidraw's palette.
+// Colors carry meaning, the same in every diagram (Excalidraw's palette, light fill + dark stroke).
+const kinds = {
+  claude: { fill: "#fff4e6", stroke: "#e8590c" },  // Claude Code
+  diorama: { fill: "#f3f0ff", stroke: "#7048e8" }, // Diorama and its rules
+  data: { fill: "#f8f9fa", stroke: "#868e96" },    // what a tool returned
+  result: { fill: "#ebfbee", stroke: "#2f9e44" },  // outcomes
+  record: { fill: "#e7f5ff", stroke: "#1971c2" },  // the audit trail
+  secret: { fill: "#fff5f5", stroke: "#e03131" },  // something sensitive
+};
 const ink = "#1e1e1e";
-const fills = { blue: "#a5d8ff", green: "#b2f2bb", yellow: "#ffec99", red: "#ffc9c9", violet: "#d0bfff", gray: "#e9ecef", orange: "#ffd8a8" };
-const fontSize = 20;
-const labelSize = 17;
-const lineHeight = 1.25;
+const muted = "#495057";
+const arrowInk = "#495057";
+const titleSize = 21;
+const subSize = 15;
+const labelSize = 14;
+const lineHeight = 1.3;
 
-// Boxes: { id, x, y, w, h, text, fill, shape: "rect" | "diamond" | "ellipse" }.
-// Arrows: { from, to, label, dashed }. Labels avoid characters Excalifont's Latin subset lacks (e.g. →).
+// Boxes in a row: same size, same gap, centered vertically on `cy`.
+function row(cy, x0, w, h, gap, specs) {
+  return specs.map((s, i) => ({ ...s, x: x0 + i * (w + gap), y: cy - h / 2, w, h }));
+}
+
+// Boxes: { id, title, sub, kind, x, y, w, h }. Arrows: { from, to, label, dashed }.
+// Text avoids characters Excalifont's Latin subset lacks (e.g. "→").
 const diagrams = {
-  overview: {
-    width: 960, height: 540,
-    boxes: [
-      { id: "claude", x: 40, y: 40, w: 230, h: 80, text: "🤖 Claude Code", fill: "blue" },
-      { id: "page", x: 620, y: 40, w: 250, h: 80, text: "🌐 Weather page", fill: "gray" },
-      { id: "diorama", x: 620, y: 190, w: 250, h: 150, text: "🎭 Diorama\nyour rules", fill: "violet", shape: "diamond" },
-      { id: "claude2", x: 40, y: 225, w: 250, h: 80, text: "🤖 Claude Code\nnow reads: 5°C", fill: "blue" },
-      { id: "answer", x: 40, y: 410, w: 250, h: 85, text: "💬 \"Take a warm\ncoat today!\"", fill: "yellow", shape: "ellipse" },
-      { id: "log", x: 560, y: 410, w: 330, h: 85, text: "📒 What changed,\nand did Claude use it?", fill: "green" },
-    ],
-    arrows: [
-      { from: "claude", to: "page", label: "fetches the page" },
-      { from: "page", to: "diorama", label: "\"It is 30°C today\"" },
-      { from: "diorama", to: "claude2", label: "\"It is 5°C today\"" },
-      { from: "claude2", to: "answer" },
-      { from: "diorama", to: "log", label: "records", dashed: true },
-    ],
-  },
+  overview: (() => {
+    const top = row(95, 40, 210, 110, 70, [
+      { id: "claude", title: "Claude Code", sub: "asks for a web page", kind: "claude" },
+      { id: "page", title: "Weather page", sub: "\"It is 30°C today\"", kind: "data" },
+      { id: "diorama", title: "Diorama", sub: "your rule:\n30°C becomes 5°C", kind: "diorama" },
+      { id: "claude2", title: "Claude Code", sub: "reads 5°C, says\n\"Take a warm coat!\"", kind: "claude" },
+    ]);
+    const d = top[2];
+    return {
+      width: 1130, height: 360,
+      boxes: [...top, { id: "log", title: "Audit trail", sub: "what changed, and\ndid Claude use it?", kind: "record", x: d.x, y: 245, w: d.w, h: 95 }],
+      arrows: [
+        { from: "claude", to: "page", label: "fetch" },
+        { from: "page", to: "diorama", label: "result" },
+        { from: "diorama", to: "claude2", label: "changed" },
+        { from: "diorama", to: "log", label: "records", dashed: true },
+      ],
+    };
+  })(),
   replace: {
-    width: 960, height: 170,
-    boxes: [
-      { id: "page", x: 30, y: 40, w: 250, h: 90, text: "📄 The page says\n\"version 2.3\"", fill: "gray" },
-      { id: "rule", x: 355, y: 30, w: 250, h: 110, text: "🔁 Replace rule\n2.3 becomes 2.4\nno AI, free", fill: "green" },
-      { id: "claude", x: 680, y: 40, w: 250, h: 90, text: "🤖 Claude reads\n\"version 2.4\"", fill: "blue" },
-    ],
+    width: 960, height: 190,
+    boxes: row(95, 40, 240, 110, 80, [
+      { id: "page", title: "Fetched page", sub: "\"version 2.3\"", kind: "data" },
+      { id: "rule", title: "Replace rule", sub: "2.3 becomes 2.4\nno AI, free, instant", kind: "diorama" },
+      { id: "claude", title: "Claude Code", sub: "reads \"version 2.4\"", kind: "claude" },
+    ]),
     arrows: [{ from: "page", to: "rule" }, { from: "rule", to: "claude" }],
   },
-  rewrite: {
-    width: 960, height: 300,
-    boxes: [
-      { id: "page", x: 30, y: 40, w: 230, h: 90, text: "📄 Original page", fill: "gray" },
-      { id: "agent", x: 340, y: 30, w: 290, h: 110, text: "🧠 Rewrite agent\nfollows your\ninstructions", fill: "violet" },
-      { id: "claude", x: 710, y: 40, w: 230, h: 90, text: "🤖 Claude sees\nthe new page", fill: "blue" },
-      { id: "log", x: 340, y: 200, w: 290, h: 80, text: "📒 What changed, and why", fill: "green" },
-    ],
-    arrows: [{ from: "page", to: "agent" }, { from: "agent", to: "claude" }, { from: "agent", to: "log", label: "explains", dashed: true }],
-  },
+  rewrite: (() => {
+    const top = row(95, 40, 240, 110, 80, [
+      { id: "page", title: "Original page", sub: "as the tool fetched it", kind: "data" },
+      { id: "agent", title: "Rewrite agent", sub: "follows your\ninstructions", kind: "diorama" },
+      { id: "claude", title: "Claude Code", sub: "sees the new page", kind: "claude" },
+    ]);
+    const a = top[1];
+    return {
+      width: 960, height: 340,
+      boxes: [...top, { id: "log", title: "Audit trail", sub: "diff and explanation", kind: "record", x: a.x, y: 240, w: a.w, h: 85 }],
+      arrows: [{ from: "page", to: "agent" }, { from: "agent", to: "claude" }, { from: "agent", to: "log", label: "explains", dashed: true }],
+    };
+  })(),
   redact: {
-    width: 960, height: 170,
-    boxes: [
-      { id: "file", x: 30, y: 40, w: 270, h: 90, text: "📄 config.env\nKEY=sk-ant-abc123...", fill: "gray" },
-      { id: "rule", x: 375, y: 30, w: 220, h: 110, text: "🛡️ Redact rule\nlocal, free", fill: "red" },
-      { id: "claude", x: 650, y: 25, w: 290, h: 120, text: "🤖 Claude sees\nKEY=[REDACTED:\nanthropic-key]", fill: "blue" },
-    ],
+    width: 960, height: 190,
+    boxes: row(95, 40, 240, 110, 80, [
+      { id: "file", title: "config.env", sub: "KEY=sk-ant-abc123...", kind: "secret" },
+      { id: "rule", title: "Redact rule", sub: "local, free", kind: "diorama" },
+      { id: "claude", title: "Claude Code", sub: "sees KEY=[REDACTED:\nanthropic-key]", kind: "claude" },
+    ]),
     arrows: [{ from: "file", to: "rule" }, { from: "rule", to: "claude" }],
   },
   experiment: {
-    width: 900, height: 520,
+    width: 900, height: 470,
     boxes: [
-      { id: "task", x: 300, y: 30, w: 300, h: 80, text: "📝 Same task,\nsame project", fill: "yellow" },
-      { id: "control", x: 60, y: 170, w: 300, h: 80, text: "🅰️ Control\nno changes", fill: "gray" },
-      { id: "steered", x: 540, y: 170, w: 300, h: 80, text: "🅱️ Steered\nyour rules", fill: "violet" },
-      { id: "runsA", x: 60, y: 300, w: 300, h: 60, text: "run 1 · run 2 · run 3 ...", fill: "gray" },
-      { id: "runsB", x: 540, y: 300, w: 300, h: 60, text: "run 1 · run 2 · run 3 ...", fill: "violet" },
-      { id: "compare", x: 225, y: 410, w: 450, h: 85, text: "📊 Compare: success, steps, cost,\ndid Claude repeat the change?", fill: "green" },
+      { id: "task", title: "Same task", sub: "same project, many runs", kind: "data", x: 320, y: 30, w: 260, h: 95 },
+      { id: "control", title: "A  ·  Control", sub: "no changes\nrun 1, 2, 3 ...", kind: "data", x: 70, y: 185, w: 260, h: 105 },
+      { id: "steered", title: "B  ·  Steered", sub: "your rules\nrun 1, 2, 3 ...", kind: "diorama", x: 570, y: 185, w: 260, h: 105 },
+      { id: "compare", title: "Compare", sub: "success, steps, cost,\ndid Claude repeat it?", kind: "result", x: 320, y: 350, w: 260, h: 100 },
     ],
     arrows: [
       { from: "task", to: "control" }, { from: "task", to: "steered" },
-      { from: "control", to: "runsA" }, { from: "steered", to: "runsB" },
-      { from: "runsA", to: "compare" }, { from: "runsB", to: "compare" },
+      { from: "control", to: "compare" }, { from: "steered", to: "compare" },
     ],
   },
 };
@@ -95,28 +111,16 @@ const nextSeed = () => (seedCounter = (seedCounter * 48271) % 2147483647);
 const gen = rough.generator();
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-function shapeDrawable(b) {
-  const opts = { stroke: ink, strokeWidth: 2, roughness: 1.1, fill: fills[b.fill], fillStyle: "hachure", hachureGap: 7, fillWeight: 1, seed: nextSeed() };
-  if (b.shape === "diamond") {
-    const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
-    return gen.polygon([[cx, b.y], [b.x + b.w, cy], [cx, b.y + b.h], [b.x, cy]], opts);
-  }
-  if (b.shape === "ellipse") return gen.ellipse(b.x + b.w / 2, b.y + b.h / 2, b.w, b.h, opts);
-  // Rounded rectangle, like Excalidraw's default "round" edges.
-  const r = Math.min(16, b.w / 4, b.h / 4), { x, y, w, h } = b;
-  const d = `M ${x + r} ${y} L ${x + w - r} ${y} Q ${x + w} ${y} ${x + w} ${y + r} L ${x + w} ${y + h - r} Q ${x + w} ${y + h} ${x + w - r} ${y + h} ` +
+function roundedRect({ x, y, w, h }) {
+  const r = Math.min(14, w / 4, h / 4);
+  return `M ${x + r} ${y} L ${x + w - r} ${y} Q ${x + w} ${y} ${x + w} ${y + r} L ${x + w} ${y + h - r} Q ${x + w} ${y + h} ${x + w - r} ${y + h} ` +
     `L ${x + r} ${y + h} Q ${x} ${y + h} ${x} ${y + h - r} L ${x} ${y + r} Q ${x} ${y} ${x + r} ${y} Z`;
-  return gen.path(d, opts);
 }
 
 /** Where the line from the box's center towards (tx, ty) leaves the box. */
-function edgePoint(b, tx, ty, gap = 10) {
+function edgePoint(b, tx, ty, gap = 12) {
   const cx = b.x + b.w / 2, cy = b.y + b.h / 2, dx = tx - cx, dy = ty - cy;
-  const hw = b.w / 2, hh = b.h / 2;
-  let t;
-  if (b.shape === "diamond") t = 1 / (Math.abs(dx) / hw + Math.abs(dy) / hh);
-  else if (b.shape === "ellipse") t = 1 / Math.sqrt((dx / hw) ** 2 + (dy / hh) ** 2);
-  else t = Math.min(hw / Math.abs(dx || 1e-9), hh / Math.abs(dy || 1e-9));
+  const t = Math.min(b.w / 2 / Math.abs(dx || 1e-9), b.h / 2 / Math.abs(dy || 1e-9));
   const len = Math.hypot(dx, dy);
   return [cx + dx * t + (dx / len) * gap, cy + dy * t + (dy / len) * gap];
 }
@@ -128,45 +132,51 @@ function arrowGeometry(a, boxes) {
   return { x1, y1, x2, y2 };
 }
 
-function textBlock(text, cx, cy, size, extra = "") {
-  const lines = text.split("\n");
-  const top = cy - ((lines.length - 1) * size * lineHeight) / 2;
-  return lines.map((l, i) => `<text x="${cx.toFixed(1)}" y="${(top + i * size * lineHeight).toFixed(1)}" font-size="${size}" text-anchor="middle" dominant-baseline="central"${extra}>${esc(l)}</text>`).join("");
+function lines(cx, top, text, size, color, extra = "") {
+  return text.split("\n").map((l, i) =>
+    `<text x="${cx.toFixed(1)}" y="${(top + i * size * lineHeight).toFixed(1)}" font-size="${size}" fill="${color}" text-anchor="middle" dominant-baseline="central"${extra}>${esc(l)}</text>`).join("");
+}
+
+/** Title and gray subtitle, centered in the box as one block. */
+function boxText(b) {
+  const sub = b.sub ? b.sub.split("\n").length : 0;
+  const height = titleSize * lineHeight + (sub ? 6 + sub * subSize * lineHeight : 0);
+  const top = b.y + b.h / 2 - height / 2 + (titleSize * lineHeight) / 2;
+  return lines(b.x + b.w / 2, top, b.title, titleSize, ink) +
+    (sub ? lines(b.x + b.w / 2, top + (titleSize * lineHeight) / 2 + 6 + (subSize * lineHeight) / 2, b.sub, subSize, muted) : "");
 }
 
 function renderSVG(name, d) {
   const boxes = Object.fromEntries(d.boxes.map((b) => [b.id, b]));
-  const paths = [];
+  const out = [];
   const pathSVG = (drawable, dash) => gen.toPaths(drawable).map((p) =>
-    `<path d="${p.d}" stroke="${p.stroke}" stroke-width="${p.strokeWidth}" fill="${p.fill || "none"}" stroke-linecap="round"${dash ? ' stroke-dasharray="8 7"' : ""}/>`).join("");
+    `<path d="${p.d}" stroke="${p.stroke}" stroke-width="${p.strokeWidth}" fill="${p.fill || "none"}" stroke-linecap="round" stroke-linejoin="round"${dash ? ' stroke-dasharray="7 7"' : ""}/>`).join("");
   for (const b of d.boxes) {
-    paths.push(pathSVG(shapeDrawable(b)));
-    paths.push(textBlock(b.text, b.x + b.w / 2, b.y + b.h / 2, fontSize));
+    const k = kinds[b.kind];
+    out.push(pathSVG(gen.path(roundedRect(b), { stroke: k.stroke, strokeWidth: 1.8, roughness: 0.6, bowing: 0.6, fill: k.fill, fillStyle: "solid", seed: nextSeed() })));
+    out.push(boxText(b));
   }
   for (const a of d.arrows) {
     const { x1, y1, x2, y2 } = arrowGeometry(a, boxes);
-    const opts = { stroke: ink, strokeWidth: 2, roughness: 0.9, seed: nextSeed() };
-    paths.push(pathSVG(gen.line(x1, y1, x2, y2, opts), a.dashed));
-    // Arrowhead: two short strokes back from the tip.
-    const ang = Math.atan2(y2 - y1, x2 - x1), len = 16, spread = 0.45;
+    const opts = { stroke: arrowInk, strokeWidth: 1.6, roughness: 0.5, bowing: 0.8, seed: nextSeed() };
+    out.push(pathSVG(gen.line(x1, y1, x2, y2, opts), a.dashed));
+    const ang = Math.atan2(y2 - y1, x2 - x1), len = 13, spread = 0.42;
     for (const s of [-spread, spread]) {
-      paths.push(pathSVG(gen.line(x2, y2, x2 - len * Math.cos(ang + s), y2 - len * Math.sin(ang + s), { ...opts, seed: nextSeed() })));
+      out.push(pathSVG(gen.line(x2, y2, x2 - len * Math.cos(ang + s), y2 - len * Math.sin(ang + s), { ...opts, seed: nextSeed() })));
     }
     if (a.label) {
-      // Beside the arrow's middle: above a horizontal arrow, to the side of a vertical one.
       const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, horizontal = Math.abs(x2 - x1) >= Math.abs(y2 - y1);
-      const lx = horizontal ? mx : mx + 14, ly = horizontal ? my - 20 : my;
-      const anchor = horizontal ? "" : ' text-anchor="start"';
       const halo = ' stroke="#ffffff" stroke-width="6" paint-order="stroke" stroke-linejoin="round"';
-      paths.push(horizontal ? textBlock(a.label, lx, ly, labelSize, halo)
-        : `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="${labelSize}" dominant-baseline="central"${anchor}${halo}>${esc(a.label)}</text>`);
+      out.push(horizontal
+        ? lines(mx, my - 15, a.label, labelSize, muted, halo)
+        : `<text x="${(mx + 12).toFixed(1)}" y="${my.toFixed(1)}" font-size="${labelSize}" fill="${muted}" dominant-baseline="central"${halo}>${esc(a.label)}</text>`);
     }
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${d.width} ${d.height}" width="${d.width}" height="${d.height}" role="img" aria-label="${esc(name)} diagram">
 <defs><style>@font-face{font-family:"Excalifont";src:url(data:font/woff2;base64,${font}) format("woff2");}
-text{font-family:"Excalifont","Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;fill:${ink};}</style></defs>
-<rect x="0" y="0" width="${d.width}" height="${d.height}" rx="18" fill="#ffffff"/>
-${paths.join("\n")}
+text{font-family:"Excalifont",sans-serif;}</style></defs>
+<rect x="0" y="0" width="${d.width}" height="${d.height}" rx="16" fill="#ffffff"/>
+${out.join("\n")}
 </svg>
 `;
 }
@@ -176,35 +186,36 @@ function renderExcalidraw(d) {
   const boxes = Object.fromEntries(d.boxes.map((b) => [b.id, b]));
   const elements = [];
   const base = (extra) => ({
-    angle: 0, strokeColor: ink, backgroundColor: "transparent", fillStyle: "hachure", strokeWidth: 2, strokeStyle: "solid", roughness: 1, opacity: 100,
+    angle: 0, strokeColor: ink, backgroundColor: "transparent", fillStyle: "solid", strokeWidth: 2, strokeStyle: "solid", roughness: 1, opacity: 100,
     groupIds: [], frameId: null, roundness: null, seed: nextSeed(), version: 1, versionNonce: nextSeed(), isDeleted: false, boundElements: [],
     updated: 1, link: null, locked: false, ...extra,
   });
-  const text = (id, t, containerId, x, y, w, h, size) => base({
+  const text = (id, t, containerId, x, y, w, h, size, color = ink) => base({
     id, type: "text", x, y, width: w, height: h, text: t, originalText: t, fontSize: size, fontFamily: 5, textAlign: "center",
-    verticalAlign: "middle", containerId, autoResize: true, lineHeight, baseline: Math.round(size * 0.9),
+    verticalAlign: "middle", containerId, autoResize: true, lineHeight, strokeColor: color,
   });
   for (const b of d.boxes) {
-    const type = b.shape === "diamond" ? "diamond" : b.shape === "ellipse" ? "ellipse" : "rectangle";
+    const k = kinds[b.kind];
     elements.push(base({
-      id: b.id, type, x: b.x, y: b.y, width: b.w, height: b.h, backgroundColor: fills[b.fill],
-      roundness: type === "rectangle" ? { type: 3 } : type === "diamond" ? { type: 2 } : null, boundElements: [{ type: "text", id: `${b.id}-text` }],
+      id: b.id, type: "rectangle", x: b.x, y: b.y, width: b.w, height: b.h, strokeColor: k.stroke, backgroundColor: k.fill,
+      roundness: { type: 3 }, boundElements: [{ type: "text", id: `${b.id}-text` }],
     }));
-    const lines = b.text.split("\n").length, th = lines * fontSize * lineHeight;
-    elements.push(text(`${b.id}-text`, b.text, b.id, b.x + 10, b.y + (b.h - th) / 2, b.w - 20, th, fontSize));
+    // Excalidraw has one text per container: the title and subtitle share it.
+    const t = b.sub ? `${b.title}\n${b.sub}` : b.title, th = t.split("\n").length * subSize * lineHeight;
+    elements.push(text(`${b.id}-text`, t, b.id, b.x + 10, b.y + (b.h - th) / 2, b.w - 20, th, 16));
   }
   d.arrows.forEach((a, i) => {
     const { x1, y1, x2, y2 } = arrowGeometry(a, boxes), id = `arrow-${i}`;
     elements.push(base({
-      id, type: "arrow", x: x1, y: y1, width: Math.abs(x2 - x1), height: Math.abs(y2 - y1), strokeStyle: a.dashed ? "dashed" : "solid",
-      roundness: { type: 2 }, points: [[0, 0], [x2 - x1, y2 - y1]], lastCommittedPoint: null,
-      startBinding: { elementId: a.from, focus: 0, gap: 10 }, endBinding: { elementId: a.to, focus: 0, gap: 10 },
+      id, type: "arrow", x: x1, y: y1, width: Math.abs(x2 - x1), height: Math.abs(y2 - y1), strokeColor: arrowInk,
+      strokeStyle: a.dashed ? "dashed" : "solid", roundness: { type: 2 }, points: [[0, 0], [x2 - x1, y2 - y1]], lastCommittedPoint: null,
+      startBinding: { elementId: a.from, focus: 0, gap: 12 }, endBinding: { elementId: a.to, focus: 0, gap: 12 },
       startArrowhead: null, endArrowhead: "arrow", elbowed: false, boundElements: a.label ? [{ type: "text", id: `${id}-text` }] : [],
     }));
     for (const end of [a.from, a.to]) elements.find((e) => e.id === end).boundElements.push({ type: "arrow", id });
     if (a.label) {
       const w = a.label.length * labelSize * 0.6, h = labelSize * lineHeight;
-      elements.push(text(`${id}-text`, a.label, id, (x1 + x2) / 2 - w / 2, (y1 + y2) / 2 - h / 2, w, h, labelSize));
+      elements.push(text(`${id}-text`, a.label, id, (x1 + x2) / 2 - w / 2, (y1 + y2) / 2 - h / 2, w, h, labelSize, muted));
     }
   });
   return JSON.stringify({ type: "excalidraw", version: 2, source: "https://github.com/ridvanaltun/diorama", elements,
@@ -212,15 +223,18 @@ function renderExcalidraw(d) {
 }
 
 fs.mkdirSync(outDir, { recursive: true });
+const onlyPreview = process.argv.includes("--preview");
+const target = onlyPreview ? path.resolve(process.argv[process.argv.indexOf("--preview") + 1]) : outDir;
+fs.mkdirSync(target, { recursive: true });
 for (const [name, d] of Object.entries(diagrams)) {
-  // A rough width check (Excalifont is about 0.55 em per character), so a label never spills out of its box.
+  // A rough width check (Excalifont is about 0.55 em per character), so text never spills out of its box.
   for (const b of d.boxes) {
-    const longest = Math.max(...b.text.split("\n").map((l) => [...l].length));
-    if (longest * fontSize * 0.55 > b.w - (b.shape === "rect" || !b.shape ? 24 : 70)) console.warn(`${name}: “${b.text.split("\n")[0]}…” may be too wide for its box`);
+    const widest = Math.max(b.title.length * titleSize, ...(b.sub ?? "").split("\n").map((l) => l.length * subSize)) * 0.55;
+    if (widest > b.w - 24) console.warn(`${name}: “${b.title}” may be too wide for its box`);
   }
   seedCounter = [...name].reduce((s, c) => s + c.charCodeAt(0), 7);
-  fs.writeFileSync(path.join(outDir, `${name}.svg`), renderSVG(name, d));
+  fs.writeFileSync(path.join(target, `${name}.svg`), renderSVG(name, d));
   seedCounter = [...name].reduce((s, c) => s + c.charCodeAt(0), 11);
-  fs.writeFileSync(path.join(outDir, `${name}.excalidraw`), renderExcalidraw(d));
-  console.log(`✓ docs/assets/diagrams/${name}.svg and .excalidraw`);
+  if (!onlyPreview) fs.writeFileSync(path.join(target, `${name}.excalidraw`), renderExcalidraw(d));
+  console.log(`✓ ${path.relative(process.cwd(), path.join(target, name))}.svg`);
 }

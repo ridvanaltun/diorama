@@ -20,7 +20,7 @@ Diorama is a research and experimentation tool. It only affects Claude Code sess
 
 When Claude Code works, it uses **tools**: it fetches web pages, reads files and runs commands. Diorama sits in the middle. It can change what a tool returns **before Claude sees it**, then records what changed and what Claude did with it.
 
-<p align="center"><img src="docs/assets/diagrams/overview.svg" width="720" alt="Claude Code fetches a weather page that says 30°C; Diorama's rule changes it to 5°C, Claude tells you to take a warm coat, and Diorama records what changed"></p>
+<p align="center"><img src="docs/assets/diagrams/overview.svg" width="860" alt="Claude Code fetches a weather page that says 30°C; Diorama's rule changes it to 5°C, Claude tells you to take a warm coat, and Diorama records what changed"></p>
 
 That's the whole idea. You decide **what** to change with simple rules, and Diorama shows you **how Claude reacts**.
 

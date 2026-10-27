@@ -5,9 +5,9 @@
   "elements": [
     {
       "angle": 0,
-      "strokeColor": "#1e1e1e",
-      "backgroundColor": "#a5d8ff",
-      "fillStyle": "hachure",
+      "strokeColor": "#e8590c",
+      "backgroundColor": "#fff4e6",
+      "fillStyle": "solid",
       "strokeWidth": 2,
       "strokeStyle": "solid",
       "roughness": 1,
@@ -38,14 +38,14 @@
       "type": "rectangle",
       "x": 40,
       "y": 40,
-      "width": 230,
-      "height": 80
+      "width": 210,
+      "height": 110
     },
     {
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
-      "fillStyle": "hachure",
+      "fillStyle": "solid",
       "strokeWidth": 2,
       "strokeStyle": "solid",
       "roughness": 1,
@@ -64,25 +64,24 @@
       "id": "claude-text",
       "type": "text",
       "x": 50,
-      "y": 67.5,
-      "width": 210,
-      "height": 25,
-      "text": "🤖 Claude Code",
-      "originalText": "🤖 Claude Code",
-      "fontSize": 20,
+      "y": 75.5,
+      "width": 190,
+      "height": 39,
+      "text": "Claude Code\nasks for a web page",
+      "originalText": "Claude Code\nasks for a web page",
+      "fontSize": 16,
       "fontFamily": 5,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "claude",
       "autoResize": true,
-      "lineHeight": 1.25,
-      "baseline": 18
+      "lineHeight": 1.3
     },
     {
       "angle": 0,
-      "strokeColor": "#1e1e1e",
-      "backgroundColor": "#e9ecef",
-      "fillStyle": "hachure",
+      "strokeColor": "#868e96",
+      "backgroundColor": "#f8f9fa",
+      "fillStyle": "solid",
       "strokeWidth": 2,
       "strokeStyle": "solid",
       "roughness": 1,
@@ -115,16 +114,16 @@
       "locked": false,
       "id": "page",
       "type": "rectangle",
-      "x": 620,
+      "x": 320,
       "y": 40,
-      "width": 250,
-      "height": 80
+      "width": 210,
+      "height": 110
     },
     {
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
-      "fillStyle": "hachure",
+      "fillStyle": "solid",
       "strokeWidth": 2,
       "strokeStyle": "solid",
       "roughness": 1,
@@ -142,26 +141,25 @@
       "locked": false,
       "id": "page-text",
       "type": "text",
-      "x": 630,
-      "y": 67.5,
-      "width": 230,
-      "height": 25,
-      "text": "🌐 Weather page",
-      "originalText": "🌐 Weather page",
-      "fontSize": 20,
+      "x": 330,
+      "y": 75.5,
+      "width": 190,
+      "height": 39,
+      "text": "Weather page\n\"It is 30°C today\"",
+      "originalText": "Weather page\n\"It is 30°C today\"",
+      "fontSize": 16,
       "fontFamily": 5,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "page",
       "autoResize": true,
-      "lineHeight": 1.25,
-      "baseline": 18
+      "lineHeight": 1.3
     },
     {
       "angle": 0,
-      "strokeColor": "#1e1e1e",
-      "backgroundColor": "#d0bfff",
-      "fillStyle": "hachure",
+      "strokeColor": "#7048e8",
+      "backgroundColor": "#f3f0ff",
+      "fillStyle": "solid",
       "strokeWidth": 2,
       "strokeStyle": "solid",
       "roughness": 1,
@@ -169,7 +167,7 @@
       "groupIds": [],
       "frameId": null,
       "roundness": {
-        "type": 2
+        "type": 3
       },
       "seed": 192707826,
       "version": 1,
@@ -190,24 +188,24 @@
         },
         {
           "type": "arrow",
-          "id": "arrow-4"
+          "id": "arrow-3"
         }
       ],
       "updated": 1,
       "link": null,
       "locked": false,
       "id": "diorama",
-      "type": "diamond",
-      "x": 620,
-      "y": 190,
-      "width": 250,
-      "height": 150
+      "type": "rectangle",
+      "x": 600,
+      "y": 40,
+      "width": 210,
+      "height": 110
     },
     {
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
-      "fillStyle": "hachure",
+      "fillStyle": "solid",
       "strokeWidth": 2,
       "strokeStyle": "solid",
       "roughness": 1,
@@ -225,26 +223,25 @@
       "locked": false,
       "id": "diorama-text",
       "type": "text",
-      "x": 630,
-      "y": 240,
-      "width": 230,
-      "height": 50,
-      "text": "🎭 Diorama\nyour rules",
-      "originalText": "🎭 Diorama\nyour rules",
-      "fontSize": 20,
+      "x": 610,
+      "y": 65.75,
+      "width": 190,
+      "height": 58.5,
+      "text": "Diorama\nyour rule:\n30°C becomes 5°C",
+      "originalText": "Diorama\nyour rule:\n30°C becomes 5°C",
+      "fontSize": 16,
       "fontFamily": 5,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "diorama",
       "autoResize": true,
-      "lineHeight": 1.25,
-      "baseline": 18
+      "lineHeight": 1.3
     },
     {
       "angle": 0,
-      "strokeColor": "#1e1e1e",
-      "backgroundColor": "#a5d8ff",
-      "fillStyle": "hachure",
+      "strokeColor": "#e8590c",
+      "backgroundColor": "#fff4e6",
+      "fillStyle": "solid",
       "strokeWidth": 2,
       "strokeStyle": "solid",
       "roughness": 1,
@@ -266,10 +263,6 @@
         {
           "type": "arrow",
           "id": "arrow-2"
-        },
-        {
-          "type": "arrow",
-          "id": "arrow-3"
         }
       ],
       "updated": 1,
@@ -277,16 +270,16 @@
       "locked": false,
       "id": "claude2",
       "type": "rectangle",
-      "x": 40,
-      "y": 225,
-      "width": 250,
-      "height": 80
+      "x": 880,
+      "y": 40,
+      "width": 210,
+      "height": 110
     },
     {
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
-      "fillStyle": "hachure",
+      "fillStyle": "solid",
       "strokeWidth": 2,
       "strokeStyle": "solid",
       "roughness": 1,
@@ -304,33 +297,34 @@
       "locked": false,
       "id": "claude2-text",
       "type": "text",
-      "x": 50,
-      "y": 240,
-      "width": 230,
-      "height": 50,
-      "text": "🤖 Claude Code\nnow reads: 5°C",
-      "originalText": "🤖 Claude Code\nnow reads: 5°C",
-      "fontSize": 20,
+      "x": 890,
+      "y": 65.75,
+      "width": 190,
+      "height": 58.5,
+      "text": "Claude Code\nreads 5°C, says\n\"Take a warm coat!\"",
+      "originalText": "Claude Code\nreads 5°C, says\n\"Take a warm coat!\"",
+      "fontSize": 16,
       "fontFamily": 5,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "claude2",
       "autoResize": true,
-      "lineHeight": 1.25,
-      "baseline": 18
+      "lineHeight": 1.3
     },
     {
       "angle": 0,
-      "strokeColor": "#1e1e1e",
-      "backgroundColor": "#ffec99",
-      "fillStyle": "hachure",
+      "strokeColor": "#1971c2",
+      "backgroundColor": "#e7f5ff",
+      "fillStyle": "solid",
       "strokeWidth": 2,
       "strokeStyle": "solid",
       "roughness": 1,
       "opacity": 100,
       "groupIds": [],
       "frameId": null,
-      "roundness": null,
+      "roundness": {
+        "type": 3
+      },
       "seed": 466527973,
       "version": 1,
       "versionNonce": 1258262241,
@@ -338,7 +332,7 @@
       "boundElements": [
         {
           "type": "text",
-          "id": "answer-text"
+          "id": "log-text"
         },
         {
           "type": "arrow",
@@ -348,18 +342,18 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "id": "answer",
-      "type": "ellipse",
-      "x": 40,
-      "y": 410,
-      "width": 250,
-      "height": 85
+      "id": "log",
+      "type": "rectangle",
+      "x": 600,
+      "y": 245,
+      "width": 210,
+      "height": 95
     },
     {
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
-      "fillStyle": "hachure",
+      "fillStyle": "solid",
       "strokeWidth": 2,
       "strokeStyle": "solid",
       "roughness": 1,
@@ -375,28 +369,27 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "id": "answer-text",
+      "id": "log-text",
       "type": "text",
-      "x": 50,
-      "y": 427.5,
-      "width": 230,
-      "height": 50,
-      "text": "💬 \"Take a warm\ncoat today!\"",
-      "originalText": "💬 \"Take a warm\ncoat today!\"",
-      "fontSize": 20,
+      "x": 610,
+      "y": 263.25,
+      "width": 190,
+      "height": 58.5,
+      "text": "Audit trail\nwhat changed, and\ndid Claude use it?",
+      "originalText": "Audit trail\nwhat changed, and\ndid Claude use it?",
+      "fontSize": 16,
       "fontFamily": 5,
       "textAlign": "center",
       "verticalAlign": "middle",
-      "containerId": "answer",
+      "containerId": "log",
       "autoResize": true,
-      "lineHeight": 1.25,
-      "baseline": 18
+      "lineHeight": 1.3
     },
     {
       "angle": 0,
-      "strokeColor": "#1e1e1e",
-      "backgroundColor": "#b2f2bb",
-      "fillStyle": "hachure",
+      "strokeColor": "#495057",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
       "strokeWidth": 2,
       "strokeStyle": "solid",
       "roughness": 1,
@@ -404,7 +397,7 @@
       "groupIds": [],
       "frameId": null,
       "roundness": {
-        "type": 3
+        "type": 2
       },
       "seed": 1713439954,
       "version": 1,
@@ -413,28 +406,48 @@
       "boundElements": [
         {
           "type": "text",
-          "id": "log-text"
-        },
-        {
-          "type": "arrow",
-          "id": "arrow-4"
+          "id": "arrow-0-text"
         }
       ],
       "updated": 1,
       "link": null,
       "locked": false,
-      "id": "log",
-      "type": "rectangle",
-      "x": 560,
-      "y": 410,
-      "width": 330,
-      "height": 85
+      "id": "arrow-0",
+      "type": "arrow",
+      "x": 262,
+      "y": 95,
+      "width": 46,
+      "height": 0,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          46,
+          0
+        ]
+      ],
+      "lastCommittedPoint": null,
+      "startBinding": {
+        "elementId": "claude",
+        "focus": 0,
+        "gap": 12
+      },
+      "endBinding": {
+        "elementId": "page",
+        "focus": 0,
+        "gap": 12
+      },
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "elbowed": false
     },
     {
       "angle": 0,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#495057",
       "backgroundColor": "transparent",
-      "fillStyle": "hachure",
+      "fillStyle": "solid",
       "strokeWidth": 2,
       "strokeStyle": "solid",
       "roughness": 1,
@@ -450,28 +463,27 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "id": "log-text",
+      "id": "arrow-0-text",
       "type": "text",
-      "x": 570,
-      "y": 427.5,
-      "width": 310,
-      "height": 50,
-      "text": "📒 What changed,\nand did Claude use it?",
-      "originalText": "📒 What changed,\nand did Claude use it?",
-      "fontSize": 20,
+      "x": 264,
+      "y": 85.9,
+      "width": 42,
+      "height": 18.2,
+      "text": "fetch",
+      "originalText": "fetch",
+      "fontSize": 14,
       "fontFamily": 5,
       "textAlign": "center",
       "verticalAlign": "middle",
-      "containerId": "log",
+      "containerId": "arrow-0",
       "autoResize": true,
-      "lineHeight": 1.25,
-      "baseline": 18
+      "lineHeight": 1.3
     },
     {
       "angle": 0,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#495057",
       "backgroundColor": "transparent",
-      "fillStyle": "hachure",
+      "fillStyle": "solid",
       "strokeWidth": 2,
       "strokeStyle": "solid",
       "roughness": 1,
@@ -488,17 +500,17 @@
       "boundElements": [
         {
           "type": "text",
-          "id": "arrow-0-text"
+          "id": "arrow-1-text"
         }
       ],
       "updated": 1,
       "link": null,
       "locked": false,
-      "id": "arrow-0",
+      "id": "arrow-1",
       "type": "arrow",
-      "x": 280,
-      "y": 80,
-      "width": 330,
+      "x": 542,
+      "y": 95,
+      "width": 46,
       "height": 0,
       "points": [
         [
@@ -506,20 +518,20 @@
           0
         ],
         [
-          330,
+          46,
           0
         ]
       ],
       "lastCommittedPoint": null,
       "startBinding": {
-        "elementId": "claude",
-        "focus": 0,
-        "gap": 10
-      },
-      "endBinding": {
         "elementId": "page",
         "focus": 0,
-        "gap": 10
+        "gap": 12
+      },
+      "endBinding": {
+        "elementId": "diorama",
+        "focus": 0,
+        "gap": 12
       },
       "startArrowhead": null,
       "endArrowhead": "arrow",
@@ -527,9 +539,9 @@
     },
     {
       "angle": 0,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#495057",
       "backgroundColor": "transparent",
-      "fillStyle": "hachure",
+      "fillStyle": "solid",
       "strokeWidth": 2,
       "strokeStyle": "solid",
       "roughness": 1,
@@ -545,28 +557,27 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "id": "arrow-0-text",
+      "id": "arrow-1-text",
       "type": "text",
-      "x": 363.4,
-      "y": 69.375,
-      "width": 163.2,
-      "height": 21.25,
-      "text": "fetches the page",
-      "originalText": "fetches the page",
-      "fontSize": 17,
+      "x": 539.8,
+      "y": 85.9,
+      "width": 50.4,
+      "height": 18.2,
+      "text": "result",
+      "originalText": "result",
+      "fontSize": 14,
       "fontFamily": 5,
       "textAlign": "center",
       "verticalAlign": "middle",
-      "containerId": "arrow-0",
+      "containerId": "arrow-1",
       "autoResize": true,
-      "lineHeight": 1.25,
-      "baseline": 15
+      "lineHeight": 1.3
     },
     {
       "angle": 0,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#495057",
       "backgroundColor": "transparent",
-      "fillStyle": "hachure",
+      "fillStyle": "solid",
       "strokeWidth": 2,
       "strokeStyle": "solid",
       "roughness": 1,
@@ -583,38 +594,38 @@
       "boundElements": [
         {
           "type": "text",
-          "id": "arrow-1-text"
+          "id": "arrow-2-text"
         }
       ],
       "updated": 1,
       "link": null,
       "locked": false,
-      "id": "arrow-1",
+      "id": "arrow-2",
       "type": "arrow",
-      "x": 745,
-      "y": 130,
-      "width": 0,
-      "height": 50,
+      "x": 822,
+      "y": 95,
+      "width": 46,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          0,
-          50
+          46,
+          0
         ]
       ],
       "lastCommittedPoint": null,
       "startBinding": {
-        "elementId": "page",
-        "focus": 0,
-        "gap": 10
-      },
-      "endBinding": {
         "elementId": "diorama",
         "focus": 0,
-        "gap": 10
+        "gap": 12
+      },
+      "endBinding": {
+        "elementId": "claude2",
+        "focus": 0,
+        "gap": 12
       },
       "startArrowhead": null,
       "endArrowhead": "arrow",
@@ -622,9 +633,9 @@
     },
     {
       "angle": 0,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#495057",
       "backgroundColor": "transparent",
-      "fillStyle": "hachure",
+      "fillStyle": "solid",
       "strokeWidth": 2,
       "strokeStyle": "solid",
       "roughness": 1,
@@ -640,30 +651,29 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "id": "arrow-1-text",
+      "id": "arrow-2-text",
       "type": "text",
-      "x": 653.2,
-      "y": 144.375,
-      "width": 183.6,
-      "height": 21.25,
-      "text": "\"It is 30°C today\"",
-      "originalText": "\"It is 30°C today\"",
-      "fontSize": 17,
+      "x": 815.6,
+      "y": 85.9,
+      "width": 58.8,
+      "height": 18.2,
+      "text": "changed",
+      "originalText": "changed",
+      "fontSize": 14,
       "fontFamily": 5,
       "textAlign": "center",
       "verticalAlign": "middle",
-      "containerId": "arrow-1",
+      "containerId": "arrow-2",
       "autoResize": true,
-      "lineHeight": 1.25,
-      "baseline": 15
+      "lineHeight": 1.3
     },
     {
       "angle": 0,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#495057",
       "backgroundColor": "transparent",
-      "fillStyle": "hachure",
+      "fillStyle": "solid",
       "strokeWidth": 2,
-      "strokeStyle": "solid",
+      "strokeStyle": "dashed",
       "roughness": 1,
       "opacity": 100,
       "groupIds": [],
@@ -678,38 +688,38 @@
       "boundElements": [
         {
           "type": "text",
-          "id": "arrow-2-text"
+          "id": "arrow-3-text"
         }
       ],
       "updated": 1,
       "link": null,
       "locked": false,
-      "id": "arrow-2",
+      "id": "arrow-3",
       "type": "arrow",
-      "x": 610,
-      "y": 265,
-      "width": 310,
-      "height": 0,
+      "x": 705,
+      "y": 162,
+      "width": 0,
+      "height": 71,
       "points": [
         [
           0,
           0
         ],
         [
-          -310,
-          0
+          0,
+          71
         ]
       ],
       "lastCommittedPoint": null,
       "startBinding": {
         "elementId": "diorama",
         "focus": 0,
-        "gap": 10
+        "gap": 12
       },
       "endBinding": {
-        "elementId": "claude2",
+        "elementId": "log",
         "focus": 0,
-        "gap": 10
+        "gap": 12
       },
       "startArrowhead": null,
       "endArrowhead": "arrow",
@@ -717,9 +727,9 @@
     },
     {
       "angle": 0,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#495057",
       "backgroundColor": "transparent",
-      "fillStyle": "hachure",
+      "fillStyle": "solid",
       "strokeWidth": 2,
       "strokeStyle": "solid",
       "roughness": 1,
@@ -735,170 +745,21 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "id": "arrow-2-text",
+      "id": "arrow-3-text",
       "type": "text",
-      "x": 368.3,
-      "y": 254.375,
-      "width": 173.4,
-      "height": 21.25,
-      "text": "\"It is 5°C today\"",
-      "originalText": "\"It is 5°C today\"",
-      "fontSize": 17,
-      "fontFamily": 5,
-      "textAlign": "center",
-      "verticalAlign": "middle",
-      "containerId": "arrow-2",
-      "autoResize": true,
-      "lineHeight": 1.25,
-      "baseline": 15
-    },
-    {
-      "angle": 0,
-      "strokeColor": "#1e1e1e",
-      "backgroundColor": "transparent",
-      "fillStyle": "hachure",
-      "strokeWidth": 2,
-      "strokeStyle": "solid",
-      "roughness": 1,
-      "opacity": 100,
-      "groupIds": [],
-      "frameId": null,
-      "roundness": {
-        "type": 2
-      },
-      "seed": 1823154802,
-      "version": 1,
-      "versionNonce": 1625593282,
-      "isDeleted": false,
-      "boundElements": [],
-      "updated": 1,
-      "link": null,
-      "locked": false,
-      "id": "arrow-3",
-      "type": "arrow",
-      "x": 165,
-      "y": 315,
-      "width": 0,
-      "height": 85,
-      "points": [
-        [
-          0,
-          0
-        ],
-        [
-          0,
-          85
-        ]
-      ],
-      "lastCommittedPoint": null,
-      "startBinding": {
-        "elementId": "claude2",
-        "focus": 0,
-        "gap": 10
-      },
-      "endBinding": {
-        "elementId": "answer",
-        "focus": 0,
-        "gap": 10
-      },
-      "startArrowhead": null,
-      "endArrowhead": "arrow",
-      "elbowed": false
-    },
-    {
-      "angle": 0,
-      "strokeColor": "#1e1e1e",
-      "backgroundColor": "transparent",
-      "fillStyle": "hachure",
-      "strokeWidth": 2,
-      "strokeStyle": "dashed",
-      "roughness": 1,
-      "opacity": 100,
-      "groupIds": [],
-      "frameId": null,
-      "roundness": {
-        "type": 2
-      },
-      "seed": 2108337689,
-      "version": 1,
-      "versionNonce": 171070742,
-      "isDeleted": false,
-      "boundElements": [
-        {
-          "type": "text",
-          "id": "arrow-4-text"
-        }
-      ],
-      "updated": 1,
-      "link": null,
-      "locked": false,
-      "id": "arrow-4",
-      "type": "arrow",
-      "x": 736.4205531935968,
-      "y": 345.43231381003056,
-      "width": 5.8265700463414305,
-      "height": 54.62409418445014,
-      "points": [
-        [
-          0,
-          0
-        ],
-        [
-          -5.8265700463414305,
-          54.62409418445014
-        ]
-      ],
-      "lastCommittedPoint": null,
-      "startBinding": {
-        "elementId": "diorama",
-        "focus": 0,
-        "gap": 10
-      },
-      "endBinding": {
-        "elementId": "log",
-        "focus": 0,
-        "gap": 10
-      },
-      "startArrowhead": null,
-      "endArrowhead": "arrow",
-      "elbowed": false
-    },
-    {
-      "angle": 0,
-      "strokeColor": "#1e1e1e",
-      "backgroundColor": "transparent",
-      "fillStyle": "hachure",
-      "strokeWidth": 2,
-      "strokeStyle": "solid",
-      "roughness": 1,
-      "opacity": 100,
-      "groupIds": [],
-      "frameId": null,
-      "roundness": null,
-      "seed": 681164367,
-      "version": 1,
-      "versionNonce": 363040240,
-      "isDeleted": false,
-      "boundElements": [],
-      "updated": 1,
-      "link": null,
-      "locked": false,
-      "id": "arrow-4-text",
-      "type": "text",
-      "x": 697.807268170426,
-      "y": 362.1193609022556,
-      "width": 71.39999999999999,
-      "height": 21.25,
+      "x": 675.6,
+      "y": 188.4,
+      "width": 58.8,
+      "height": 18.2,
       "text": "records",
       "originalText": "records",
-      "fontSize": 17,
+      "fontSize": 14,
       "fontFamily": 5,
       "textAlign": "center",
       "verticalAlign": "middle",
-      "containerId": "arrow-4",
+      "containerId": "arrow-3",
       "autoResize": true,
-      "lineHeight": 1.25,
-      "baseline": 15
+      "lineHeight": 1.3
     }
   ],
   "appState": {
