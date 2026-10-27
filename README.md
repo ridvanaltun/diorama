@@ -16,7 +16,116 @@ Diorama is a research and experimentation tool. It only affects Claude Code sess
 
 ![Session timeline](docs/assets/screenshot-sessions.png)
 
-## How it works
+## Diorama in one picture
+
+When Claude Code works, it uses **tools**: it fetches web pages, reads files and runs commands. Diorama sits in the middle. It can change what a tool returns **before Claude sees it**, then records what changed and what Claude did with it.
+
+```mermaid
+flowchart LR
+    C["🤖 Claude Code"] -- "fetch the weather page" --> T["🌐 Tool"]
+    T -- "It is 30°C today" --> D{"🎭 Diorama<br/>your rules"}
+    D -- "It is 5°C today" --> C2["🤖 Claude Code"]
+    C2 --> A["💬 Take a warm coat!"]
+    D -. records .-> L["📒 What changed,<br/>and did Claude use it?"]
+```
+
+That's the whole idea. You decide **what** to change with simple rules, and Diorama shows you **how Claude reacts**.
+
+## Examples, step by step
+
+### 1. Change a fact, no AI needed
+
+*"What does Claude do if the docs say version 2.4 instead of 2.3?"*
+
+```mermaid
+flowchart LR
+    P["📄 Page says<br/>version 2.3"] --> R["🔁 Rule: replace<br/>2.3 → 2.4"] --> C["🤖 Claude reads<br/>version 2.4"]
+```
+
+1. Save this as `bump.json`:
+   ```json
+   {"name": "Bump version", "rules": [{
+     "name": "2.3 becomes 2.4",
+     "match": {"tools": ["WebFetch"], "stage": "page"},
+     "replace": [{"find": "2.3", "with": "2.4", "wholeWord": true}]
+   }]}
+   ```
+2. Create the profile and start Claude Code through Diorama:
+   ```bash
+   diorama profiles create --file bump.json
+   cd ~/code/my-project
+   diorama run --profile "Bump version"
+   ```
+3. Ask Claude something that needs the docs. Open **Diorama.app** to see each change, with a **used** label when Claude repeated the new value.
+
+Replacement rules run on your Mac: they're **free and instant**, with no model involved.
+
+### 2. Let AI rewrite with plain instructions
+
+*"Make the docs say this library is deprecated, in a natural way."* For changes that need judgment, a small AI model (the **rewrite agent**) follows your instructions:
+
+```bash
+diorama key set                       # your own Anthropic API key, kept in the Keychain
+diorama run --prompt "Say the library is deprecated and suggest v3" --prompt-tools WebFetch,WebSearch
+```
+
+```mermaid
+flowchart LR
+    P["📄 Original page"] --> AI["🧠 Rewrite agent<br/>follows your prompt"] --> C["🤖 Claude sees<br/>the rewritten page"]
+    AI -. explains .-> L["📒 What it changed and why"]
+```
+
+Every change comes with a word diff and the agent's explanation. Not sure about a rule yet? Try it first in the app's **Test Rules…** playground, or turn on **shadow mode**: the changes are computed and shown to you, but Claude gets the original.
+
+### 3. Hide secrets from Claude
+
+*"Never let an API key in a file or log reach the model."*
+
+```bash
+diorama profiles create --template 5 --name privacy   # "Privacy: redact secrets"
+diorama run --profile privacy
+```
+
+```mermaid
+flowchart LR
+    F["📄 config.env<br/>KEY=sk-ant-abc123…"] --> R["🛡️ Redact"] --> C["🤖 Claude sees<br/>KEY=[REDACTED:anthropic-key]"]
+```
+
+Redaction is local and free, and it keeps working even when steering is paused.
+
+### 4. Use it from the Claude desktop app
+
+The desktop app can't be routed through Diorama, so connect a project folder once:
+
+```bash
+cd ~/code/my-project
+diorama hook install --profile "Bump version"
+```
+
+Then start a **new** Code session in that folder in the Claude app. Diorama applies the same rules and records everything. Add `--lockdown network` to stop Claude from fetching pages around your rules with `curl`.
+
+### 5. Measure it: does the change really matter?
+
+One session can be luck. An **experiment** runs the same task many times, with and without your rules, and compares the results:
+
+```mermaid
+flowchart TB
+    T["📝 Same task, same project"] --> A["🅰️ Control<br/>no changes"]
+    T --> B["🅱️ Steered<br/>your rules"]
+    A --> A1["run 1 · run 2 · run 3 …"]
+    B --> B1["run 1 · run 2 · run 3 …"]
+    A1 --> R["📊 Compare: success, steps, cost,<br/>did Claude repeat the change?"]
+    B1 --> R
+```
+
+```bash
+diorama experiment init > exp.json     # write the task and the two variants
+diorama experiment run exp.json        # shows the cost first and asks before starting
+```
+
+Each run works in a throwaway copy of your project, so your files are never touched.
+
+## Under the hood
 
 ```
 diorama run ──▶ claude (your terminal)
