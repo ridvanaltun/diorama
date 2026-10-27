@@ -263,9 +263,21 @@ enum Snapshotter {
 
 struct ConnectionBadge: View {
     @Environment(AppModel.self) private var model
+    @State private var confirmRestart = false
     var body: some View {
         HStack(spacing: 6) {
             switch model.connection {
+            case .connected(let h) where h.isOutdated():
+                Circle().fill(.orange).frame(width: 8, height: 8)
+                Text("Daemon \(h.version) · app \(DioramaVersion.current)").font(.caption).foregroundStyle(.secondary)
+                    .help("An older daemon is still running. Restarting it disconnects \(h.activeSessions) active session(s).")
+                Button("Restart") { confirmRestart = true }
+                    .buttonStyle(.link).font(.caption)
+                    .confirmationDialog("Restart the daemon?", isPresented: $confirmRestart) {
+                        Button("Restart Daemon") { Task { await model.restartDaemon() } }
+                    } message: {
+                        Text("\(h.activeSessions) routed Claude Code session(s) will lose their connection and running experiment trials will stop.")
+                    }
             case .connected(let h):
                 Circle().fill(.green).frame(width: 8, height: 8)
                 Text("Daemon \(h.version) · :\(String(h.port))").font(.caption).foregroundStyle(.secondary)

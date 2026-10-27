@@ -1378,8 +1378,11 @@ public struct HealthInfo: Codable, Sendable {
     public var upstream: String
     public var dataDirectory: String
     public var activeSessions: Int
+    /// Experiment runs in progress (nil from daemons before 1.7.1).
+    public var activeRuns: Int?
 
-    public init(version: String, pid: Int32, port: Int, startedAt: Date, upstream: String, dataDirectory: String, activeSessions: Int) {
+    public init(version: String, pid: Int32, port: Int, startedAt: Date, upstream: String, dataDirectory: String, activeSessions: Int, activeRuns: Int? = nil) {
+        self.activeRuns = activeRuns
         self.version = version
         self.pid = pid
         self.port = port

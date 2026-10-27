@@ -93,6 +93,16 @@ final class AppModel {
         }
     }
 
+    /// Stops the running daemon and starts this app's own (e.g. after an update left an older one running).
+    func restartDaemon() async {
+        guard let client else { return await connect() }
+        eventsTask?.cancel()
+        self.client = nil
+        connection = .connecting
+        await client.stopAndWait()
+        await connect()
+    }
+
     /// Checks GitHub Releases at most once a day (or immediately when `force`).
     func checkForUpdates(force: Bool = false) async {
         let defaults = UserDefaults.standard

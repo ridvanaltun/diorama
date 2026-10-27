@@ -730,7 +730,7 @@ public final class DioramaDaemon: @unchecked Sendable {
     func health() -> HealthInfo {
         HealthInfo(
             version: DioramaVersion.current, pid: getpid(), port: port, startedAt: startedAt, upstream: options.upstream.absoluteString,
-            dataDirectory: options.paths.home.path, activeSessions: store.activeSessionCount())
+            dataDirectory: options.paths.home.path, activeSessions: store.activeSessionCount(), activeRuns: runner.activeRunIds.count)
     }
 
     func keyStatus() -> KeyStatus {

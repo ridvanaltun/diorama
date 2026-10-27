@@ -5,6 +5,9 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+### Fixed
+- **An older daemon kept running after an update.** The app and CLI connected to whatever daemon was already running, so after installing a new version the app could still show and use the previous daemon (for example "Daemon 1.6.0" in 1.7.0). Now an older daemon with no active sessions or experiment runs is stopped and replaced by the new one automatically; a busy one is kept, and the app marks it in orange with a **Restart** button.
+
 ## 1.7.0 — 2026-10-28
 
 ### New

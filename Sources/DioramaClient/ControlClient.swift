@@ -29,11 +29,17 @@ public struct ControlClient: Sendable {
 
     // MARK: Connecting
 
-    /// Reads `daemon.json`, verifies the daemon answers, and optionally starts it.
-    public static func connect(paths: DioramaPaths = .default(), autostart: Bool = true, daemonExecutable: String? = nil, timeout: TimeInterval = 15) async throws -> ControlClient {
+    /// Reads `daemon.json`, verifies the daemon answers, and optionally starts it. With `autostart`,
+    /// an idle daemon older than `currentVersion` (left running by an earlier install) is stopped
+    /// and replaced; a busy one is kept, and `HealthInfo.isOutdated` tells the caller.
+    public static func connect(paths: DioramaPaths = .default(), autostart: Bool = true, daemonExecutable: String? = nil, timeout: TimeInterval = 15,
+                               currentVersion: String = DioramaVersion.current) async throws -> ControlClient {
         if let info = DaemonInfo.read(from: paths.daemonInfo) {
             let c = ControlClient(info: info)
-            if (try? await c.health()) != nil { return c }
+            if let h = try? await c.health() {
+                guard autostart, h.isOutdated(comparedTo: currentVersion), h.isIdle else { return c }
+                await c.stopAndWait()
+            }
         }
         guard autostart else { throw ClientError("The Diorama daemon is not running. Start it with `diorama daemon start`.") }
         guard let exe = daemonExecutable ?? DaemonLauncher.locate() else {
@@ -89,6 +95,19 @@ public struct ControlClient: Sendable {
     public func setKey(_ key: String) async throws -> KeyStatus { try await request("PUT", "key", body: SetKeyRequest(key: key)) }
     public func deleteKey() async throws -> KeyStatus { try await request("DELETE", "key") }
     public func shutdown() async throws { let _: [String: String] = try await request("POST", "shutdown") }
+
+    /// Asks the daemon to stop and waits (up to `timeout`) until its process has exited, so a
+    /// new daemon can take the single-instance lock.
+    public func stopAndWait(timeout: TimeInterval = 10) async {
+        try? await shutdown()
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            // An in-process daemon (tests) can't exit; it has stopped once it stops answering.
+            let running = info.pid == getpid() ? (try? await health()) != nil : kill(info.pid, 0) == 0
+            if !running { return }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
     public func applyRetention() async throws -> MaintenanceResult { try await request("POST", "maintenance/retention") }
 
     public func templates() async throws -> [Profile] { try await request("GET", "templates") }
@@ -334,4 +353,14 @@ public enum DaemonLauncher {
         let rc = posix_spawn(&pid, executable, &actions, &attr, cArgs, cEnv)
         guard rc == 0 else { throw ClientError("could not start dioramad (\(String(cString: strerror(rc))))") }
     }
+}
+
+extension HealthInfo {
+    /// The daemon runs an older Diorama than this build (e.g. one left running across an update).
+    public func isOutdated(comparedTo current: String = DioramaVersion.current) -> Bool {
+        UpdateChecker.compare(version, current) < 0
+    }
+
+    /// No routed session or experiment run would be cut off by restarting the daemon.
+    public var isIdle: Bool { activeSessions == 0 && (activeRuns ?? 0) == 0 }
 }

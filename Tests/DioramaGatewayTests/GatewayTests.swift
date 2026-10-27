@@ -361,6 +361,36 @@ func sampleBody(results: [(id: String, text: String)] = [("toolu_x", "Example Do
         #expect(try await env.client.health().pid == getpid())
     }
 
+    @Test func connectReplacesAnOutdatedIdleDaemonOnly() async throws {
+        let env = try await TestEnv.start()
+        defer { Task { await env.stop() } }
+        let paths = DioramaPaths(home: env.home)
+        let marker = env.home.appendingPathComponent("spawned")
+        let fake = env.home.appendingPathComponent("fake-dioramad.sh")
+        try "#!/bin/sh\ntouch '\(marker.path)'\n".write(to: fake, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
+
+        // Same version: the running daemon is used as is.
+        let same = try await ControlClient.connect(paths: paths, daemonExecutable: fake.path, timeout: 1)
+        #expect(same.info.port == env.client.info.port)
+        #expect(try await env.client.health().isOutdated() == false)
+
+        // Older but busy: kept, and the caller can see it is outdated.
+        let launch = try await env.client.createSession(SessionSpec(name: "busy", cwd: "/tmp"))
+        let busy = try await ControlClient.connect(paths: paths, daemonExecutable: fake.path, timeout: 1, currentVersion: "99.0.0")
+        let h = try await busy.health()
+        #expect(h.isOutdated(comparedTo: "99.0.0") && !h.isIdle && h.activeRuns == 0)
+        #expect(!FileManager.default.fileExists(atPath: marker.path))
+
+        // Older and idle: stopped and replaced by this build's daemon.
+        _ = try await env.client.endSession(launch.session.id)
+        await #expect(throws: (any Error).self) {
+            _ = try await ControlClient.connect(paths: paths, daemonExecutable: fake.path, timeout: 1, currentVersion: "99.0.0")
+        }
+        #expect(FileManager.default.fileExists(atPath: marker.path))
+        #expect((try? await env.client.health()) == nil)
+    }
+
     @Test func passThroughAddsLittleLatency() async throws {
         let env = try await TestEnv.start()
         defer { Task { await env.stop() } }
