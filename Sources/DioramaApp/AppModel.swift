@@ -60,6 +60,7 @@ final class AppModel {
 
     private var eventsTask: Task<Void, Never>?
     let paths = DioramaPaths.default()
+    var hookRegistry: HookRegistry { HookRegistry(paths: paths) }
     /// When set (DIORAMA_SNAPSHOT_DIR), the app renders each screen to PNG and quits. Used to
     /// verify the UI without screen-recording permission.
     let snapshotDir: URL? = ProcessInfo.processInfo.environment["DIORAMA_SNAPSHOT_DIR"].map { URL(fileURLWithPath: $0) }

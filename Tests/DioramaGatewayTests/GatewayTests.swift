@@ -387,6 +387,9 @@ func sampleBody(results: [(id: String, text: String)] = [("toolu_x", "Example Do
         await #expect(throws: (any Error).self) {
             _ = try await ControlClient.connect(paths: paths, daemonExecutable: fake.path, timeout: 1, currentVersion: "99.0.0")
         }
+        // The fake daemon runs on its own; under load it can take a moment.
+        let deadline = Date().addingTimeInterval(10)
+        while !FileManager.default.fileExists(atPath: marker.path), Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
         #expect(FileManager.default.fileExists(atPath: marker.path))
         #expect((try? await env.client.health()) == nil)
     }

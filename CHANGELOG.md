@@ -5,6 +5,12 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+### New
+- **Connected projects.** Diorama now remembers which projects have its hook (hook mode for the Claude desktop app and IDEs). **Settings → Connected projects**, `diorama hook list` and the MCP tool `list_hooks` show each one with its configuration and any problem, with a button to remove it or all of them (`diorama hook uninstall --all`). Hook sessions also get a **Remove Hook…** button. Projects connected with earlier versions appear once a hook session runs there or the daemon starts.
+
+### Changed
+- **Removing Diorama no longer breaks connected projects.** The hook now does nothing if its `diorama` command is gone, instead of making Claude Code report a hook error on every tool call, and `brew uninstall --cask --zap diorama` takes the hook out of every connected project. Hooks installed by earlier versions get this when installed again.
+
 ## 1.7.1 — 2026-10-28
 
 ### Fixed

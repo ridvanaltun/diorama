@@ -18,5 +18,14 @@ cask "diorama" do
   uninstall launchctl: "io.github.diorama.daemon",
             quit:      "io.github.diorama.Diorama"
 
-  zap trash: "~/Library/Application Support/Diorama"
+  # Takes Diorama's hook out of every connected project's Claude Code settings before the app goes
+  # (not on upgrade: Homebrew runs zap only for `brew uninstall --zap`). Hooks left by a plain
+  # uninstall do nothing once the CLI is gone.
+  zap script: {
+        executable:   "/bin/sh",
+        args:         ["-c", '[ -x "$1" ] && "$1" hook uninstall --all; exit 0', "sh",
+                       "#{appdir}/Diorama.app/Contents/Helpers/diorama"],
+        must_succeed: false,
+      },
+      trash:  "~/Library/Application Support/Diorama"
 end

@@ -57,7 +57,9 @@ Hook mode connects a project folder to Diorama through Claude Code's hooks inste
 cd ~/code/project
 diorama hook install --profile "Docs steer"           # or --prompt "…" --prompt-tools WebFetch,Read
 diorama hook status                                    # what's installed here
-diorama hook uninstall
+diorama hook list                                      # every connected project
+diorama hook uninstall                                 # this project (or: diorama hook uninstall ~/code/app)
+diorama hook uninstall --all                           # every connected project
 ```
 
 `diorama hook install` adds three entries (`SessionStart`, `PostToolUse` and `SessionEnd`) to the project's `.claude/settings.local.json`. Claude Code keeps that file out of version control, and the install leaves your other settings and hooks as they are. In the app, use **New Session → Claude desktop & IDEs**. After each tool call, the hook (`diorama hook run`) sends the result to the daemon. The daemon applies the same profiles, prompts and rewrite agent, records the decision, and returns the rewritten text, which Claude Code shows the model in place of the original. Sessions appear in the app with a **hook mode** badge; desktop sessions are named `<folder> · Desktop`.
@@ -67,6 +69,8 @@ diorama hook uninstall
 - **Claude's replies come from its transcript.** Claude Code keeps each session's conversation in a local transcript file, and the hook tells Diorama where it is. Diorama reads Claude's replies from it only when they're needed: for **Did Claude use it?**, **What Claude did next** in an audit record, and reports. It reads only the reply text and tool calls (never thinking), and doesn't copy the transcript. The transcript format belongs to Claude Code and can change. If it can't be read, these fall back to what later tool calls show.
 - **Which results it can rewrite.** Read (text files), WebFetch, Bash, Grep (content mode), MCP tools that return text blocks, and best-effort WebSearch commentary. Other results are recorded as unchanged with the reason.
 - **It never blocks Claude Code.** If the daemon can't be reached, or anything else goes wrong, the hook prints nothing and the original result is used. Errors go to `logs/hook.log`.
+- **Connected projects.** Diorama remembers where it installed the hook, and where its hook sessions ran from, in `hooks.json` in its data folder. `diorama hook list` and **Settings → Connected projects** show each project with its configuration and any problem (a moved or removed Diorama, an install older than input rules). Remove one there, from a hook session's **Remove Hook…** button, or all of them with `diorama hook uninstall --all`. Only Diorama's own entries leave the settings file.
+- **Removing Diorama.** The hook checks that its `diorama` command still exists before running it, so if the app is deleted it does nothing instead of failing every tool call. `brew uninstall --cask --zap diorama` also takes the hook out of every connected project. Hooks installed before 1.8 call the CLI directly: run `diorama hook uninstall --all` before removing Diorama, or install them again.
 - **No double rewrites.** Sessions started with `diorama run` set `DIORAMA_SESSION`, and an installed hook ignores them, because the gateway already handles them.
 - **Lockdown works here too.** `diorama hook install --lockdown network`, or **Lockdown → Block shell network tools** in the app's desktop mode, makes the hook refuse `curl`, `wget`, `nc`, `lynx` and similar commands, so Claude can't fetch a page around a rewrite. It catches them anywhere in a command line: after `&&`, `;` or `|`, inside `$( … )`, behind `sudo` or `env`, and with a full path such as `/usr/bin/curl`. Claude is told the command is blocked and to use WebFetch or WebSearch, and the timeline records each refusal. As in the terminal this is a deterrent, not a sandbox: a script in Python or Node can still fetch pages. Existing hook installs need `diorama hook install` again.
 - `diorama hook install --user` installs into `~/.claude/settings.json` instead, so that every Claude Code session on your account reports to Diorama.
@@ -90,7 +94,7 @@ In the app, click **Connect to Claude…** at the bottom of the sidebar (also in
 | `list_profiles`, `get_profile`, `list_rule_templates`, `create_profile`, `update_profile` | Read and write profiles. Every save is a new version. |
 | `what_if_replay` | Re-run a session's tool results through other rules and compare. Free check by default; `rewrite` runs the agent (capped). A read-only server allows the check only. |
 | `test_rules` | The rule playground: which rules match a past result or some text, and (with `rewrite`) what the agent would produce. Nothing is recorded. A read-only server allows the free check only. |
-| `get_hook_status`, `install_hook`, `uninstall_hook` | Connect a project folder for hook mode (Claude desktop, IDEs) |
+| `get_hook_status`, `list_hooks`, `install_hook`, `uninstall_hook` | Connect a project folder for hook mode (Claude desktop, IDEs), list connected projects, or disconnect one or all |
 | `end_session` | Mark a session ended |
 | `list_experiments`, `create_experiment`, `estimate_experiment_run`, `start_experiment_run`, `cancel_experiment_run`, `get_run_report` | The experiment workflow |
 

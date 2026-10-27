@@ -60,7 +60,7 @@ brew tap ridvanaltun/diorama https://github.com/ridvanaltun/diorama
 brew install --cask ridvanaltun/diorama/diorama
 ```
 
-Updates come with `brew upgrade --cask diorama`, and `brew uninstall --cask diorama` removes it (add `--zap` to delete its data too).
+Updates come with `brew upgrade --cask diorama`, and `brew uninstall --cask diorama` removes it (add `--zap` to also delete its data and take its hook out of connected projects).
 
 **First launch.** Diorama isn't notarized by Apple (it's ad-hoc signed), so macOS blocks the first launch. Open **System Settings → Privacy & Security**, find the message about Diorama and click **Open Anyway**. You only do this once. From a terminal, `xattr -dr com.apple.quarantine /Applications/Diorama.app` does the same.
 

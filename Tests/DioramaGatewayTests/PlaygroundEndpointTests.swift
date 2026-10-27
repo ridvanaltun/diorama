@@ -50,12 +50,12 @@ import Testing
             let result = try #require(reply["result"] as? [String: Any])
             return (((result["content"] as? [[String: Any]])?.first?["text"] as? String) ?? "", result["isError"] as? Bool ?? false)
         }
-        let full = MCPServer(cliPath: "/x/diorama") { env.client }
+        let full = MCPServer(cliPath: "/x/diorama", hookRegistry: HookRegistry(paths: DioramaPaths(home: env.home))) { env.client }
         let (text, isError) = try await call(full, ["profile": "web", "text": "Example Domain", "tool_input": ["url": "https://example.com"], "rewrite": true])
         #expect(!isError, "\(text)")
         #expect(text.contains("MATCH Rename") && text.contains("Morph Test Domain"))
 
-        let ro = MCPServer(cliPath: "/x/diorama", readOnly: true) { env.client }
+        let ro = MCPServer(cliPath: "/x/diorama", hookRegistry: HookRegistry(paths: DioramaPaths(home: env.home)), readOnly: true) { env.client }
         let (refused, refusedIsError) = try await call(ro, ["profile": "web", "text": "Example Domain", "rewrite": true])
         #expect(refusedIsError && refused.contains("read-only"))
         let (checked, checkedIsError) = try await call(ro, ["profile": "web", "text": "Example Domain"])

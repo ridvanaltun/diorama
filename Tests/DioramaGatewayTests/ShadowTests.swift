@@ -122,6 +122,6 @@ import Testing
         var free = event("PreToolUse", command: "curl x", lockdown: nil, id: "toolu_free")
         free.claudeSessionId = "c-free"
         #expect(try await env.client.hook(free).deny == nil)
-        #expect(try HookInstaller.command(cli: "/A/diorama", config: HookConfig(profile: "p", lockdown: .network)) == "'/A/diorama' hook run --profile 'p' --lockdown network")
+        #expect(try HookInstaller.command(cli: "/A/diorama", config: HookConfig(profile: "p", lockdown: .network)) == "[ -x '/A/diorama' ] && exec '/A/diorama' hook run --profile 'p' --lockdown network || true")
     }
 }

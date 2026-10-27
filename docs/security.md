@@ -23,7 +23,7 @@ A rewrite request contains the matching tool result, the tool's name and input, 
 
 ## Hook mode
 
-`diorama hook install` writes a command into a project's `.claude/settings.local.json`, or into `~/.claude/settings.json` with `--user`. Claude Code runs it after every tool call, with that tool call's input and output on stdin. The command is the bundled `diorama` CLI; it sends the event to the daemon over the authenticated control API and prints a replacement only when a rule rewrote the result. On any error it prints nothing, so the original result stands. Hook sessions are keyed by Claude Code's session id under a key that can never match a gateway URL token. Remove the hook with `diorama hook uninstall`.
+`diorama hook install` writes a command into a project's `.claude/settings.local.json`, or into `~/.claude/settings.json` with `--user`. Claude Code runs it after every tool call, with that tool call's input and output on stdin. The command is the bundled `diorama` CLI; it sends the event to the daemon over the authenticated control API and prints a replacement only when a rule rewrote the result. On any error it prints nothing, so the original result stands. Hook sessions are keyed by Claude Code's session id under a key that can never match a gateway URL token. The command first checks that the CLI exists (`[ -x … ] && exec … || true`), so a removed Diorama leaves an inert hook rather than an error on every tool call. Diorama lists the settings files it installed into, or that its hook sessions ran from, in `hooks.json` (paths only) in its data folder. Remove the hook with `diorama hook uninstall`, or from every listed project with `--all`, which `brew uninstall --zap` also runs. Both change only Diorama's own entries.
 
 ## AI control (MCP)
 

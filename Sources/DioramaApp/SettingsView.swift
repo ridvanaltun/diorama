@@ -61,6 +61,7 @@ struct SettingsView: View {
             FolderDefaultsSection()
             ProfileFoldersSection()
             LaunchersSection()
+            ConnectedProjectsSection()
             Section("Steering") {
                 Toggle("Pause steering everywhere", isOn: Binding(
                     get: { model.settings.steeringPaused },
@@ -310,6 +311,75 @@ struct ProfileFoldersSection: View {
     func set(_ path: String, _ watched: Bool) async {
         if let s = await model.perform({ try await $0.setProfileFolder(path, watched: watched) }) { status = s }
         await model.refreshProfiles()
+    }
+}
+
+/// Projects (and the user settings) that have Diorama's hook, with a way to remove it.
+struct ConnectedProjectsSection: View {
+    @Environment(AppModel.self) private var model
+    @State private var projects: [HookedProject] = []
+    @State private var removing: HookedProject?
+    @State private var removingAll = false
+
+    var body: some View {
+        Section {
+            if projects.isEmpty {
+                Text("None. New Session → Desktop connects a project, so the Claude desktop app's Code tab and IDEs report to Diorama.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            ForEach(projects) { p in
+                HStack {
+                    Image(systemName: p.folder == nil ? "person.crop.circle" : "folder").foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(p.folder.map(Fmt.shortPath) ?? "All sessions (user settings)").lineLimit(1).truncationMode(.middle).help(p.settingsFile)
+                        Text(p.config?.summary ?? "unknown configuration").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        if p.cliMissing {
+                            Label("Its diorama command no longer exists, so the hook does nothing. Connect the project again or remove it.", systemImage: "exclamationmark.triangle")
+                                .font(.caption).foregroundStyle(.orange)
+                        } else if p.outdated {
+                            Label("Connected before input rules existed: connect it again to use them.", systemImage: "exclamationmark.triangle")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
+                    }
+                    Spacer()
+                    Button { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p.settingsFile)]) } label: { Image(systemName: "magnifyingglass") }
+                        .buttonStyle(.borderless).help("Show the settings file in Finder")
+                    Button(role: .destructive) { removing = p } label: { Image(systemName: "trash") }
+                        .buttonStyle(.borderless).help("Remove Diorama's hook")
+                }
+            }
+            if projects.count > 1 {
+                Button("Remove All…", role: .destructive) { removingAll = true }
+            }
+        } header: {
+            Text("Connected projects (hook mode)")
+        } footer: {
+            Text("Removing a hook deletes only Diorama's entries from that settings file. Sessions already open keep reporting until they end; their records stay.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .task(id: model.eventTick / 10) { refresh() }
+        .confirmationDialog("Remove Diorama's hook from \(removing.flatMap(\.folder).map(Fmt.shortPath) ?? "your user settings")?",
+                            isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { p in
+            Button("Remove Hook", role: .destructive) { remove([p]) }
+        } message: { p in
+            Text(p.folder == nil
+                 ? "Claude Code sessions on this account will stop reporting to Diorama."
+                 : "New Claude Code sessions in this folder, including the Claude desktop app's, will stop reporting to Diorama.")
+        }
+        .confirmationDialog("Remove Diorama's hook from \(Fmt.plural(projects.count, "place"))?", isPresented: $removingAll) {
+            Button("Remove All", role: .destructive) { remove(projects) }
+        } message: {
+            Text("Claude Code sessions in these projects will stop reporting to Diorama. Other settings stay.")
+        }
+    }
+
+    func refresh() { projects = HookInstaller.connected(registry: model.hookRegistry) }
+
+    func remove(_ list: [HookedProject]) {
+        for p in list {
+            do { try HookInstaller.uninstall(settings: URL(fileURLWithPath: p.settingsFile), registry: model.hookRegistry) } catch { model.report(error) }
+        }
+        refresh()
     }
 }
 

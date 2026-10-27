@@ -25,7 +25,7 @@ struct MCP: AsyncParsableCommand {
 
         func run() async throws {
             let paths = global.paths
-            let server = MCPServer(cliPath: selfPath(), readOnly: readOnly) { try await ControlClient.connect(paths: paths, autostart: true) }
+            let server = MCPServer(cliPath: selfPath(), hookRegistry: HookRegistry(paths: paths), readOnly: readOnly) { try await ControlClient.connect(paths: paths, autostart: true) }
             await server.serve()
         }
     }

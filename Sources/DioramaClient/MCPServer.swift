@@ -24,12 +24,14 @@ public actor MCPServer {
 
     let connect: @Sendable () async throws -> ControlClient
     let cliPath: String
+    let hookRegistry: HookRegistry
     nonisolated let readOnly: Bool
     private var client: ControlClient?
 
-    /// `cliPath` is the `diorama` executable that hook installs point at.
-    public init(cliPath: String, readOnly: Bool = false, connect: @escaping @Sendable () async throws -> ControlClient) {
+    /// `cliPath` is the `diorama` executable that hook installs point at; `hookRegistry` records them.
+    public init(cliPath: String, hookRegistry: HookRegistry, readOnly: Bool = false, connect: @escaping @Sendable () async throws -> ControlClient) {
         self.cliPath = cliPath
+        self.hookRegistry = hookRegistry
         self.readOnly = readOnly
         self.connect = connect
     }
@@ -488,15 +490,32 @@ enum MCPTools {
             }
             let command = try HookInstaller.command(cli: s.cliPath, config: HookConfig(profile: profile?.isEmpty == true ? nil : profile, prompt: prompt,
                                                                                                   lockdown: (a["lockdown"] as? String).flatMap(LockdownPreset.init(rawValue:)).flatMap { $0 == .none ? nil : $0 }))
-            let url = try HookInstaller.install(command: command, settings: HookInstaller.projectSettings(folder))
+            let url = try HookInstaller.install(command: command, settings: HookInstaller.projectSettings(folder), registry: s.hookRegistry)
             return "Installed Diorama's hook in \(url.path). Start a new Claude Code session in that folder for it to take effect."
         },
         .init(
-            name: "uninstall_hook", description: "Remove Diorama's hook from a project folder's .claude/settings.local.json (other settings stay).",
-            schema: schema(["folder": string("Absolute path of the project folder.")], required: ["folder"]), readOnly: false
-        ) { _, a in
+            name: "uninstall_hook",
+            description: "Remove Diorama's hook from a project folder's .claude/settings.local.json, or with all=true from every connected project and the user settings (other settings stay).",
+            schema: schema([
+                "folder": string("Absolute path of the project folder."),
+                "all": ["type": "boolean", "description": "Remove it everywhere list_hooks shows it (ask the user first)."],
+            ]), readOnly: false
+        ) { s, a in
+            if a["all"] as? Bool == true {
+                let (removed, failures) = HookInstaller.uninstallAll(registry: s.hookRegistry)
+                let lines = removed.map { "Removed Diorama's hook from \($0.path)." } + failures.map { "Could not change \($0)" }
+                return lines.isEmpty ? "No project has Diorama's hook." : lines.joined(separator: "\n")
+            }
             let url = HookInstaller.projectSettings(try arg(a, "folder"))
-            return try HookInstaller.uninstall(settings: url) ? "Removed Diorama's hook from \(url.path)." : "No Diorama hook in \(url.path)."
+            return try HookInstaller.uninstall(settings: url, registry: s.hookRegistry) ? "Removed Diorama's hook from \(url.path)." : "No Diorama hook in \(url.path)."
+        },
+        .init(
+            name: "list_hooks", description: "List the project folders (and user settings) that have Diorama's Claude Code hook, with each one's configuration and any problem.",
+            schema: schema([:]), readOnly: true
+        ) { s, _ in
+            let projects = HookInstaller.connected(registry: s.hookRegistry)
+            guard !projects.isEmpty else { return "No project has Diorama's hook." }
+            return try json(projects)
         },
         .init(
             name: "set_steering_paused",

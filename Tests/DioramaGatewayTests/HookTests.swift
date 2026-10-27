@@ -75,6 +75,23 @@ import Testing
     }
 }
 
+extension HookEndpointTests {
+    @Test func hookSessionsRecordWhereTheirHookLives() async throws {
+        let env = try await TestEnv.start()
+        defer { Task { await env.stop() } }
+        let project = FileManager.default.temporaryDirectory.appendingPathComponent("diorama-proj-\(UUID().uuidString)")
+        let settings = HookInstaller.projectSettings(project.path)
+        try HookInstaller.install(command: "'/x/diorama' hook run", settings: settings)  // installed without the registry
+        let sub = project.appendingPathComponent("src")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+        _ = try await env.client.hook(HookEvent(event: "SessionStart", claudeSessionId: "c-reg", cwd: sub.path, config: HookConfig()))
+        let registry = HookRegistry(paths: DioramaPaths(home: env.home))
+        let deadline = Date().addingTimeInterval(5)
+        while !registry.files.contains(settings.path), Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
+        #expect(registry.files.contains(settings.path))
+    }
+}
+
 @Suite struct HookInstallerTests {
     func tempSettings(_ initial: String?) throws -> URL {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("diorama-hooks-\(UUID().uuidString)")
@@ -94,7 +111,7 @@ import Testing
         let other = #"{"hooks":{"PostToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo mine"}]}]},"permissions":{"allow":["Bash(ls:*)"]}}"#
         let url = try tempSettings(other)
         let cmd1 = try HookInstaller.command(cli: "/Apps/Diorama.app/Contents/Helpers/diorama", config: HookConfig(profile: "Docs steer"))
-        #expect(cmd1 == "'/Apps/Diorama.app/Contents/Helpers/diorama' hook run --profile 'Docs steer'")
+        #expect(cmd1 == "[ -x '/Apps/Diorama.app/Contents/Helpers/diorama' ] && exec '/Apps/Diorama.app/Contents/Helpers/diorama' hook run --profile 'Docs steer' || true")
         try HookInstaller.install(command: cmd1, settings: url)
         var root = try load(url)
         var hooks = try #require(root["hooks"] as? [String: Any])
@@ -105,7 +122,7 @@ import Testing
 
         // Installing again replaces Diorama's entries instead of adding more.
         let cmd2 = try HookInstaller.command(cli: "/x/diorama", config: HookConfig(prompt: SessionPrompt(text: "it's new", tools: ["WebFetch"], context: .task)))
-        #expect(cmd2 == "'/x/diorama' hook run --prompt 'it'\\''s new' --prompt-tools 'WebFetch' --prompt-context task")
+        #expect(cmd2 == "[ -x '/x/diorama' ] && exec '/x/diorama' hook run --prompt 'it'\\''s new' --prompt-tools 'WebFetch' --prompt-context task || true")
         try HookInstaller.install(command: cmd2, settings: url)
         hooks = try #require(try load(url)["hooks"] as? [String: Any])
         #expect((hooks["PostToolUse"] as? [[String: Any]])?.count == 2)
@@ -134,5 +151,77 @@ import Testing
         #expect(throws: HookInstaller.Failure.self) {
             try HookInstaller.command(cli: "/x/diorama", config: HookConfig(prompt: SessionPrompt(text: "p", stage: .page)))
         }
+    }
+
+    @Test func readsTheCLIAndConfigurationBackFromACommand() throws {
+        let config = HookConfig(profile: "Docs steer", prompt: SessionPrompt(text: "it's new", tools: ["WebFetch", "Web*"], context: .task, model: "m"), lockdown: .network)
+        let command = try HookInstaller.command(cli: "/Apps/Dio rama.app/diorama", config: config)
+        #expect(HookInstaller.cliPath(in: command) == "/Apps/Dio rama.app/diorama")
+        #expect(HookInstaller.config(in: command) == config)
+        #expect(config.summary == "profile \"Docs steer\" · prompt \"it's new\" · lockdown network")
+        // Installs from before the existence check call the CLI directly.
+        #expect(HookInstaller.cliPath(in: "'/x/diorama' hook run --profile 'p'") == "/x/diorama")
+        #expect(HookInstaller.config(in: "'/x/diorama' hook run --profile 'p'") == HookConfig(profile: "p"))
+        #expect(HookInstaller.config(in: "echo mine") == nil)
+        #expect(HookConfig().summary == "records only (no rules)")
+    }
+
+    @Test func theHookDoesNothingOnceTheCLIIsGone() throws {
+        let command = try HookInstaller.command(cli: "/nonexistent/diorama", config: HookConfig(lockdown: .network))
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", command]
+        p.standardOutput = Pipe()
+        p.standardError = Pipe()
+        try p.run()
+        p.waitUntilExit()
+        #expect(p.terminationStatus == 0)
+    }
+
+    @Test func registryListsAndRemovesEveryConnectedProject() throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("diorama-reg-\(UUID().uuidString)")
+        let registry = HookRegistry(paths: DioramaPaths(home: home))
+        let user = try tempSettings(#"{"model":"x"}"#)
+        let a = try tempSettings(#"{"permissions":{"allow":["Bash(ls)"]}}"#), b = try tempSettings(nil)
+        let cli = home.appendingPathComponent("bin/diorama").path  // an executable stands in for the CLI
+        try FileManager.default.createDirectory(atPath: (cli as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: cli, contents: Data("#!/bin/sh\n".utf8), attributes: [.posixPermissions: 0o755])
+        try HookInstaller.install(command: try HookInstaller.command(cli: cli, config: HookConfig(profile: "p")), settings: a, registry: registry)
+        try HookInstaller.install(command: "'/gone/diorama' hook run", settings: b, registry: registry)
+        #expect(Set(registry.files) == [a.path, b.path])
+
+        var list = HookInstaller.connected(registry: registry, userSettings: user)
+        #expect(list.map(\.settingsFile).sorted() == [a.path, b.path].sorted())
+        let pa = try #require(list.first { $0.settingsFile == a.path })
+        #expect(pa.folder == a.deletingLastPathComponent().deletingLastPathComponent().path)
+        #expect(pa.config?.profile == "p" && !pa.cliMissing && !pa.outdated)
+        #expect(try #require(list.first { $0.settingsFile == b.path }).cliMissing)
+
+        // A hook removed by hand drops out of the registry; the user settings count when they have one.
+        try HookInstaller.uninstall(settings: b)
+        try HookInstaller.install(command: "'/x/diorama' hook run", settings: user)
+        list = HookInstaller.connected(registry: registry, userSettings: user)
+        #expect(list.map(\.settingsFile).sorted() == [a.path, user.path].sorted())
+        #expect(list.first { $0.settingsFile == user.path }?.folder == nil)
+        #expect(registry.files == [a.path])
+
+        let (removed, failures) = HookInstaller.uninstallAll(registry: registry, userSettings: user)
+        #expect(Set(removed.map(\.path)) == [a.path, user.path] && failures.isEmpty)
+        #expect(try load(a)["permissions"] != nil && load(a)["hooks"] == nil)
+        #expect(try load(user)["model"] as? String == "x")
+        #expect(HookInstaller.connected(registry: registry, userSettings: user).isEmpty && registry.files.isEmpty)
+    }
+
+    @Test func locateFindsTheNearestProjectAndTheUserSettings() throws {
+        let project = try tempSettings(nil)
+        let root = project.deletingLastPathComponent().deletingLastPathComponent()
+        let sub = root.appendingPathComponent("src/deep")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+        let user = try tempSettings(nil)
+        #expect(HookInstaller.locate(cwd: sub.path, userSettings: user).isEmpty)
+        try HookInstaller.install(command: "'/x/diorama' hook run", settings: project)
+        #expect(HookInstaller.locate(cwd: sub.path, userSettings: user).map(\.path) == [project.path])
+        try HookInstaller.install(command: "'/x/diorama' hook run", settings: user)
+        #expect(HookInstaller.locate(cwd: sub.path, userSettings: user).map(\.path) == [project.path, user.path])
     }
 }

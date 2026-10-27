@@ -16,7 +16,7 @@ struct Hook: AsyncParsableCommand {
             Hook mode sees tool results only: no model requests, token usage or cache data, and no \
             pre-extraction (WebFetch pages). Use `diorama run` for full capture and for experiments.
             """,
-        subcommands: [Install.self, Uninstall.self, Status.self, RunHook.self])
+        subcommands: [Install.self, Uninstall.self, List.self, Status.self, RunHook.self])
 
     struct ConfigOptions: ParsableArguments {
         @Option(help: "Profile (global rules) to apply, by name or id.") var profile: String?
@@ -65,7 +65,7 @@ struct Hook: AsyncParsableCommand {
                 guard profiles.contains(where: { $0.name == p || $0.id == p }) else { throw ValidationError("unknown profile '\(p)'") }
             }
             let command = try HookInstaller.command(cli: selfPath(), config: config)
-            let url = try HookInstaller.install(command: command, settings: target.settingsURL)
+            let url = try HookInstaller.install(command: command, settings: target.settingsURL, registry: HookRegistry(paths: global.paths))
             print("✓ Diorama hook installed in \(url.path)")
             if config.profile == nil && config.prompt == nil {
                 print("  No profile or prompt: sessions are recorded but never changed. Re-run with --profile or --prompt to steer them.")
@@ -78,12 +78,29 @@ struct Hook: AsyncParsableCommand {
     }
 
     struct Uninstall: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Remove Diorama's hook from a project (or from ~/.claude/settings.json with --user).")
+        static let configuration = CommandConfiguration(
+            abstract: "Remove Diorama's hook from a project (or from ~/.claude/settings.json with --user).",
+            discussion: "`diorama hook uninstall --all` removes it from every project `diorama hook list` shows. Other settings and hooks stay as they are.")
+        @OptionGroup var global: GlobalOptions
         @OptionGroup var target: Target
+        @Flag(help: "Remove it from every connected project and from your user settings.") var all = false
+
+        func validate() throws {
+            if all, target.folder != nil || target.user { throw ValidationError("--all can't be combined with a folder or --user") }
+        }
 
         func run() async throws {
+            let registry = HookRegistry(paths: global.paths)
+            if all {
+                let (removed, failures) = HookInstaller.uninstallAll(registry: registry)
+                for url in removed { print("✓ Removed Diorama's hook from \(url.path)") }
+                for f in failures { eprint("✗ Could not change \(f)") }
+                if removed.isEmpty && failures.isEmpty { print("No project has Diorama's hook.") }
+                if !failures.isEmpty { throw ExitCode(1) }
+                return
+            }
             let url = target.settingsURL
-            if try HookInstaller.uninstall(settings: url) {
+            if try HookInstaller.uninstall(settings: url, registry: registry) {
                 print("✓ Removed Diorama's hook from \(url.path)")
             } else {
                 print("No Diorama hook in \(url.path)")
@@ -103,13 +120,31 @@ struct Hook: AsyncParsableCommand {
             }
             print("Diorama hook installed in \(url.path)")
             print("  \(command)")
-            let cli = command.split(separator: " ").first.map { String($0).trimmingCharacters(in: CharacterSet(charactersIn: "'")) } ?? ""
+            let cli = HookInstaller.cliPath(in: command) ?? ""
             if !HookInstaller.installedEvents(settings: url).contains("PreToolUse") {
                 print("  ⚠ Installed before input rules existed: run `diorama hook install` again to let them work here.")
             }
             if !FileManager.default.isExecutableFile(atPath: cli) {
                 print("  ⚠ \(cli) doesn't exist any more (was Diorama moved?). Run `diorama hook install` again.")
             }
+        }
+    }
+
+    struct List: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "List the projects (and user settings) that have Diorama's hook.")
+        @OptionGroup var global: GlobalOptions
+        @Flag(help: "Print JSON.") var json = false
+
+        func run() async throws {
+            let projects = HookInstaller.connected(registry: HookRegistry(paths: global.paths))
+            if json { return try printJSON(projects) }
+            guard !projects.isEmpty else { return print("No project has Diorama's hook. Add one with `diorama hook install`.") }
+            for p in projects {
+                print("\(p.folder.map(abbreviatingHome) ?? "All sessions (~/.claude/settings.json)")  ·  \(p.config?.summary ?? "unknown configuration")")
+                if p.cliMissing { print("  ⚠ Its diorama command no longer exists, so the hook does nothing. Install it again or remove it.") }
+                if p.outdated { print("  ⚠ Installed before input rules existed: run `diorama hook install` there again.") }
+            }
+            print("\nRemove one with `diorama hook uninstall <folder>`, or all with `diorama hook uninstall --all`.")
         }
     }
 

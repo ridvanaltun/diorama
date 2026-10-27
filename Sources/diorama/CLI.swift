@@ -35,6 +35,9 @@ struct GlobalOptions: ParsableArguments {
 
 func eprint(_ s: String) { FileHandle.standardError.write(Data((s + "\n").utf8)) }
 
+/// `/Users/me/code/app` → `~/code/app`.
+func abbreviatingHome(_ path: String) -> String { (path as NSString).abbreviatingWithTildeInPath }
+
 func printJSON<T: Encodable>(_ v: T) throws {
     print(String(decoding: try DioramaCoding.prettyEncoder.encode(v), as: UTF8.self))
 }
@@ -1105,13 +1108,14 @@ struct Doctor: AsyncParsableCommand {
             checks.append(DoctorCheck(name: "Daemon", status: h.version == DioramaVersion.current ? .ok : .warning,
                                       detail: "running \(h.version) on 127.0.0.1:\(h.port)" + (h.version == DioramaVersion.current ? "" : " — CLI is \(DioramaVersion.current); restart the daemon")))
             checks += try await c.doctor().checks
-            // Hook installs made before input rules existed miss the PreToolUse hook.
-            let hookFolders = Set(try await c.sessions(limit: 200).filter(\.isHook).map(\.cwd))
-            for folder in hookFolders.sorted() {
-                let url = HookInstaller.projectSettings(folder)
-                guard HookInstaller.installedCommand(settings: url) != nil else { continue }
-                if !HookInstaller.installedEvents(settings: url).contains("PreToolUse") {
-                    checks.append(DoctorCheck(name: "Hook", status: .warning, detail: "\(folder) has an older hook without input rules; run `diorama hook install` there again"))
+            // Hook installs made before input rules existed miss the PreToolUse hook; a moved
+            // Diorama leaves hooks whose CLI is gone.
+            for p in HookInstaller.connected(registry: HookRegistry(paths: global.paths)) {
+                let place = p.folder.map(abbreviatingHome) ?? "~/.claude/settings.json"
+                if p.cliMissing {
+                    checks.append(DoctorCheck(name: "Hook", status: .warning, detail: "\(place) runs a diorama command that no longer exists; run `diorama hook install` there again or remove it"))
+                } else if p.outdated {
+                    checks.append(DoctorCheck(name: "Hook", status: .warning, detail: "\(place) has an older hook without input rules; run `diorama hook install` there again"))
                 }
             }
         } catch {

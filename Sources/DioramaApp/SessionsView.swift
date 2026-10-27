@@ -511,6 +511,9 @@ struct SessionHeader: View {
     @Environment(\.impacts) private var impacts
     /// The rules of the profile version this session uses (for the Rules menu).
     @State private var sessionRules: [Rule] = []
+    /// Hook mode: the settings file whose Diorama hook this session's folder runs.
+    @State private var hookFile: URL?
+    @State private var removingHook = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -577,7 +580,27 @@ struct SessionHeader: View {
                 .controlSize(.small)
                 .disabled(session.kind != .interactive)
                 .help("Measure this session's steering: an experiment with the same task and project, plus an unmodified control")
+                if session.isHook, hookFile != nil {
+                    Button { removingHook = true } label: { Label("Remove Hook…", systemImage: "minus.circle") }
+                        .controlSize(.small)
+                        .help("Disconnect this project: new Claude Code sessions in it stop reporting to Diorama")
+                }
                 Spacer()
+            }
+            .task(id: session.id) { hookFile = session.isHook ? HookInstaller.locate(cwd: session.cwd).first : nil }
+            .confirmationDialog(hookFile == HookInstaller.userSettings()
+                                ? "Remove Diorama's hook from your user settings?"
+                                : "Remove Diorama's hook from \(hookFile.map { Fmt.shortPath($0.deletingLastPathComponent().deletingLastPathComponent().path) } ?? "")?",
+                                isPresented: $removingHook) {
+                Button("Remove Hook", role: .destructive) {
+                    guard let url = hookFile else { return }
+                    do { try HookInstaller.uninstall(settings: url, registry: model.hookRegistry) } catch { model.report(error) }
+                    hookFile = HookInstaller.locate(cwd: session.cwd).first
+                }
+            } message: {
+                Text(hookFile == HookInstaller.userSettings()
+                     ? "This hook is in ~/.claude/settings.json: every Claude Code session on this account stops reporting to Diorama. This session's records stay."
+                     : "New Claude Code sessions in this folder stop reporting to Diorama; sessions already open keep reporting until they end. Other settings and this session's records stay.")
             }
             .sheet(isPresented: $showWhatIf) { WhatIfSheet(session: session) }
             .sheet(isPresented: Binding(get: { compareWith != nil }, set: { if !$0 { compareWith = nil } })) {
@@ -1257,7 +1280,7 @@ struct NewSessionSheet: View {
                 } else if installedHook != nil {
                     Button("Remove Hook", role: .destructive) {
                         do {
-                            try HookInstaller.uninstall(settings: settingsFile)
+                            try HookInstaller.uninstall(settings: settingsFile, registry: model.hookRegistry)
                             justInstalled = false
                             refreshInstalled()
                         } catch { model.report(error) }
@@ -1301,7 +1324,7 @@ struct NewSessionSheet: View {
                     Button(installedHook == nil ? "Install Hook" : "Update Hook") {
                         do {
                             let hook = try HookInstaller.command(cli: model.cliPath, config: FormLogic.hookConfig(form))
-                            try HookInstaller.install(command: hook, settings: settingsFile)
+                            try HookInstaller.install(command: hook, settings: settingsFile, registry: model.hookRegistry)
                             justInstalled = true
                             refreshInstalled()
                         } catch { model.report(error) }

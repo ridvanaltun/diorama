@@ -235,6 +235,11 @@ extension Store {
     }
 
     /// Marks sessions left `active` by a previous daemon whose Claude process is gone.
+    /// The folders hook-mode sessions ran in (to find the projects that have Diorama's hook).
+    public func hookSessionFolders() -> [String] {
+        ((try? db.query("SELECT DISTINCT cwd FROM sessions WHERE via = 'hook'")) ?? []).compactMap { $0.string("cwd") }
+    }
+
     public func activeSessionCount() -> Int {
         Int((try? db.query("SELECT COUNT(*) AS n FROM sessions WHERE status = 'active'").first?.int("n")) ?? 0)
     }

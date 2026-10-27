@@ -34,7 +34,7 @@ import Testing
         let html = try await env.client.sessionReport(a.session.id, format: "html")
         #expect(html.contains("<h2>Notes</h2>"))
 
-        let server = MCPServer(cliPath: "/x/diorama") { env.client }
+        let server = MCPServer(cliPath: "/x/diorama", hookRegistry: HookRegistry(paths: DioramaPaths(home: env.home))) { env.client }
         let msg: [String: Any] = ["jsonrpc": "2.0", "id": 1, "method": "tools/call",
                                   "params": ["name": "annotate_session", "arguments": ["session_id": b.session.id, "tags": ["mcp"]]]]
         let reply = await server.handle(String(decoding: try JSONSerialization.data(withJSONObject: msg), as: UTF8.self))

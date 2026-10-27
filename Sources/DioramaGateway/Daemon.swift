@@ -41,6 +41,8 @@ public final class DioramaDaemon: @unchecked Sendable {
     let engine: DecisionEngine
     let upstream = UpstreamClient()
     let hub = EventHub()
+    /// Settings files with Diorama's hook (`hooks.json`), for listing and removing them later.
+    var hookRegistry: HookRegistry { HookRegistry(paths: options.paths) }
     let sessions: SessionCache
     public let runner: ExperimentRunner
     let secrets: SecretStore
@@ -133,6 +135,10 @@ public final class DioramaDaemon: @unchecked Sendable {
             }
         })
         background.append(Task.detached(priority: .utility) { [store] in Self.backfillSearch(store: store) })
+        // Connected projects: note where the hooks of earlier hook sessions live.
+        background.append(Task.detached(priority: .utility) { [store, hookRegistry] in
+            for cwd in store.hookSessionFolders() { Self.noteHook(cwd: cwd, registry: hookRegistry) }
+        })
         background.append(Task { [store] in
             while !Task.isCancelled {
                 _ = try? store.applyRetention(days: store.settings().retentionDays)
@@ -695,8 +701,14 @@ public final class DioramaDaemon: @unchecked Sendable {
                 store.addEvent(sessionId: record.id, kind: .anomaly, message: "Hook configuration rejected (\(err.description)); no rules are applied in this session", refId: record.id)
             }
             try store.recordClaudeSessionId(sessionId: record.id, claudeSessionId: e.claudeSessionId)
+            Task.detached(priority: .utility) { [hookRegistry] in Self.noteHook(cwd: cwd, registry: hookRegistry) }
             return record
         }
+    }
+
+    /// Records which settings files hold the hook a session in `cwd` runs, for `diorama hook list`.
+    static func noteHook(cwd: String, registry: HookRegistry) {
+        for url in HookInstaller.locate(cwd: cwd) { registry.add(url) }
     }
 
     func wantsTaskContext(_ s: SessionRecord) -> Bool {

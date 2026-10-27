@@ -22,7 +22,7 @@ import Testing
     @Test func handshakeAndToolList() async throws {
         let env = try await TestEnv.start()
         defer { Task { await env.stop() } }
-        let server = MCPServer(cliPath: "/x/diorama") { env.client }
+        let server = MCPServer(cliPath: "/x/diorama", hookRegistry: HookRegistry(paths: DioramaPaths(home: env.home))) { env.client }
         let ini = try await call(server, 1, "initialize", ["protocolVersion": "2025-06-18", "capabilities": [:], "clientInfo": ["name": "t", "version": "1"]])
         let result = try #require(ini["result"] as? [String: Any])
         #expect(result["protocolVersion"] as? String == "2025-06-18")
@@ -44,7 +44,7 @@ import Testing
         #expect((start["annotations"] as? [String: Any])?["openWorldHint"] as? Bool == true)
         #expect((start["description"] as? String)?.contains("SPENDS MONEY") == true)
 
-        let ro = MCPServer(cliPath: "/x/diorama", readOnly: true) { env.client }
+        let ro = MCPServer(cliPath: "/x/diorama", hookRegistry: HookRegistry(paths: DioramaPaths(home: env.home)), readOnly: true) { env.client }
         let roList = try #require((try await call(ro, 5, "tools/list"))["result"] as? [String: Any])
         let roNames = Set((roList["tools"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String })
         #expect(roNames.contains("get_session") && !roNames.contains("create_profile") && !roNames.contains("start_experiment_run"))
@@ -55,7 +55,7 @@ import Testing
     @Test func toolsReadAndChangeDiorama() async throws {
         let env = try await TestEnv.start()
         defer { Task { await env.stop() } }
-        let server = MCPServer(cliPath: "/Apps/Diorama.app/Contents/Helpers/diorama") { env.client }
+        let server = MCPServer(cliPath: "/Apps/Diorama.app/Contents/Helpers/diorama", hookRegistry: HookRegistry(paths: DioramaPaths(home: env.home))) { env.client }
 
         #expect(try await tool(server, "list_sessions").text == "No sessions yet.")
         let created = try await tool(server, "create_profile", ["profile": [

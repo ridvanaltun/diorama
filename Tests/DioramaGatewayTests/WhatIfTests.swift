@@ -58,7 +58,7 @@ func item(_ r: WhatIfResult, _ id: String) -> WhatIfItem? { r.items.first { $0.t
         #expect(item(r, "toolu_a")?.matchedRules == ["Rename"])
 
         // The MCP tool refuses paid runs on a read-only server but checks for free.
-        let ro = MCPServer(cliPath: "/x/diorama", readOnly: true) { env.client }
+        let ro = MCPServer(cliPath: "/x/diorama", hookRegistry: HookRegistry(paths: DioramaPaths(home: env.home)), readOnly: true) { env.client }
         let line = String(decoding: try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": [
             "name": "what_if_replay", "arguments": ["session_id": launch.session.id, "profile_draft": ["name": "d", "rules": [["name": "R", "match": ["tools": ["WebFetch"]], "instructions": "x"]]], "rewrite": true],
         ]]), as: UTF8.self)
