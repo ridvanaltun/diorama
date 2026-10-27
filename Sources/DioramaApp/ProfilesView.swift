@@ -233,6 +233,7 @@ struct ProfileEditor: View {
                                     if rule.match.stage == .page { Badge(text: "page", color: .teal) }
                                     if rule.match.stage == .input { Badge(text: "input", color: .blue) }
                                     if rule.isRedaction { Badge(text: "redact", color: .orange) }
+                                    if rule.isReplacement { Badge(text: "replace", color: .green) }
                                     if rule.match.classifier != nil { Badge(text: "classifier", color: .purple) }
                                     if let s = rule.match.sample, s < 1 { Badge(text: Fmt.share(s), color: .indigo).help("Applies to \(Fmt.share(s)) of matching tool results") }
                                     if let use = stats?.rules.first(where: { $0.ruleId == rule.id }) { RuleUseChip(use: use, days: statsDays) }
@@ -347,10 +348,15 @@ struct RuleEditor: View {
             }
             .help("Change only some of the matching tool results (chosen per result, the same every time), so you can compare changed and unchanged results in one session.")
             Picker("Action", selection: Binding(
-                get: { rule.isRedaction },
-                set: { rule.redact = $0 ? (rule.redact ?? RedactSpec()) : nil })) {
-                Text("Rewrite with the AI agent").tag(false)
-                Text("Redact (local, no AI)").tag(true)
+                get: { rule.isReplacement ? 2 : rule.isRedaction ? 1 : 0 },
+                set: { action in
+                    rule.redact = action == 1 ? (rule.redact ?? RedactSpec()) : nil
+                    rule.replace = action == 2 ? (rule.replace ?? [Replacement(find: "", with: "")]) : nil
+                    if action != 0 { rule.match.classifier = nil }
+                })) {
+                Text("Rewrite with AI").tag(0)
+                Text("Replace text (no AI)").tag(2)
+                Text("Redact (no AI)").tag(1)
             }
             .pickerStyle(.segmented)
             Picker("Applies to", selection: $rule.match.stage) {
@@ -362,7 +368,16 @@ struct RuleEditor: View {
             if rule.match.stage == .page && !rule.match.tools.allSatisfy({ $0 == "WebFetch" }) {
                 Text("Page-stage rules only apply to WebFetch.").font(.caption).foregroundStyle(.secondary)
             }
-            if let spec = rule.redact {
+            if let items = rule.replace {
+                Text("Find and replace before Claude (and any AI rewrite) sees the result").font(.caption)
+                ForEach(items.indices, id: \.self) { i in
+                    ReplacementRow(item: Binding(get: { rule.replace?[safe: i] ?? Replacement(find: "", with: "") }, set: { if rule.replace?.indices.contains(i) == true { rule.replace?[i] = $0 } }),
+                                   remove: items.count > 1 ? { rule.replace?.remove(at: i) } : nil)
+                }
+                Button("Add replacement") { rule.replace?.append(Replacement(find: "", with: "")) }.buttonStyle(.borderless)
+                Text("Every occurrence is replaced, exactly as written (unless you choose otherwise). Free and instant, with no model involved. Runs after redaction and before any AI rule.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            } else if let spec = rule.redact {
                 Text("Mask before Claude (and any AI rewrite) sees the result").font(.caption)
                 HStack(spacing: 16) {
                     ForEach(RedactSpec.Preset.allCases, id: \.self) { preset in
@@ -494,4 +509,34 @@ private struct OutcomeBar: View {
         }
         .frame(height: 5).clipShape(Capsule())
     }
+}
+
+/// One find → with of a replacement rule.
+private struct ReplacementRow: View {
+    @Binding var item: Replacement
+    var remove: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                TextField("Find, e.g. 30 derece", text: $item.find)
+                Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                TextField("Replace with, e.g. 5 derece", text: $item.with)
+                if let remove {
+                    Button(role: .destructive, action: remove) { Image(systemName: "minus.circle") }.buttonStyle(.borderless)
+                }
+            }
+            HStack(spacing: 14) {
+                Toggle("Whole words", isOn: $item.wholeWord).help("“30” won't match inside “300”")
+                Toggle("Ignore case", isOn: $item.ignoreCase)
+                Toggle("First only", isOn: $item.firstOnly).help("Only the first occurrence in the tool result")
+                Toggle("Regex", isOn: $item.regex).help("Find is a regular expression; Replace may use $1, $2, …")
+            }
+            .toggleStyle(.checkbox).font(.caption)
+        }
+    }
+}
+
+extension Array {
+    subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
 }

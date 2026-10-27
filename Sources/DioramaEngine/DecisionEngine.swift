@@ -316,15 +316,20 @@ public final class DecisionEngine: Sendable {
             }
             return record(.unchanged, hasRules ? "no rule matched" : "no rules configured")
         }
-        var rewriteRules = app.rules.filter { !$0.isRedaction }
+        var rewriteRules = app.rules.filter { !$0.isLocal }
         var instructions = rewriteRules.map { RuleInstruction(name: $0.name, text: $0.instructions) }
         var instructionTexts = app.rules.map { r in
-            r.redact.map { "[\(r.name)] Redact \($0.summary) (local, no AI)" } ?? "[\(r.name)] \(r.instructions)"
+            r.redact.map { "[\(r.name)] Redact \($0.summary) (local, no AI)" }
+                ?? r.replace.map { "[\(r.name)] Replace " + $0.map(\.summary).joined(separator: ", ") + " (local, no AI)" }
+                ?? "[\(r.name)] \(r.instructions)"
         }
 
-        // Redaction first: local and free, and the rewrite agent only ever sees the redacted text.
+        // Local rules first: free and deterministic, and the rewrite agent only ever sees their result.
+        // Redaction always applies (privacy). Replacements steer, so like AI rewrites they stop while
+        // steering is paused and are only recorded in shadow mode (trials are exempt from both).
         var redaction: Redactor.Result?
         let redactSpecs = app.rules.compactMap(\.redact)
+        let replacements = app.rules.compactMap(\.replace).flatMap { $0 }
         if !redactSpecs.isEmpty {
             let r = Redactor.apply(redactSpecs, to: segments)
             if r.total > 0 {
@@ -332,18 +337,43 @@ public final class DecisionEngine: Sendable {
                 segments = r.texts
             }
         }
-        /// Records the redacted content alone (no rules left for the agent, or it couldn't run). A redaction
-        /// is never dropped because a rewrite failed: Claude gets the redacted text either way.
+        let pausedScope: String? = session.trialId == nil
+            ? (store.settings().steeringPaused ? "steering is paused everywhere" : store.isPaused(sessionId: session.id) ? "steering is paused for this session" : nil)
+            : nil
+        var shadowReplaced: (texts: [String], summary: String)?
+        if !replacements.isEmpty, pausedScope == nil {
+            let r = Redactor.apply([], replacements: replacements, to: segments)
+            if r.total > 0 {
+                if app.defaults.shadow, session.trialId == nil {
+                    shadowReplaced = (r.texts, r.summary)
+                } else {
+                    redaction = Redactor.Result(texts: r.texts, counts: redaction?.counts ?? [:], replaced: r.replaced)
+                    segments = r.texts
+                }
+            }
+        }
+        /// Records the locally changed content alone (no rules left for the agent, or it couldn't run).
+        /// A redaction is never dropped because a rewrite failed: Claude gets the redacted text either way.
         func recordRedacted(_ note: String?, shadow: String? = nil) -> DecisionRecord {
             guard let r = redaction else {
-                return record(.unchanged, note ?? "nothing to redact", refs: app.refs, instructions: instructionTexts, shadow: shadow)
+                return record(.unchanged, note ?? (replacements.isEmpty ? "nothing to redact" : "nothing to replace"), refs: app.refs, instructions: instructionTexts, shadow: shadow)
             }
             guard let bytes = try? t.buildReplacement(segments), let blob = try? store.blobs.put(bytes) else {
                 return record(.failed, "could not build the redacted content — original forwarded", refs: app.refs, instructions: instructionTexts)
             }
             return record(.rewritten, r.summary + (note.map { "; \($0)" } ?? ""), replacement: blob, refs: app.refs, instructions: instructionTexts, shadow: shadow)
         }
-        if rewriteRules.isEmpty { return recordRedacted(nil) }
+        if rewriteRules.isEmpty {
+            if let scope = pausedScope, !replacements.isEmpty {
+                return redaction != nil ? recordRedacted("not replaced: \(scope)") : record(.unchanged, "not replaced: \(scope)", refs: app.refs, instructions: instructionTexts)
+            }
+            if let s = shadowReplaced {
+                let blob = (try? t.buildReplacement(s.texts)).flatMap { try? store.blobs.put($0) }
+                let why = "shadow mode, would have \(s.summary)"
+                return redaction != nil ? recordRedacted(why, shadow: blob) : record(.unchanged, why, refs: app.refs, instructions: instructionTexts, shadow: blob)
+            }
+            return recordRedacted(nil)
+        }
         if text.count > app.defaults.maxInputChars {
             let why = "content too large to rewrite (\(text.count) > \(app.defaults.maxInputChars) characters)"
             return redaction != nil ? recordRedacted(why) : record(.unchanged, why, refs: app.refs, instructions: instructionTexts)
@@ -351,8 +381,7 @@ public final class DecisionEngine: Sendable {
 
         // Paused steering (this session, or everywhere): no AI rewrites or input changes; redaction still applies.
         // Experiment trials are exempt; pausing one mid-run would corrupt the experiment.
-        if session.trialId == nil, store.settings().steeringPaused || store.isPaused(sessionId: session.id) {
-            let scope = store.settings().steeringPaused ? "steering is paused everywhere" : "steering is paused for this session"
+        if let scope = pausedScope {
             return redaction != nil ? recordRedacted("not rewritten further: \(scope)")
                 : record(.unchanged, "not rewritten: \(scope)", refs: app.refs, instructions: instructionTexts)
         }

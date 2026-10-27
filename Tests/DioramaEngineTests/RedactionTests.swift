@@ -100,7 +100,7 @@ import Testing
                                              defaults: ProfileDefaults(), toolName: "Bash", toolInputJSON: nil, segments: ["export KEY=\(secret)"], stage: .result, rewrite: false)
         #expect(result.model == nil)
         #expect(result.rewrite?.replacementText == "export KEY=[REDACTED:anthropic-key]")
-        #expect(result.rewrite?.model == "local redaction")
+        #expect(result.rewrite?.model == "local (no AI)")
         #expect(counter.count == 0)
     }
 }

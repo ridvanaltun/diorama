@@ -115,14 +115,21 @@ public struct Rule: Codable, Sendable, Hashable, Identifiable {
     public var context: ContextMode
     /// Set for a redaction rule: masks matches locally, without the rewrite agent (instructions unused).
     public var redact: RedactSpec?
+    /// Set for a replacement rule: finds text and replaces it locally, without the rewrite agent.
+    public var replace: [Replacement]?
 
     public var isRedaction: Bool { redact != nil }
+    public var isReplacement: Bool { replace != nil }
+    /// Runs locally, without a model (redaction or replacement).
+    public var isLocal: Bool { isRedaction || isReplacement }
 
     public init(
         id: String = UUID().uuidString.lowercased(), name: String, enabled: Bool = true, match: RuleMatch,
-        instructions: String, model: String? = nil, effort: String? = nil, context: ContextMode = .none, redact: RedactSpec? = nil
+        instructions: String, model: String? = nil, effort: String? = nil, context: ContextMode = .none, redact: RedactSpec? = nil,
+        replace: [Replacement]? = nil
     ) {
         self.redact = redact
+        self.replace = replace
         self.id = id
         self.name = name
         self.enabled = enabled
@@ -144,7 +151,53 @@ public struct Rule: Codable, Sendable, Hashable, Identifiable {
         effort = try c.decodeIfPresent(String.self, forKey: .effort)
         context = try c.decodeIfPresent(ContextMode.self, forKey: .context) ?? .none
         redact = try c.decodeIfPresent(RedactSpec.self, forKey: .redact)
+        replace = try c.decodeIfPresent([Replacement].self, forKey: .replace)
     }
+}
+
+/// One find-and-replace of a replacement rule. Literal by default; every occurrence unless `firstOnly`.
+public struct Replacement: Codable, Sendable, Hashable {
+    public var find: String
+    public var with: String
+    /// `find` is a regular expression and `with` may use $1, $2, ….
+    public var regex: Bool
+    public var ignoreCase: Bool
+    /// Only where `find` isn't part of a longer word ("30" doesn't match "300").
+    public var wholeWord: Bool
+    /// Only the first occurrence in the tool result.
+    public var firstOnly: Bool
+
+    public init(find: String, with: String, regex: Bool = false, ignoreCase: Bool = false, wholeWord: Bool = false, firstOnly: Bool = false) {
+        self.find = find
+        self.with = with
+        self.regex = regex
+        self.ignoreCase = ignoreCase
+        self.wholeWord = wholeWord
+        self.firstOnly = firstOnly
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        find = try c.decodeIfPresent(String.self, forKey: .find) ?? ""
+        with = try c.decodeIfPresent(String.self, forKey: .with) ?? ""
+        regex = try c.decodeIfPresent(Bool.self, forKey: .regex) ?? false
+        ignoreCase = try c.decodeIfPresent(Bool.self, forKey: .ignoreCase) ?? false
+        wholeWord = try c.decodeIfPresent(Bool.self, forKey: .wholeWord) ?? false
+        firstOnly = try c.decodeIfPresent(Bool.self, forKey: .firstOnly) ?? false
+    }
+
+    /// The compiled pattern, or nil for an invalid regex or an empty `find`.
+    public var expression: NSRegularExpression? {
+        guard !find.isEmpty else { return nil }
+        var p = regex ? find : NSRegularExpression.escapedPattern(for: find)
+        if wholeWord { p = #"(?<![\p{L}\p{N}_])(?:"# + p + #")(?![\p{L}\p{N}_])"# }
+        return try? NSRegularExpression(pattern: p, options: ignoreCase ? [.caseInsensitive] : [])
+    }
+
+    public var template: String { regex ? with : NSRegularExpression.escapedTemplate(for: with) }
+
+    /// "“30 derece” → “5 derece”".
+    public var summary: String { "“\(find)” → “\(with)”" + (regex ? " (regex)" : "") + (firstOnly ? " (first only)" : "") }
 }
 
 /// What a redaction rule masks: built-in pattern sets and/or custom regexes.

@@ -26,9 +26,16 @@ extension Store {
             }
             if let c = r.match.classifier {
                 if c.question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { problems.append("rule '\(r.name)': the classifier has no question") }
-                if r.redact != nil { problems.append("rule '\(r.name)': redaction rules can't use a classifier") }
+                if r.isLocal { problems.append("rule '\(r.name)': redaction and replacement rules can't use a classifier (they run without a model)") }
             }
-            if let spec = r.redact {
+            if r.redact != nil, r.replace != nil { problems.append("rule '\(r.name)' both redacts and replaces; use two rules") }
+            if let items = r.replace {
+                if items.isEmpty { problems.append("rule '\(r.name)' replaces nothing (add a find → with)") }
+                for (i, item) in items.enumerated() {
+                    if item.find.isEmpty { problems.append("rule '\(r.name)': replacement \(i + 1) has nothing to find") }
+                    else if item.expression == nil { problems.append("rule '\(r.name)': replacement \(i + 1) has an invalid regex") }
+                }
+            } else if let spec = r.redact {
                 if spec.presets.isEmpty && spec.patterns.isEmpty { problems.append("rule '\(r.name)' redacts nothing (no presets or patterns)") }
                 for p in spec.patterns where (try? NSRegularExpression(pattern: p)) == nil {
                     problems.append("rule '\(r.name)': invalid redaction pattern '\(p)'")

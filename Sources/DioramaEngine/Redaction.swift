@@ -1,8 +1,8 @@
 import DioramaCore
 import Foundation
 
-/// Masks secrets and other sensitive strings locally, before anything reaches the model or the
-/// rewrite agent. Deterministic and free; used by redaction rules.
+/// Masks secrets and other sensitive strings, and applies replacement rules, locally: before
+/// anything reaches the model or the rewrite agent. Deterministic and free.
 public enum Redactor {
     /// Named patterns per preset. Kept specific (known key formats) to avoid masking ordinary text.
     static let presetPatterns: [RedactSpec.Preset: [(name: String, pattern: String)]] = [
@@ -27,16 +27,49 @@ public enum Redactor {
         public var texts: [String]
         /// Matches masked, by kind.
         public var counts: [String: Int]
-        public var total: Int { counts.values.reduce(0, +) }
+        /// Replacements made, by replacement (its summary).
+        public var replaced: [String: Int] = [:]
+        public var total: Int { counts.values.reduce(0, +) + replaced.values.reduce(0, +) }
 
-        /// "redacted 2 matches (anthropic-key ×1, private-key ×1)".
+        /// "redacted 2 matches (anthropic-key ×1, private-key ×1); replaced “30 derece” → “5 derece” ×2".
         public var summary: String {
-            let parts = counts.sorted { $0.key < $1.key }.map { "\($0.key) ×\($0.value)" }
-            return "redacted \(total) match\(total == 1 ? "" : "es") (\(parts.joined(separator: ", ")))"
+            var parts: [String] = []
+            let masked = counts.values.reduce(0, +)
+            if masked > 0 {
+                let kinds = counts.sorted { $0.key < $1.key }.map { "\($0.key) ×\($0.value)" }
+                parts.append("redacted \(masked) match\(masked == 1 ? "" : "es") (\(kinds.joined(separator: ", ")))")
+            }
+            if !replaced.isEmpty {
+                parts.append("replaced " + replaced.sorted { $0.key < $1.key }.map { "\($0.key) ×\($0.value)" }.joined(separator: ", "))
+            }
+            return parts.joined(separator: "; ")
         }
     }
 
-    public static func apply(_ specs: [RedactSpec], to texts: [String]) -> Result {
+    /// Redaction first (so secrets never reach a replacement or the agent), then replacements in order.
+    public static func apply(_ specs: [RedactSpec], replacements: [Replacement] = [], to texts: [String]) -> Result {
+        var result = redact(specs, texts)
+        for r in replacements {
+            guard let re = r.expression else { continue }
+            var remaining = r.firstOnly ? 1 : Int.max
+            result.texts = result.texts.map { text in
+                guard remaining > 0 else { return text }
+                let ns = text as NSString
+                let matches = re.matches(in: text, range: NSRange(location: 0, length: ns.length)).prefix(remaining)
+                guard !matches.isEmpty else { return text }
+                remaining -= matches.count
+                result.replaced[r.summary, default: 0] += matches.count
+                let out = NSMutableString(string: text)
+                for m in matches.reversed() {
+                    out.replaceCharacters(in: m.range, with: re.replacementString(for: m, in: text, offset: 0, template: r.template))
+                }
+                return out as String
+            }
+        }
+        return result
+    }
+
+    static func redact(_ specs: [RedactSpec], _ texts: [String]) -> Result {
         var patterns: [(String, NSRegularExpression)] = []
         for spec in specs {
             for preset in spec.presets {

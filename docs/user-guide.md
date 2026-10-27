@@ -154,6 +154,21 @@ With `"stage": "input"` (in the editor: **Applies to → Tool input, before the 
 
 **You approve every change.** When Diorama changes an input, Claude Code shows a permission prompt with the changed call and the reason ("Diorama changed this call's input: …"). In non-interactive runs (`claude -p`) nobody can approve it, so the call is denied and Claude sees that reason. Input rules work in hook mode and in `diorama run` sessions, which get a `PreToolUse` hook added automatically through their `--settings`. They don't apply in experiment trials. Projects that installed the hook before input rules existed need `diorama hook install` again; `diorama hook status` says so. Changed inputs show with an **input** badge in the timeline.
 
+### Replacement rules (no AI)
+
+When a change is just "find this text, write that instead", it doesn't need a model. Set the rule's action to **Replace text (no AI)** and add one or more **find → with** pairs, or in JSON:
+
+```json
+{"name": "Temperature", "match": {"tools": ["WebFetch"], "stage": "page"},
+ "replace": [{"find": "30 derece", "with": "5 derece"}]}
+```
+
+Every occurrence is replaced, exactly as written. Per pair you can choose **Whole words** ("30" won't match inside "300"), **Ignore case**, **First only**, or **Regex** (then `with` can use `$1`, `$2`, …). Replacements are free and instant: no model call, no wait for Claude, no cost, and the same result every time. A rule either rewrites with AI, replaces, or redacts. Local rules run first, redaction before replacements, and any AI rule then sees the result.
+
+Replacements steer what Claude sees, so they stop while steering is paused and are only recorded in shadow mode, as with AI rewrites. Redaction still runs in both cases. They do keep working when the budget is used up, because they cost nothing.
+
+For web pages, apply replacement rules to the **WebFetch page, before summarization** (`"stage": "page"`). Claude receives a summary that WebFetch's own model writes from the page, and that summary may not repeat your exact words.
+
 ### Redaction rules (no AI)
 
 A rule with `redact` instead of instructions masks matches locally before Claude sees the result. It's deterministic, costs nothing and makes no API call. In the editor, set **Action → Redact**.

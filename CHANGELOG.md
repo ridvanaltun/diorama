@@ -5,6 +5,9 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+### New
+- **Replacement rules (no AI).** A rule can find exact text (or a regex) and replace it locally: every occurrence by default, with whole-word, ignore-case and first-only options. Free and instant, no model call; runs after redaction and before AI rules; stops while paused, only recorded in shadow mode. New template "Web: replace a fact without AI".
+
 ## 1.6.0 — 2026-10-25
 
 ### New

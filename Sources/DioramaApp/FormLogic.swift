@@ -132,9 +132,15 @@ enum FormLogic {
         if rule.match.tools.isEmpty { out.append("No tools: the rule never matches.") }
         if let c = rule.match.classifier {
             if c.question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { out.append("The classifier needs a yes/no question.") }
-            if rule.isRedaction { out.append("Redaction rules can't use a classifier (they run locally, without a model).") }
+            if rule.isLocal { out.append("Redaction and replacement rules can't use a classifier (they run locally, without a model).") }
         }
-        if let spec = rule.redact {
+        if let items = rule.replace {
+            if items.isEmpty { out.append("Nothing to replace: add a find → with.") }
+            for (i, item) in items.enumerated() {
+                if item.find.isEmpty { out.append("Replacement \(i + 1) has nothing to find.") }
+                else if item.expression == nil { out.append("Replacement \(i + 1) has an invalid regex.") }
+            }
+        } else if let spec = rule.redact {
             if spec.presets.isEmpty && spec.patterns.isEmpty { out.append("Nothing to redact: pick a preset or add a pattern.") }
             for p in spec.patterns where (try? NSRegularExpression(pattern: p)) == nil { out.append("Redaction pattern “\(p)” is an invalid regex.") }
         } else if rule.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

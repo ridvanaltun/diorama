@@ -388,7 +388,7 @@ public final class DioramaDaemon: @unchecked Sendable {
             // Labeled by the model asked for (the served id can carry a date suffix or a fallback).
             first.comparisons = zip(models, results).map { m, r in
                 var rw = r.rewrite ?? PlaygroundRewrite(status: .skipped, replacementText: nil, explanation: nil, edits: [], error: r.note, model: m, costUSD: nil, latencyMs: 0)
-                if rw.model != m, rw.model != "local redaction" { rw.model = m }
+                if rw.model != m, rw.model != "local (no AI)" { rw.model = m }
                 return rw
             }
             first.rewrite = first.comparisons?.first

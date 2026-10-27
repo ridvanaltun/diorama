@@ -203,5 +203,13 @@ public enum RuleTemplates {
                     match: RuleMatch(tools: ["WebSearch"], stage: .input),
                     instructions: "If the query is about documentation, add the site named in the session prompt to the query (for example 'site:docs.example.com'). Otherwise leave it unchanged."),
             ]),
+        Profile(
+            name: "Web: replace a fact without AI",
+            description: "Replacement: finds exact text in fetched pages and replaces it locally. Free and instant, no model involved. Applied to the raw page, before WebFetch summarizes it.",
+            rules: [
+                Rule(
+                    id: "tmpl-replace", name: "Replace exact text", match: RuleMatch(tools: ["WebFetch"], stage: .page), instructions: "",
+                    replace: [Replacement(find: "Example Domain", with: "Morph Test Domain")]),
+            ]),
     ]
 }

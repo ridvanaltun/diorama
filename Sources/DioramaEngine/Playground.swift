@@ -25,7 +25,7 @@ extension DecisionEngine {
             }
         }
         let matched = rules.filter { RuleMatcher.matches($0, ctx) }
-        var rewriteRules = matched.filter { !$0.isRedaction }
+        var rewriteRules = matched.filter { !$0.isLocal }
         var model = rewriteRules.isEmpty ? nil : (rewriteRules.last(where: { $0.model != nil })?.model ?? defaults.model)
         var result = PlaygroundResult(toolName: toolName, toolInput: toolInputJSON, stage: stage, originalText: text, checks: checks, model: model)
         // Classifier questions cost a call, so the free check only says they're pending.
@@ -37,15 +37,16 @@ extension DecisionEngine {
         var segments = segments
         var redaction: Redactor.Result?
         let specs = matched.compactMap(\.redact)
-        if !specs.isEmpty {
-            let r = Redactor.apply(specs, to: segments)
+        let replacements = matched.compactMap(\.replace).flatMap { $0 }
+        if !specs.isEmpty || !replacements.isEmpty {
+            let r = Redactor.apply(specs, replacements: replacements, to: segments)
             if r.total > 0 {
                 redaction = r
                 segments = r.texts
                 result.rewrite = PlaygroundRewrite(status: .succeeded, replacementText: segments.joined(separator: "\n\n"), explanation: r.summary,
-                                                   edits: [], error: nil, model: "local redaction", costUSD: 0, latencyMs: 0)
+                                                   edits: [], error: nil, model: "local (no AI)", costUSD: 0, latencyMs: 0)
             } else if rewriteRules.isEmpty {
-                result.note = "The redaction rules found nothing to mask here."
+                result.note = replacements.isEmpty ? "The redaction rules found nothing to mask here." : "The local rules found nothing to change here."
             }
         }
         guard rewrite else { return result }
@@ -74,7 +75,7 @@ extension DecisionEngine {
         if let modelOverride, model != nil { model = modelOverride }
         guard let model else {
             if matched.isEmpty { result.note = "No rule matches this content, so a session would forward it unchanged." }
-            else if !matched.contains(where: \.isRedaction) || redaction == nil { result.note = "The classifier didn't say yes, so a session would leave this unchanged." }
+            else if !matched.contains(where: \.isLocal) || redaction == nil { result.note = "The classifier didn't say yes, so a session would leave this unchanged." }
             return result
         }
         guard !segments.isEmpty, !text.isEmpty else {
