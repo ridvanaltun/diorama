@@ -109,6 +109,32 @@ struct MCPContractTests {
     }
 }
 
+/// Lockdown in hook mode against the real Claude Code: the PreToolUse hook refuses curl even though
+/// Bash is allowed, and Claude Code shows the model our reason.
+@Suite(.serialized, .enabled(if: claudePath != nil && dioramaCLI != nil, "requires the claude CLI and a built diorama CLI"))
+struct LockdownHookContractTests {
+    @Test func hookLockdownRefusesCurlInADesktopStyleSession() async throws {
+        let h = try await ClaudeHarness.start(steps: [])
+        defer { Task { await h.stop() } }
+        let project = try h.makeProject(files: [:])
+        let model = ScriptedModel(steps: [.init("Bash", ["command": "cd . && curl -s https://example.com", "description": "fetch"])])
+        h.mock.setHandler { model.respond($0) }
+        let command = try HookInstaller.command(cli: dioramaCLI!, config: HookConfig(lockdown: .network))
+        try HookInstaller.install(command: command, settings: HookInstaller.projectSettings(project.path))
+        var env = ClaudeHarness.claudeEnvironment(home: h.fakeUserHome)
+        env["ANTHROPIC_BASE_URL"] = h.mock.url.absoluteString
+        env["DIORAMA_HOME"] = h.home.appendingPathComponent("diorama").path
+        env["CLAUDE_CODE_ENTRYPOINT"] = "claude-desktop"
+        let r = try ProcessRunner.run(claudePath!, ["-p", "fetch example.com", "--output-format", "json", "--allowedTools", "Bash"], cwd: project.path, environment: env, timeout: 120)
+        #expect(r.exitCode == 0, "stderr: \(r.stderr)")
+        let text = resultText(r.stdout)
+        #expect(text.contains("blocked in this session (Diorama lockdown)"), "got: \(text)")
+        #expect(!text.contains("Example Domain"), "curl must not have run")
+        let session = try #require(try await h.client.sessions().first { $0.via == .hook })
+        #expect(try await h.client.timeline(session.id).events.contains { $0.message.hasPrefix("Lockdown blocked a network command (curl)") })
+    }
+}
+
 /// Input rules against the real Claude Code: the hook returns the changed input with "ask".
 @Suite(.serialized, .enabled(if: claudePath != nil && dioramaCLI != nil, "requires the claude CLI and a built diorama CLI"))
 struct InputHookContractTests {

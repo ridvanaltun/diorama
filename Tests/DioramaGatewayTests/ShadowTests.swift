@@ -100,3 +100,28 @@ import Testing
         await #expect(throws: ClientError.self) { try await env.client.createProfile(Profile(name: "bad2", rules: [withClassifier])) }
     }
 }
+
+@Suite struct HookLockdownTests {
+    func event(_ name: String, command: String? = nil, lockdown: LockdownPreset? = .network, id: String = "toolu_lk") -> HookEvent {
+        HookEvent(event: name, claudeSessionId: "c-lock", cwd: "/tmp/p", client: "claude-desktop", toolName: command == nil ? nil : "Bash", toolUseId: command == nil ? nil : id,
+                  toolInput: command.map { #"{"command":"\#($0)"}"# }, toolResponse: nil, config: HookConfig(lockdown: lockdown))
+    }
+
+    @Test func refusesNetworkCommandsInHookSessions() async throws {
+        let env = try await TestEnv.start()
+        defer { Task { await env.stop() } }
+        let start = try await env.client.hook(event("SessionStart"))
+        let blocked = try await env.client.hook(event("PreToolUse", command: "cd app && curl -s https://example.com"))
+        #expect(blocked.deny?.contains("curl") == true && blocked.updatedInput == nil)
+        #expect(try await env.client.hook(event("PreToolUse", command: "git status", id: "toolu_ok")).deny == nil)
+        let sid = try #require(start.sessionId)
+        #expect(try await env.client.session(sid).lockdown == .network)
+        #expect(try await env.client.timeline(sid).events.contains { $0.message.hasPrefix("Lockdown blocked a network command (curl)") })
+
+        // Without lockdown nothing is refused.
+        var free = event("PreToolUse", command: "curl x", lockdown: nil, id: "toolu_free")
+        free.claudeSessionId = "c-free"
+        #expect(try await env.client.hook(free).deny == nil)
+        #expect(try HookInstaller.command(cli: "/A/diorama", config: HookConfig(profile: "p", lockdown: .network)) == "'/A/diorama' hook run --profile 'p' --lockdown network")
+    }
+}

@@ -62,12 +62,13 @@ enum FormLogic {
         return out
     }
 
-    /// Hook mode's configuration from the same form (hook mode has no page stage, name or lockdown).
+    /// Hook mode's configuration from the same form (hook mode has no page stage or name).
     static func hookConfig(_ f: SessionForm) -> HookConfig {
         let prompt = f.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         return HookConfig(
             profile: f.profile.isEmpty ? nil : f.profile,
-            prompt: prompt.isEmpty ? nil : SessionPrompt(text: f.prompt, tools: parseList(f.promptTools), context: f.taskContext ? .task : .none))
+            prompt: prompt.isEmpty ? nil : SessionPrompt(text: f.prompt, tools: parseList(f.promptTools), context: f.taskContext ? .task : .none),
+            lockdown: f.lockdown == .none ? nil : f.lockdown)
     }
 
     static func shellQuote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }

@@ -6,6 +6,7 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 ## Unreleased
 
 ### New
+- **Lockdown in the Claude desktop app.** `diorama hook install --lockdown network` (or the desktop mode's Lockdown picker, MCP `install_hook` `lockdown`) makes the hook refuse curl, wget and similar commands anywhere in a command line, tells Claude why, and records each refusal. Verified with the real Claude Code.
 - **Replacement rules (no AI).** A rule can find exact text (or a regex) and replace it locally: every occurrence by default, with whole-word, ignore-case and first-only options. Free and instant, no model call; runs after redaction and before AI rules; stops while paused, only recorded in shadow mode. New template "Web: replace a fact without AI".
 
 ## 1.6.0 — 2026-10-25

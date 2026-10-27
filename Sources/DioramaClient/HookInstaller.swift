@@ -37,6 +37,7 @@ public enum HookInstaller {
             if prompt.context == .task { parts += ["--prompt-context", "task"] }
             if let m = prompt.model { parts += ["--prompt-model", shellQuote(m)] }
         }
+        if let l = config.lockdown, l != .none { parts += ["--lockdown", l.rawValue] }
         return parts.joined(separator: " ")
     }
 

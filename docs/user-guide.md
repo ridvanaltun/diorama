@@ -67,6 +67,7 @@ diorama hook uninstall
 - **Which results it can rewrite.** Read (text files), WebFetch, Bash, Grep (content mode), MCP tools that return text blocks, and best-effort WebSearch commentary. Other results are recorded as unchanged with the reason.
 - **It never blocks Claude Code.** If the daemon can't be reached, or anything else goes wrong, the hook prints nothing and the original result is used. Errors go to `logs/hook.log`.
 - **No double rewrites.** Sessions started with `diorama run` set `DIORAMA_SESSION`, and an installed hook ignores them, because the gateway already handles them.
+- **Lockdown works here too.** `diorama hook install --lockdown network`, or **Lockdown → Block shell network tools** in the app's desktop mode, makes the hook refuse `curl`, `wget`, `nc`, `lynx` and similar commands, so Claude can't fetch a page around a rewrite. It catches them anywhere in a command line: after `&&`, `;` or `|`, inside `$( … )`, behind `sudo` or `env`, and with a full path such as `/usr/bin/curl`. Claude is told the command is blocked and to use WebFetch or WebSearch, and the timeline records each refusal. As in the terminal this is a deterrent, not a sandbox: a script in Python or Node can still fetch pages. Existing hook installs need `diorama hook install` again.
 - `diorama hook install --user` installs into `~/.claude/settings.json` instead, so that every Claude Code session on your account reports to Diorama.
 
 ## AI control (MCP)

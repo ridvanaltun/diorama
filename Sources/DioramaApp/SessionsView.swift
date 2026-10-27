@@ -1217,6 +1217,16 @@ struct NewSessionSheet: View {
                 } header: {
                     Text("Steering")
                 }
+                if mode == .desktop {
+                    Section("Advanced") {
+                        Picker("Lockdown", selection: $lockdown) {
+                            Text("None").tag(LockdownPreset.none)
+                            Text("Block shell network tools").tag(LockdownPreset.network)
+                        }
+                        Text("Refuses curl, wget and similar commands, so Claude can't fetch a page around a rewrite; Claude is told to use WebFetch instead.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 if mode == .terminal {
                     Section("Advanced") {
                         Picker("Lockdown", selection: $lockdown) {

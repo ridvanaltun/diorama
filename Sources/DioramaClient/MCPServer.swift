@@ -472,6 +472,7 @@ enum MCPTools {
                 "prompt": string("Session prompt for the rewrite agent (optional)."),
                 "prompt_tools": ["type": "array", "items": ["type": "string"], "description": "Tools the prompt applies to (default WebFetch, WebSearch)."],
                 "share_task": ["type": "boolean", "description": "Give the rewrite agent the session's task (default false)."],
+                "lockdown": ["type": "string", "enum": ["none", "network"], "description": "network: refuse shell network commands (curl, wget, …) so Claude can't fetch pages around a rewrite (default none)."],
             ], required: ["folder"]),
             readOnly: false
         ) { s, a in
@@ -485,7 +486,8 @@ enum MCPTools {
             let prompt = (a["prompt"] as? String).flatMap { $0.isEmpty ? nil : $0 }.map {
                 SessionPrompt(text: $0, tools: a["prompt_tools"] as? [String] ?? SessionPrompt.defaultTools, context: a["share_task"] as? Bool == true ? .task : .none)
             }
-            let command = try HookInstaller.command(cli: s.cliPath, config: HookConfig(profile: profile?.isEmpty == true ? nil : profile, prompt: prompt))
+            let command = try HookInstaller.command(cli: s.cliPath, config: HookConfig(profile: profile?.isEmpty == true ? nil : profile, prompt: prompt,
+                                                                                                  lockdown: (a["lockdown"] as? String).flatMap(LockdownPreset.init(rawValue:)).flatMap { $0 == .none ? nil : $0 }))
             let url = try HookInstaller.install(command: command, settings: HookInstaller.projectSettings(folder))
             return "Installed Diorama's hook in \(url.path). Start a new Claude Code session in that folder for it to take effect."
         },

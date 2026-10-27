@@ -29,3 +29,17 @@ import Testing
         #expect(r.summary == "redacted 1 match (custom ×1); replaced “secret” → “public” ×1")
     }
 }
+
+@Suite struct LockdownMatcherTests {
+    @Test func findsNetworkCommandsAnywhereInAShellLine() {
+        let l = LockdownPreset.network
+        for (cmd, program) in [("curl https://x", "curl"), ("cd app && curl -s x", "curl"), ("/usr/bin/curl x", "curl"), ("FOO=1 sudo wget x", "wget"),
+                               ("cat f | nc host 80", "nc"), ("echo $(curl x)", "curl"), ("time curl x", "curl"), ("(lynx -dump x)", "lynx")] {
+            #expect(l.blockedProgram(in: cmd) == program, "\(cmd)")
+        }
+        for cmd in ["echo curl", "grep curl notes.txt", "git status", "ls -la", "python3 script.py"] {
+            #expect(l.blockedProgram(in: cmd) == nil, "\(cmd)")
+        }
+        #expect(LockdownPreset.none.blockedProgram(in: "curl x") == nil)
+    }
+}

@@ -621,7 +621,10 @@ public final class DioramaDaemon: @unchecked Sendable {
             return await decideInput(e, session: session)
         }
         guard let session = try hookSession(e) else { return HookReply() }
-        if e.event == "PreToolUse" { return await decideInput(e, session: session) }
+        if e.event == "PreToolUse" {
+            if let blocked = lockdownBlock(e, session: session) { return blocked }
+            return await decideInput(e, session: session)
+        }
         if let path = e.transcriptPath, session.transcriptPath != path { try? store.setTranscriptPath(sessionId: session.id, path) }
         switch e.event {
         case "SessionEnd":
@@ -636,6 +639,16 @@ public final class DioramaDaemon: @unchecked Sendable {
         default:
             return HookReply(sessionId: session.id)
         }
+    }
+
+    /// Lockdown in hook mode: refuse shell network commands that could fetch a page around a rewrite.
+    func lockdownBlock(_ e: HookEvent, session: SessionRecord) -> HookReply? {
+        guard session.lockdown != .none, e.toolName == "Bash", let input = e.toolInput,
+              let command = (try? JSONValue.parse(input))?["command"]?.stringValue,
+              let program = session.lockdown.blockedProgram(in: command)
+        else { return nil }
+        store.addEvent(sessionId: session.id, kind: .warning, message: "Lockdown blocked a network command (\(program)): \(String(command.prefix(160)))", refId: e.toolUseId)
+        return HookReply(sessionId: session.id, deny: "Network commands like \(program) are blocked in this session (Diorama lockdown); use the WebFetch or WebSearch tools instead.")
     }
 
     func decideInput(_ e: HookEvent, session: SessionRecord) async -> HookReply {
@@ -664,7 +677,7 @@ public final class DioramaDaemon: @unchecked Sendable {
             let cwd = (e.cwd as NSString).expandingTildeInPath
             let folder = (cwd as NSString).lastPathComponent
             let name = e.client == "claude-desktop" ? "\(folder) · Desktop" : folder
-            var spec = SessionSpec(name: name, cwd: cwd, profile: e.config.profile, prompt: e.config.prompt, via: .hook)
+            var spec = SessionSpec(name: name, cwd: cwd, profile: e.config.profile, prompt: e.config.prompt, lockdown: e.config.lockdown ?? .none, via: .hook)
             let record: SessionRecord
             do {
                 record = try store.createSession(spec, tokenHash: key)

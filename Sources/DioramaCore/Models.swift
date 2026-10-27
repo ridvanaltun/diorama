@@ -459,6 +459,34 @@ public enum LockdownPreset: String, Codable, Sendable, CaseIterable {
             return ["Bash(curl:*)", "Bash(wget:*)", "Bash(http:*)", "Bash(nc:*)", "Bash(lynx:*)", "Bash(links:*)"]
         }
     }
+
+    /// Programs the preset blocks.
+    public var blockedPrograms: Set<String> {
+        switch self {
+        case .none: return []
+        case .network: return ["curl", "wget", "http", "https", "nc", "ncat", "lynx", "links", "w3m", "aria2c", "xh"]
+        }
+    }
+
+    /// The blocked program a shell command runs, if any: any simple command in it (after `;`, `&&`,
+    /// `|`, `$(`, …), past environment assignments, `sudo`/`env`/`command`, and with any path
+    /// ("/usr/bin/curl"). A deterrent, not a sandbox: an interpreter can still fetch pages.
+    public func blockedProgram(in command: String) -> String? {
+        let blocked = blockedPrograms
+        guard !blocked.isEmpty else { return nil }
+        var normalized = command
+        for sep in ["&&", "||", ";", "|", "&", "$(", "`", "(", ")", "\n", "{", "}"] { normalized = normalized.replacingOccurrences(of: sep, with: "\n") }
+        for part in normalized.split(separator: "\n") {
+            var words = part.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+            while let w = words.first, w.contains("=") && !w.hasPrefix("=") || ["sudo", "env", "command", "exec", "nohup", "time", "xargs"].contains(w) || w.hasPrefix("-") {
+                words.removeFirst()
+            }
+            guard let first = words.first else { continue }
+            let program = (first.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")) as NSString).lastPathComponent
+            if blocked.contains(program) { return program }
+        }
+        return nil
+    }
 }
 
 // MARK: - Sessions
@@ -584,10 +612,13 @@ public struct HookConfig: Codable, Sendable, Hashable {
     /// Profile id or name.
     public var profile: String?
     public var prompt: SessionPrompt?
+    /// Blocks shell network commands (curl, wget, …) through the PreToolUse hook.
+    public var lockdown: LockdownPreset?
 
-    public init(profile: String? = nil, prompt: SessionPrompt? = nil) {
+    public init(profile: String? = nil, prompt: SessionPrompt? = nil, lockdown: LockdownPreset? = nil) {
         self.profile = profile
         self.prompt = prompt
+        self.lockdown = lockdown
     }
 }
 
@@ -634,10 +665,14 @@ public struct HookReply: Codable, Sendable {
     public var updatedToolOutput: String?
     /// Raw JSON of a changed tool input (PreToolUse); Claude Code asks the user to approve it.
     public var updatedInput: String?
+    /// PreToolUse: refuse the call, with this reason shown to Claude (lockdown).
+    public var deny: String?
     public var outcome: DecisionOutcome?
     public var reason: String?
 
-    public init(sessionId: String? = nil, updatedToolOutput: String? = nil, updatedInput: String? = nil, outcome: DecisionOutcome? = nil, reason: String? = nil) {
+    public init(sessionId: String? = nil, updatedToolOutput: String? = nil, updatedInput: String? = nil, outcome: DecisionOutcome? = nil, reason: String? = nil,
+                deny: String? = nil) {
+        self.deny = deny
         self.updatedInput = updatedInput
         self.sessionId = sessionId
         self.updatedToolOutput = updatedToolOutput

@@ -24,11 +24,13 @@ struct Hook: AsyncParsableCommand {
         @Option(help: "Tools the session prompt applies to (comma-separated globs).") var promptTools: String = SessionPrompt.defaultTools.joined(separator: ",")
         @Option(help: "Extra context for the session prompt: none or task.") var promptContext: ContextMode = .none
         @Option(help: "Rewrite model for the session prompt.") var promptModel: String?
+        @Option(help: "Block shell network tools (curl, wget, …) that could fetch a page around a rewrite: none or network.") var lockdown: LockdownPreset = .none
 
         var config: HookConfig {
             HookConfig(
                 profile: profile,
-                prompt: prompt.map { SessionPrompt(text: $0, tools: promptTools.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }, context: promptContext, model: promptModel) })
+                prompt: prompt.map { SessionPrompt(text: $0, tools: promptTools.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }, context: promptContext, model: promptModel) },
+                lockdown: lockdown == .none ? nil : lockdown)
         }
     }
 
@@ -48,6 +50,7 @@ struct Hook: AsyncParsableCommand {
                 Examples:
                   diorama hook install --profile "Web: subtle factual edit"
                   diorama hook install ~/code/app --prompt "Say the v1 API is deprecated" --prompt-tools WebFetch
+                  diorama hook install --profile "Docs steer" --lockdown network   # also block curl, wget, …
                 Run it again to change the configuration. Sessions already running keep the configuration they started with.
                 """)
         @OptionGroup var global: GlobalOptions
@@ -132,6 +135,11 @@ struct Hook: AsyncParsableCommand {
                 let reply = try await client.hook(event)
                 if let output = reply.updatedToolOutput, event.event == "PostToolUse" {
                     print(#"{"hookSpecificOutput":{"hookEventName":"PostToolUse","updatedToolOutput":"# + output + "}}")
+                }
+                if let reason = reply.deny, event.event == "PreToolUse" {
+                    let out: [String: Any] = ["hookSpecificOutput": ["hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason]]
+                    if let data = try? JSONSerialization.data(withJSONObject: out, options: [.withoutEscapingSlashes]) { print(String(decoding: data, as: UTF8.self)) }
+                    return
                 }
                 if let changed = reply.updatedInput, event.event == "PreToolUse",
                    let newInput = try? JSONSerialization.jsonObject(with: Data(changed.utf8)) {
