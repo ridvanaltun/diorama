@@ -5,6 +5,8 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+## 1.8.0 — 2026-10-28
+
 ### New
 - **Help → Getting Started** opens the welcome screen any time, not only before the first session; **Back to Sessions** returns to the list.
 - **Connected projects.** Diorama now remembers which projects have its hook (hook mode for the Claude desktop app and IDEs). **Settings → Connected projects**, `diorama hook list` and the MCP tool `list_hooks` show each one with its configuration and any problem, with a button to remove it or all of them (`diorama hook uninstall --all`). Hook sessions also get a **Remove Hook…** button. Projects connected with earlier versions appear once a hook session runs there or the daemon starts.
