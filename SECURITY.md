@@ -4,7 +4,7 @@ Diorama sits between Claude Code and the model on your Mac, stores what it recor
 
 ## Reporting a vulnerability
 
-Please **don't open a public issue** for a security problem. Report it privately through GitHub instead: on the repository's **Security** tab, choose **Report a vulnerability**. Include what you found, how to reproduce it, and what an attacker could do with it.
+Please **don't open a public issue** for a security problem. Report it privately through GitHub instead: on the repository's **Security** tab, choose **Report a vulnerability**. Include what you found, how to reproduce it, and what an attacker could do with it, plus the Diorama version (`diorama --version`) and your macOS version. Leave out raw captures or transcripts that contain private code or credentials.
 
 You'll get an answer within a week. Once a fix is ready, it ships in a release and the advisory is published, crediting you unless you'd rather not be named.
 
