@@ -64,8 +64,7 @@ struct Hook: AsyncParsableCommand {
                 let profiles = try await client.profiles()
                 guard profiles.contains(where: { $0.name == p || $0.id == p }) else { throw ValidationError("unknown profile '\(p)'") }
             }
-            let command = try HookInstaller.command(cli: selfPath(), config: config)
-            let url = try HookInstaller.install(command: command, settings: target.settingsURL, registry: HookRegistry(paths: global.paths))
+            let url = try HookInstaller.install(cli: selfPath(), config: config, settings: target.settingsURL, registry: HookRegistry(paths: global.paths))
             print("✓ Diorama hook installed in \(url.path)")
             if config.profile == nil && config.prompt == nil {
                 print("  No profile or prompt: sessions are recorded but never changed. Re-run with --profile or --prompt to steer them.")
@@ -114,6 +113,7 @@ struct Hook: AsyncParsableCommand {
 
     struct Status: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Show whether a project (or your user settings) has Diorama's hook.")
+        @OptionGroup var global: GlobalOptions
         @OptionGroup var target: Target
 
         func run() async throws {
@@ -123,7 +123,11 @@ struct Hook: AsyncParsableCommand {
                 return
             }
             print("Diorama hook installed in \(url.path)")
+            print("  \(HookInstaller.resolvedConfig(in: command, configs: HookRegistry(paths: global.paths).configs)?.summary ?? "unknown configuration")")
             print("  \(command)")
+            if HookInstaller.configId(in: command) == nil {
+                print("  ⚠ Its settings are written in the command, where Claude can read them; the daemon moves them out when it starts.")
+            }
             let cli = HookInstaller.cliPath(in: command) ?? ""
             if !HookInstaller.installedEvents(settings: url).contains("PreToolUse") {
                 print("  ⚠ Installed before input rules existed: run `diorama hook install` again to let them work here.")
@@ -159,12 +163,22 @@ struct Hook: AsyncParsableCommand {
         static let configuration = CommandConfiguration(commandName: "run", abstract: "Handle one hook event from Claude Code (used by the installed hook).", shouldDisplay: false)
         @OptionGroup var global: GlobalOptions
         @OptionGroup var options: ConfigOptions
+        @Option(name: .customLong("config"), help: "The hook's configuration id (its settings are kept in the data folder).") var configId: String?
+
+        /// The stored configuration for `--config`, or the options older hooks pass inline. An
+        /// unknown id records the session without rules rather than failing it.
+        var config: HookConfig {
+            guard let configId else { return options.config }
+            if let c = HookRegistry(paths: global.paths).configs.get(configId) { return c }
+            log("unknown hook configuration \(configId): recording without rules")
+            return HookConfig()
+        }
 
         func run() async throws {
             let env = ProcessInfo.processInfo.environment
             let input = FileHandle.standardInput.readDataToEndOfFile()
             do {
-                guard var event = try Self.event(from: input, config: options.config, client: env["CLAUDE_CODE_ENTRYPOINT"]) else { return }
+                guard var event = try Self.event(from: input, config: config, client: env["CLAUDE_CODE_ENTRYPOINT"]) else { return }
                 // Sessions started with `diorama run`: the gateway handles their results (acting here too would
                 // rewrite twice); only tool inputs come through the hook.
                 if let gateway = env["DIORAMA_SESSION"] {

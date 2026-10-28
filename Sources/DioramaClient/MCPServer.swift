@@ -364,10 +364,11 @@ enum MCPTools {
         .init(
             name: "get_hook_status", description: "Whether a project folder has Diorama's Claude Code hook (hook mode, used by the Claude desktop app and IDEs), and its configuration.",
             schema: schema(["folder": string("Absolute path of the project folder.")], required: ["folder"]), readOnly: true
-        ) { _, a in
+        ) { s, a in
             let url = HookInstaller.projectSettings(try arg(a, "folder"))
             guard let command = HookInstaller.installedCommand(settings: url) else { return "No Diorama hook in \(url.path)" }
-            return "Diorama hook installed in \(url.path):\n\(command)"
+            let config = HookInstaller.resolvedConfig(in: command, configs: s.hookRegistry.configs)
+            return "Diorama hook installed in \(url.path): \(config?.summary ?? "unknown configuration")\n\(command)"
         },
 
         MCPServer.Tool(
@@ -488,9 +489,9 @@ enum MCPTools {
             let prompt = (a["prompt"] as? String).flatMap { $0.isEmpty ? nil : $0 }.map {
                 SessionPrompt(text: $0, tools: a["prompt_tools"] as? [String] ?? SessionPrompt.defaultTools, context: a["share_task"] as? Bool == true ? .task : .none)
             }
-            let command = try HookInstaller.command(cli: s.cliPath, config: HookConfig(profile: profile?.isEmpty == true ? nil : profile, prompt: prompt,
-                                                                                                  lockdown: (a["lockdown"] as? String).flatMap(LockdownPreset.init(rawValue:)).flatMap { $0 == .none ? nil : $0 }))
-            let url = try HookInstaller.install(command: command, settings: HookInstaller.projectSettings(folder), registry: s.hookRegistry)
+            let config = HookConfig(profile: profile?.isEmpty == true ? nil : profile, prompt: prompt,
+                                    lockdown: (a["lockdown"] as? String).flatMap(LockdownPreset.init(rawValue:)).flatMap { $0 == .none ? nil : $0 })
+            let url = try HookInstaller.install(cli: s.cliPath, config: config, settings: HookInstaller.projectSettings(folder), registry: s.hookRegistry)
             let trust = ClaudeTrust.isTrusted(folder) == false ? "\n\nWarning: " + ClaudeTrust.advice(for: folder) : ""
             return "Installed Diorama's hook in \(url.path). Start a new Claude Code session in that folder for it to take effect." + trust
         },

@@ -5,6 +5,9 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+### Fixed
+- **Claude could read a connected project's prompt.** The hook command in the project's `.claude/settings.local.json` carried the profile, prompt and lockdown, so Claude reading the project's files could learn what was being changed. The command now carries only an id (`hook run --config hk_…`), and the configuration lives in `hook-configs.json` in Diorama's data folder. Hooks installed by earlier versions are moved over when the daemon starts, with the same configuration.
+
 ## 1.9.0 — 2026-10-28
 
 ### New

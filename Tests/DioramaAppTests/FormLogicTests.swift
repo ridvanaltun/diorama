@@ -114,7 +114,7 @@ import Testing
         form.promptTools = "WebFetch,Read"
         form.taskContext = true
         form.lockdown = .network
-        let command = try HookInstaller.command(cli: "/x/diorama", config: FormLogic.hookConfig(form))
+        let command = try HookInstaller.inlineCommand(cli: "/x/diorama", config: FormLogic.hookConfig(form))
         let back = FormLogic.form(fromHook: try #require(HookInstaller.config(in: command)), folder: "/p")
         #expect(back == form)
         // A CLI install may name the profile by id; the form uses names.

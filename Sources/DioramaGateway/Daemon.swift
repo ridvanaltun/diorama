@@ -140,6 +140,11 @@ public final class DioramaDaemon: @unchecked Sendable {
         // Connected projects: note where the hooks of earlier hook sessions live.
         background.append(Task.detached(priority: .utility) { [store, hookRegistry, user = options.claudeUserSettings] in
             for cwd in store.hookSessionFolders() { Self.noteHook(cwd: cwd, registry: hookRegistry, userSettings: user) }
+            // Hooks from earlier versions carry their prompt in the settings file, where Claude can read it.
+            for p in HookInstaller.connected(registry: hookRegistry, userSettings: user)
+            where (try? HookInstaller.moveConfigOut(settings: URL(fileURLWithPath: p.settingsFile), configs: hookRegistry.configs)) == true {
+                store.addEvent(sessionId: nil, kind: .warning, message: "Moved Diorama's hook settings out of \(p.settingsFile), so Claude can't read the prompt there (same configuration)")
+            }
         })
         background.append(Task { [store] in
             while !Task.isCancelled {

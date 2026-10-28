@@ -26,13 +26,81 @@ public enum HookInstaller {
         URL(fileURLWithPath: home, isDirectory: true).appendingPathComponent(".claude/settings.json")
     }
 
-    /// The hook command: the `diorama` CLI with the session configuration as arguments. It only
-    /// runs while the CLI exists, so a project keeps working after Diorama is removed.
-    public static func command(cli: String, config: HookConfig) throws -> String {
+    /// The hook command: the `diorama` CLI with only the id of its configuration, which lives in
+    /// Diorama's data folder (`HookConfigStore`). The project's settings file is readable by
+    /// Claude, so the prompt, profile and lockdown must not appear in it. It only runs while the
+    /// CLI exists, so a project keeps working after Diorama is removed.
+    public static func command(cli: String, configId: String) -> String {
+        "[ -x \(shellQuote(cli)) ] && exec \(shellQuote(cli)) hook run --config \(configId) || true"
+    }
+
+    /// Installs Diorama's hook with `config` kept in Diorama's data folder, out of the settings
+    /// file. Reinstalling into the same file keeps its configuration id.
+    @discardableResult
+    public static func install(cli: String, config: HookConfig, settings url: URL, registry: HookRegistry) throws -> URL {
+        try validate(config)
+        let id = installedCommand(settings: url).flatMap(configId(in:)) ?? HookConfigStore.newId()
+        registry.configs.save(config, id: id)
+        return try install(command: command(cli: cli, configId: id), settings: url, registry: registry)
+    }
+
+    static func validate(_ config: HookConfig) throws {
+        if config.prompt?.stage == .page { throw Failure("hook mode can't edit WebFetch pages before summarization; use `diorama run` for that") }
+    }
+
+    /// The configuration id a hook command passes (`--config hk_…`), if it uses one.
+    public static func configId(in command: String) -> String? {
+        let words = shellWords(command)
+        guard let i = words.firstIndex(of: "--config"), i + 1 < words.count else { return nil }
+        return words[i + 1]
+    }
+
+    /// What a hook command applies: its stored configuration, or the options written into older
+    /// commands. Nil when its id is unknown or the command isn't Diorama's.
+    public static func resolvedConfig(in command: String, configs: HookConfigStore) -> HookConfig? {
+        if let id = configId(in: command) { return configs.get(id) }
+        return config(in: command)
+    }
+
+    /// Hooks installed by earlier versions carry their configuration as options in the command, where
+    /// Claude can read it in the settings file. Moves it into `configs` and leaves an id,
+    /// keeping each entry's events and every other setting. Returns true when the file changed.
+    @discardableResult
+    public static func moveConfigOut(settings url: URL, configs: HookConfigStore) throws -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        var root = try read(url)
+        guard var hooks = root["hooks"] as? [String: Any] else { return false }
+        var replaced: [String: String] = [:]
+        for (event, value) in hooks {
+            guard var groups = value as? [[String: Any]] else { continue }
+            for g in groups.indices {
+                guard var list = groups[g]["hooks"] as? [[String: Any]] else { continue }
+                for h in list.indices where isDiorama(list[h]) {
+                    guard let old = list[h]["command"] as? String, configId(in: old) == nil, let cli = cliPath(in: old) else { continue }
+                    if replaced[old] == nil {
+                        let id = HookConfigStore.newId()
+                        configs.save(config(in: old) ?? HookConfig(), id: id)
+                        replaced[old] = command(cli: cli, configId: id)
+                    }
+                    list[h]["command"] = replaced[old]
+                }
+                groups[g]["hooks"] = list
+            }
+            hooks[event] = groups
+        }
+        guard !replaced.isEmpty else { return false }
+        root["hooks"] = hooks
+        try write(root, to: url)
+        return true
+    }
+
+    /// The command older versions wrote, with the configuration as options (kept for reading and
+    /// moving those hooks, and for tests).
+    public static func inlineCommand(cli: String, config: HookConfig) throws -> String {
         var parts = [shellQuote(cli), "hook", "run"]
         if let p = config.profile, !p.isEmpty { parts += ["--profile", shellQuote(p)] }
         if let prompt = config.prompt {
-            guard prompt.stage != .page else { throw Failure("hook mode can't edit WebFetch pages before summarization; use `diorama run` for that") }
+            try validate(config)
             parts += ["--prompt", shellQuote(prompt.text), "--prompt-tools", shellQuote(prompt.tools.joined(separator: ","))]
             if prompt.context == .task { parts += ["--prompt-context", "task"] }
             if let m = prompt.model { parts += ["--prompt-model", shellQuote(m)] }
@@ -129,7 +197,8 @@ public enum HookInstaller {
         var root = try read(url)
         let before = root["hooks"] as? [String: Any] ?? [:]
         let after = removeDiorama(from: before)
-        guard installedCommand(in: before) != nil else { return false }
+        guard let installed = installedCommand(in: before) else { return false }
+        if let registry, let id = configId(in: installed) { registry.configs.remove(id) }
         if after.isEmpty { root["hooks"] = nil } else { root["hooks"] = after }
         try write(root, to: url)
         return true
@@ -207,7 +276,7 @@ public enum HookInstaller {
             let cli = cliPath(in: command)
             let folder = path == user.path ? nil : projectFolder(of: url)
             found.append(HookedProject(
-                settingsFile: path, folder: folder, command: command, config: config(in: command),
+                settingsFile: path, folder: folder, command: command, config: resolvedConfig(in: command, configs: registry.configs),
                 cliMissing: cli.map { !FileManager.default.isExecutableFile(atPath: $0) } ?? true,
                 outdated: !installedEvents(settings: url).contains("PreToolUse"),
                 notTrusted: folder.map { ClaudeTrust.isTrusted($0, config: claudeConfig) == false } ?? false))
@@ -312,18 +381,67 @@ public struct HookRegistry: Sendable {
     public func add(_ settings: URL) { update { $0.insert(settings.path) } }
     public func remove(_ settings: URL) { update { $0.remove(settings.path) } }
 
+    /// The hook configurations, next to this registry in the data folder.
+    public var configs: HookConfigStore { HookConfigStore(url: url.deletingLastPathComponent().appendingPathComponent("hook-configs.json")) }
+
     /// Read-modify-write under an exclusive lock: the CLI, the app and the daemon all write it.
     private func update(_ change: (inout Set<String>) -> Void) {
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let fd = open(url.path + ".lock", O_CREAT | O_RDWR, 0o600)
-        if fd >= 0 { flock(fd, LOCK_EX) }
-        defer { if fd >= 0 { flock(fd, LOCK_UN); close(fd) } }
-        var set = Set(files)
-        let before = set
-        change(&set)
-        guard set != before else { return }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        if let data = try? encoder.encode(File(settingsFiles: set.sorted())) { try? data.write(to: url, options: .atomic) }
+        lockedWrite(url) { () -> File? in
+            var set = Set(files)
+            let before = set
+            change(&set)
+            guard set != before else { return nil }
+            return File(settingsFiles: set.sorted())
+        }
     }
+}
+
+/// The configuration of each installed hook (profile, prompt, lockdown), by id, in
+/// `hook-configs.json` in the data folder: outside the project, where Claude can't read it.
+public struct HookConfigStore: Sendable {
+    public let url: URL
+
+    public init(url: URL) { self.url = url }
+
+    struct File: Codable { var configs: [String: HookConfig] }
+
+    static func newId() -> String { "hk_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(16).lowercased() }
+
+    var all: [String: HookConfig] {
+        guard let data = FileManager.default.contents(atPath: url.path) else { return [:] }
+        return (try? JSONDecoder().decode(File.self, from: data))?.configs ?? [:]
+    }
+
+    public func get(_ id: String) -> HookConfig? { all[id] }
+
+    public func save(_ config: HookConfig, id: String) {
+        lockedWrite(url) { () -> File? in
+            var configs = all
+            guard configs[id] != config else { return nil }
+            configs[id] = config
+            return File(configs: configs)
+        }
+    }
+
+    public func remove(_ id: String) {
+        lockedWrite(url) { () -> File? in
+            var configs = all
+            guard configs.removeValue(forKey: id) != nil else { return nil }
+            return File(configs: configs)
+        }
+    }
+}
+
+/// Writes what `make` returns (nil: leave the file as it is) under an exclusive lock, atomically
+/// and readable only by the user.
+private func lockedWrite<T: Encodable>(_ url: URL, _ make: () -> T?) {
+    try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let fd = open(url.path + ".lock", O_CREAT | O_RDWR, 0o600)
+    if fd >= 0 { flock(fd, LOCK_EX) }
+    defer { if fd >= 0 { flock(fd, LOCK_UN); close(fd) } }
+    guard let value = make() else { return }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    guard let data = try? encoder.encode(value), (try? data.write(to: url, options: .atomic)) != nil else { return }
+    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
 }

@@ -1353,8 +1353,7 @@ struct NewSessionSheet: View {
                 } else {
                     Button(installedHook == nil ? "Install Hook" : "Update Hook") {
                         do {
-                            let hook = try HookInstaller.command(cli: model.cliPath, config: FormLogic.hookConfig(form))
-                            try HookInstaller.install(command: hook, settings: settingsFile, registry: model.hookRegistry)
+                            try HookInstaller.install(cli: model.cliPath, config: FormLogic.hookConfig(form), settings: settingsFile, registry: model.hookRegistry)
                             justInstalled = true
                             refreshInstalled()
                         } catch { model.report(error) }
@@ -1384,7 +1383,8 @@ struct NewSessionSheet: View {
     func refreshInstalled() {
         installedHook = HookInstaller.installedCommand(settings: settingsFile)
         // A connected folder: show what its hook does, ready to edit.
-        if mode == .desktop, filledFrom != folder, let command = installedHook, let config = HookInstaller.config(in: command) {
+        if mode == .desktop, filledFrom != folder, let command = installedHook,
+           let config = HookInstaller.resolvedConfig(in: command, configs: model.hookRegistry.configs) {
             let names = Dictionary(model.profiles.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
             let f = FormLogic.form(fromHook: config, folder: folder, profileNames: names)
             (profile, prompt, promptTools, taskContext, lockdown) = (f.profile, f.prompt, f.promptTools, f.taskContext, f.lockdown)

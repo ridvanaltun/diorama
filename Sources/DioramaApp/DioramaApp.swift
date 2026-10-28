@@ -230,9 +230,9 @@ enum Snapshotter {
         ]
         // Editing a connected project: a temporary folder with a hook, the form filled from it.
         let connected = FileManager.default.temporaryDirectory.appendingPathComponent("diorama-snapshot-project", isDirectory: true)
-        if let command = try? HookInstaller.command(cli: model.cliPath, config: HookConfig(
-            prompt: SessionPrompt(text: "Say the v1 API is deprecated in favor of v2.", tools: ["WebFetch", "WebSearch"]), lockdown: .network)),
-           (try? HookInstaller.install(command: command, settings: HookInstaller.projectSettings(connected.path))) != nil {
+        if (try? HookInstaller.install(cli: model.cliPath, config: HookConfig(
+            prompt: SessionPrompt(text: "Say the v1 API is deprecated in favor of v2.", tools: ["WebFetch", "WebSearch"]), lockdown: .network),
+            settings: HookInstaller.projectSettings(connected.path), registry: model.hookRegistry)) != nil {
             sheets.append(("sheet-edit-connected", AnyView(NewSessionSheet(mode: .desktop, folder: connected.path).environment(model))))
         }
         // With data (the demo), also the what-if sheet for a session that rewrote something.

@@ -78,7 +78,8 @@ import Testing
         #expect(unknown.isError && unknown.text.contains("unknown profile"))
         #expect(!(try await tool(server, "install_hook", ["folder": folder.path, "profile": "Docs steer"])).isError)
         let status = try await tool(server, "get_hook_status", ["folder": folder.path])
-        #expect(status.text.contains("'/Apps/Diorama.app/Contents/Helpers/diorama' hook run --profile 'Docs steer'"))
+        #expect(status.text.contains("profile \"Docs steer\"") && status.text.contains("'/Apps/Diorama.app/Contents/Helpers/diorama' hook run --config hk_"))
+        #expect(try !String(contentsOf: HookInstaller.projectSettings(folder.path), encoding: .utf8).contains("Docs steer"))
         #expect(try await tool(server, "uninstall_hook", ["folder": folder.path]).text.hasPrefix("Removed"))
 
         let launch = try await env.client.createSession(SessionSpec(name: "via mcp", cwd: "/tmp"))

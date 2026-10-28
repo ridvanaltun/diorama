@@ -117,6 +117,26 @@ extension HookEndpointTests {
     }
 }
 
+extension HookEndpointTests {
+    @Test func daemonMovesInlineHookSettingsOutAtStart() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("diorama-mv-\(UUID().uuidString)")
+        let project = FileManager.default.temporaryDirectory.appendingPathComponent("diorama-mvproj-\(UUID().uuidString)")
+        let settings = HookInstaller.projectSettings(project.path)
+        let registry = HookRegistry(paths: DioramaPaths(home: home))
+        try HookInstaller.install(command: try HookInstaller.inlineCommand(cli: "/x/diorama", config: HookConfig(prompt: SessionPrompt(text: "Secret steer"))),
+                                  settings: settings, registry: registry)
+        let env = try await TestEnv.start(home: home)
+        defer { Task { await env.stop() } }
+        let deadline = Date().addingTimeInterval(5)
+        while HookInstaller.installedCommand(settings: settings).flatMap(HookInstaller.configId(in:)) == nil, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let command = try #require(HookInstaller.installedCommand(settings: settings))
+        #expect(try !String(contentsOf: settings, encoding: .utf8).contains("Secret steer"))
+        #expect(HookInstaller.resolvedConfig(in: command, configs: registry.configs)?.prompt?.text == "Secret steer")
+    }
+}
+
 @Suite struct HookInstallerTests {
     func tempSettings(_ initial: String?) throws -> URL {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("diorama-hooks-\(UUID().uuidString)")
@@ -135,7 +155,7 @@ extension HookEndpointTests {
     @Test func installMergesUpdatesAndUninstallsWithoutTouchingOtherSettings() throws {
         let other = #"{"hooks":{"PostToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo mine"}]}]},"permissions":{"allow":["Bash(ls:*)"]}}"#
         let url = try tempSettings(other)
-        let cmd1 = try HookInstaller.command(cli: "/Apps/Diorama.app/Contents/Helpers/diorama", config: HookConfig(profile: "Docs steer"))
+        let cmd1 = try HookInstaller.inlineCommand(cli: "/Apps/Diorama.app/Contents/Helpers/diorama", config: HookConfig(profile: "Docs steer"))
         #expect(cmd1 == "[ -x '/Apps/Diorama.app/Contents/Helpers/diorama' ] && exec '/Apps/Diorama.app/Contents/Helpers/diorama' hook run --profile 'Docs steer' || true")
         try HookInstaller.install(command: cmd1, settings: url)
         var root = try load(url)
@@ -146,7 +166,7 @@ extension HookEndpointTests {
         #expect(HookInstaller.installedCommand(settings: url) == cmd1)
 
         // Installing again replaces Diorama's entries instead of adding more.
-        let cmd2 = try HookInstaller.command(cli: "/x/diorama", config: HookConfig(prompt: SessionPrompt(text: "it's new", tools: ["WebFetch"], context: .task)))
+        let cmd2 = try HookInstaller.inlineCommand(cli: "/x/diorama", config: HookConfig(prompt: SessionPrompt(text: "it's new", tools: ["WebFetch"], context: .task)))
         #expect(cmd2 == "[ -x '/x/diorama' ] && exec '/x/diorama' hook run --prompt 'it'\\''s new' --prompt-tools 'WebFetch' --prompt-context task || true")
         try HookInstaller.install(command: cmd2, settings: url)
         hooks = try #require(try load(url)["hooks"] as? [String: Any])
@@ -174,13 +194,13 @@ extension HookEndpointTests {
         #expect(try String(contentsOf: broken, encoding: .utf8) == "{ not json")
 
         #expect(throws: HookInstaller.Failure.self) {
-            try HookInstaller.command(cli: "/x/diorama", config: HookConfig(prompt: SessionPrompt(text: "p", stage: .page)))
+            try HookInstaller.inlineCommand(cli: "/x/diorama", config: HookConfig(prompt: SessionPrompt(text: "p", stage: .page)))
         }
     }
 
     @Test func readsTheCLIAndConfigurationBackFromACommand() throws {
         let config = HookConfig(profile: "Docs steer", prompt: SessionPrompt(text: "it's new", tools: ["WebFetch", "Web*"], context: .task, model: "m"), lockdown: .network)
-        let command = try HookInstaller.command(cli: "/Apps/Dio rama.app/diorama", config: config)
+        let command = try HookInstaller.inlineCommand(cli: "/Apps/Dio rama.app/diorama", config: config)
         #expect(HookInstaller.cliPath(in: command) == "/Apps/Dio rama.app/diorama")
         #expect(HookInstaller.config(in: command) == config)
         #expect(config.summary == "profile \"Docs steer\" · prompt \"it's new\" · lockdown network")
@@ -192,7 +212,7 @@ extension HookEndpointTests {
     }
 
     @Test func theHookDoesNothingOnceTheCLIIsGone() throws {
-        let command = try HookInstaller.command(cli: "/nonexistent/diorama", config: HookConfig(lockdown: .network))
+        let command = try HookInstaller.inlineCommand(cli: "/nonexistent/diorama", config: HookConfig(lockdown: .network))
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
         p.arguments = ["-c", command]
@@ -211,7 +231,7 @@ extension HookEndpointTests {
         let cli = home.appendingPathComponent("bin/diorama").path  // an executable stands in for the CLI
         try FileManager.default.createDirectory(atPath: (cli as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
         FileManager.default.createFile(atPath: cli, contents: Data("#!/bin/sh\n".utf8), attributes: [.posixPermissions: 0o755])
-        try HookInstaller.install(command: try HookInstaller.command(cli: cli, config: HookConfig(profile: "p")), settings: a, registry: registry)
+        try HookInstaller.install(command: try HookInstaller.inlineCommand(cli: cli, config: HookConfig(profile: "p")), settings: a, registry: registry)
         try HookInstaller.install(command: "'/gone/diorama' hook run", settings: b, registry: registry)
         #expect(Set(registry.files) == [a.path, b.path])
 
@@ -280,5 +300,51 @@ extension HookEndpointTests {
         let list = HookInstaller.connected(registry: registry, userSettings: base.appendingPathComponent("user.json"), claudeConfig: config)
         #expect(list.first { $0.folder == plain.path }?.notTrusted == true)
         #expect(list.first { $0.folder == repo.path }?.notTrusted == false)
+    }
+
+    @Test func installKeepsTheConfigurationOutOfTheSettingsFile() throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("diorama-cfg-\(UUID().uuidString)")
+        let registry = HookRegistry(paths: DioramaPaths(home: home))
+        let url = try tempSettings(#"{"permissions":{"allow":["Bash(ls)"]}}"#)
+        let config = HookConfig(profile: "Docs steer", prompt: SessionPrompt(text: "Say v2 is deprecated", tools: ["WebFetch"]), lockdown: .network)
+        try HookInstaller.install(cli: "/x/diorama", config: config, settings: url, registry: registry)
+        let text = try String(contentsOf: url, encoding: .utf8)
+        #expect(!text.contains("deprecated") && !text.contains("Docs steer") && !text.contains("lockdown"))
+        let command = try #require(HookInstaller.installedCommand(settings: url))
+        let id = try #require(HookInstaller.configId(in: command))
+        #expect(id.hasPrefix("hk_") && command == "[ -x '/x/diorama' ] && exec '/x/diorama' hook run --config \(id) || true")
+        #expect(HookInstaller.resolvedConfig(in: command, configs: registry.configs) == config)
+        #expect(HookInstaller.connected(registry: registry, userSettings: try tempSettings(nil)).first?.config == config)
+        let mode = try FileManager.default.attributesOfItem(atPath: registry.configs.url.path)[.posixPermissions] as? Int
+        #expect(mode == 0o600)
+
+        // Editing keeps the id; removing the hook removes its configuration.
+        let edited = HookConfig(prompt: SessionPrompt(text: "Say v3 is out", tools: ["WebSearch"]))
+        try HookInstaller.install(cli: "/x/diorama", config: edited, settings: url, registry: registry)
+        #expect(HookInstaller.installedCommand(settings: url).flatMap(HookInstaller.configId(in:)) == id)
+        #expect(registry.configs.get(id) == edited)
+        #expect(try HookInstaller.uninstall(settings: url, registry: registry))
+        #expect(registry.configs.get(id) == nil)
+        #expect(try load(url)["permissions"] != nil)
+        #expect(HookInstaller.resolvedConfig(in: command, configs: registry.configs) == nil, "unknown id")
+    }
+
+    @Test func movesInlineSettingsOutKeepingEverythingElse() throws {
+        let configs = HookConfigStore(url: FileManager.default.temporaryDirectory.appendingPathComponent("diorama-mv-\(UUID().uuidString).json"))
+        let config = HookConfig(profile: "p", prompt: SessionPrompt(text: "it's secret", tools: ["Read"], context: .task), lockdown: .network)
+        let old = try HookInstaller.inlineCommand(cli: "/x/diorama", config: config)
+        let escaped = old.replacingOccurrences(of: "\\", with: "\\\\")
+        let url = try tempSettings(#"{"hooks":{"PostToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"\#(escaped)","timeout":180},{"type":"command","command":"echo mine"}]}],"SessionStart":[{"hooks":[{"type":"command","command":"\#(escaped)","timeout":15}]}]},"model":"x"}"#)
+        #expect(try HookInstaller.moveConfigOut(settings: url, configs: configs))
+        let hooks = try #require(try load(url)["hooks"] as? [String: [[String: Any]]])
+        let post = try #require(hooks["PostToolUse"]?.first?["hooks"] as? [[String: Any]])
+        let start = try #require((hooks["SessionStart"]?.first?["hooks"] as? [[String: Any]])?.first?["command"] as? String)
+        let moved = try #require(post.first?["command"] as? String)
+        #expect(moved == start, "one id for every event of the same hook")
+        #expect(post.last?["command"] as? String == "echo mine" && post.first?["timeout"] as? Int == 180)
+        #expect(try !String(contentsOf: url, encoding: .utf8).contains("secret"))
+        #expect(try load(url)["model"] as? String == "x")
+        #expect(HookInstaller.resolvedConfig(in: moved, configs: configs) == config)
+        #expect(try !HookInstaller.moveConfigOut(settings: url, configs: configs), "already moved")
     }
 }

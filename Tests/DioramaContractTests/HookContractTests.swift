@@ -18,8 +18,11 @@ let dioramaCLI: String? = {
 @Suite(.serialized, .enabled(if: claudePath != nil && dioramaCLI != nil, "requires the claude CLI and a built diorama CLI"))
 struct HookContractTests {
     func install(_ h: ClaudeHarness, project: URL, profile: String) throws {
-        let command = try HookInstaller.command(cli: dioramaCLI!, config: HookConfig(profile: profile))
-        try HookInstaller.install(command: command, settings: HookInstaller.projectSettings(project.path))
+        // Real Claude Code runs `hook run --config <id>`; the configuration is in DIORAMA_HOME, not the project.
+        try HookInstaller.install(cli: dioramaCLI!, config: HookConfig(profile: profile), settings: HookInstaller.projectSettings(project.path),
+                                  registry: HookRegistry(paths: DioramaPaths(home: h.home.appendingPathComponent("diorama"))))
+        // Claude can read the settings file: the profile it uses must not be in it.
+        #expect(try !String(contentsOf: HookInstaller.projectSettings(project.path), encoding: .utf8).contains(profile))
     }
 
     /// Claude Code talking straight to the (mock) model, like a Claude desktop session: only the hook involves Diorama.
@@ -123,8 +126,9 @@ struct LockdownHookContractTests {
         let project = try h.makeProject(files: [:])
         let model = ScriptedModel(steps: [.init("Bash", ["command": "cd . && curl -s https://example.com", "description": "fetch"])])
         h.mock.setHandler { model.respond($0) }
-        let command = try HookInstaller.command(cli: dioramaCLI!, config: HookConfig(lockdown: .network))
-        try HookInstaller.install(command: command, settings: HookInstaller.projectSettings(project.path))
+        // Real Claude Code runs `hook run --config <id>`; the configuration is in DIORAMA_HOME, not the project.
+        try HookInstaller.install(cli: dioramaCLI!, config: HookConfig(lockdown: .network), settings: HookInstaller.projectSettings(project.path),
+                                  registry: HookRegistry(paths: DioramaPaths(home: h.home.appendingPathComponent("diorama"))))
         var env = ClaudeHarness.claudeEnvironment(home: h.fakeUserHome)
         env["ANTHROPIC_BASE_URL"] = h.mock.url.absoluteString
         env["DIORAMA_HOME"] = h.home.appendingPathComponent("diorama").path
@@ -151,8 +155,9 @@ struct InputHookContractTests {
         _ = try await h.client.createProfile(Profile(name: "redirect reads", rules: [
             Rule(name: "Redirect", match: RuleMatch(tools: ["Read"], stage: .input), instructions: "rename the domain"),
         ]))
-        let command = try HookInstaller.command(cli: dioramaCLI!, config: HookConfig(profile: "redirect reads"))
-        try HookInstaller.install(command: command, settings: HookInstaller.projectSettings(project.path))
+        // Real Claude Code runs `hook run --config <id>`; the configuration is in DIORAMA_HOME, not the project.
+        try HookInstaller.install(cli: dioramaCLI!, config: HookConfig(profile: "redirect reads"), settings: HookInstaller.projectSettings(project.path),
+                                  registry: HookRegistry(paths: DioramaPaths(home: h.home.appendingPathComponent("diorama"))))
         var env = ClaudeHarness.claudeEnvironment(home: h.fakeUserHome)
         env["ANTHROPIC_BASE_URL"] = h.mock.url.absoluteString
         env["DIORAMA_HOME"] = h.home.appendingPathComponent("diorama").path
