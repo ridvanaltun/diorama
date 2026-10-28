@@ -225,12 +225,35 @@ final class AppModel {
     }
 
     func report(_ error: Error) {
+        guard !Self.isCancellation(error) else { return }
+        if Self.isConnectionLoss(error) {
+            // The daemon is restarting or went away: reconnect (starting it again if needed)
+            // instead of an alert; the connection badge shows the state meanwhile.
+            if case .connecting = connection { return }
+            Task { await self.connect() }
+            return
+        }
         lastError = (error as? ClientError)?.message ?? String(describing: error)
+    }
+
+    /// A request dropped because its view went away or reloaded: nothing went wrong.
+    nonisolated static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        let ns = error as NSError
+        return ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
+    }
+
+    /// The daemon didn't answer (stopped, restarting, or its port changed).
+    nonisolated static func isConnectionLoss(_ error: Error) -> Bool {
+        let ns = error as NSError
+        return ns.domain == NSURLErrorDomain && [NSURLErrorCannotConnectToHost, NSURLErrorNetworkConnectionLost].contains(ns.code)
     }
 
     /// Runs an action against the client, surfacing errors in the UI.
     func perform<T>(_ action: (ControlClient) async throws -> T) async -> T? {
         guard let client else {
+            // Mid-reconnect (e.g. Restart Daemon): the badge already says so.
+            if case .connecting = connection { return nil }
             lastError = "Not connected to the Diorama daemon."
             return nil
         }

@@ -10,6 +10,7 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 - **Edit a connected project.** **Settings → Connected projects** has an **Edit…** button, and choosing an already connected folder in **New Session → Claude desktop & IDEs** now fills the form with its hook's current profile, prompt, tools and lockdown, so changing the prompt no longer means retyping everything. **Update Hook** saves the changes for new sessions.
 
 ### Fixed
+- **Restart Daemon showed a "Could not connect to the server" error.** Requests made while the daemon restarts (or after it stops) now reconnect quietly, starting the daemon again if needed, and the connection badge shows the state; requests cancelled because a view changed (`NSURLErrorDomain -999`) aren't shown as errors either.
 - **A hook session stayed "running" after its hook was removed.** Claude Code reports a session's end through the hook, so once the hook was gone the session never ended. The daemon now ends active hook sessions whose project no longer has Diorama's hook (within about 10 seconds, with a note); a session that keeps reporting reopens.
 - The UI smoke test waits for the app to finish every snapshot instead of stopping after a fixed one.
 

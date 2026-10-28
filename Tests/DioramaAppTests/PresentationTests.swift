@@ -111,4 +111,14 @@ import Testing
         }
         #expect(TimelineLogic.navigationOrder([d("b", 2), d("input:x", 3), d("a", 1), d("page:c", 4)]) == ["input:x", "a", "b", "page:c"])
     }
+
+    @Test func cancelledAndDroppedConnectionsAreNotAlerts() {
+        #expect(AppModel.isCancellation(CancellationError()))
+        #expect(AppModel.isCancellation(URLError(.cancelled)))
+        #expect(!AppModel.isCancellation(URLError(.cannotConnectToHost)))
+        #expect(AppModel.isConnectionLoss(URLError(.cannotConnectToHost)))
+        #expect(AppModel.isConnectionLoss(NSError(domain: NSURLErrorDomain, code: NSURLErrorNetworkConnectionLost)))
+        #expect(!AppModel.isConnectionLoss(URLError(.timedOut)))
+        #expect(!AppModel.isConnectionLoss(NSError(domain: "x", code: NSURLErrorCannotConnectToHost)))
+    }
 }
