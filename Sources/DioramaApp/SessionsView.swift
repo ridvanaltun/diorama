@@ -1184,7 +1184,14 @@ struct NewSessionSheet: View {
     /// The folder's default profile (its own or a parent's), which `diorama run` uses when no profile is picked.
     var folderDefault: FolderDefault? { model.settings.folderDefault(for: folder) }
 
-    init(mode: Mode = .terminal) { _mode = State(initialValue: mode) }
+    /// The folder whose installed hook the form was last filled from (once per folder, so
+    /// returning to the app doesn't overwrite edits).
+    @State private var filledFrom: String?
+
+    init(mode: Mode = .terminal, folder: String? = nil) {
+        _mode = State(initialValue: mode)
+        if let folder { _folder = State(initialValue: folder) }
+    }
 
     var form: FormLogic.SessionForm {
         FormLogic.SessionForm(
@@ -1220,7 +1227,7 @@ struct NewSessionSheet: View {
                     if mode == .terminal {
                         TextField("Name", text: $name, prompt: Text("Optional"))
                     } else if let installedHook {
-                        Label("A Diorama hook is already installed here. Installing again replaces it.", systemImage: "link")
+                        Label("Connected. The form shows the hook's current settings; Update Hook saves your changes for new sessions.", systemImage: "link")
                             .font(.caption).foregroundStyle(.secondary)
                             .help(installedHook)
                     }
@@ -1354,6 +1361,7 @@ struct NewSessionSheet: View {
         .frame(width: 620)
         .fixedSize(horizontal: false, vertical: true)
         .onChange(of: folder, initial: true) { refreshInstalled() }
+        .onChange(of: mode) { refreshInstalled() }
         // Back from Terminal, where the folder may just have been trusted.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in refreshInstalled() }
         .onChange(of: mode) { justInstalled = false }
@@ -1361,6 +1369,13 @@ struct NewSessionSheet: View {
 
     func refreshInstalled() {
         installedHook = HookInstaller.installedCommand(settings: settingsFile)
+        // A connected folder: show what its hook does, ready to edit.
+        if mode == .desktop, filledFrom != folder, let command = installedHook, let config = HookInstaller.config(in: command) {
+            let names = Dictionary(model.profiles.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
+            let f = FormLogic.form(fromHook: config, folder: folder, profileNames: names)
+            (profile, prompt, promptTools, taskContext, lockdown) = (f.profile, f.prompt, f.promptTools, f.taskContext, f.lockdown)
+            filledFrom = folder
+        }
         let path = folder.trimmingCharacters(in: .whitespaces)
         notTrusted = !path.isEmpty && FileManager.default.fileExists(atPath: (path as NSString).expandingTildeInPath) && ClaudeTrust.isTrusted(path) == false
     }

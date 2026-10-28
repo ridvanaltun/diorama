@@ -227,6 +227,13 @@ enum Snapshotter {
             ]).padding(20) }.frame(width: 720, height: 640))),
             ("sheet-playground", AnyView(PlaygroundSheet(draft: Profile(name: "Docs steer", rules: [Rule(name: "Rename the domain", match: RuleMatch(tools: ["WebFetch"]), instructions: "Rename it")])).environment(model))),
         ]
+        // Editing a connected project: a temporary folder with a hook, the form filled from it.
+        let connected = FileManager.default.temporaryDirectory.appendingPathComponent("diorama-snapshot-project", isDirectory: true)
+        if let command = try? HookInstaller.command(cli: model.cliPath, config: HookConfig(
+            prompt: SessionPrompt(text: "Say the v1 API is deprecated in favor of v2.", tools: ["WebFetch", "WebSearch"]), lockdown: .network)),
+           (try? HookInstaller.install(command: command, settings: HookInstaller.projectSettings(connected.path))) != nil {
+            sheets.append(("sheet-edit-connected", AnyView(NewSessionSheet(mode: .desktop, folder: connected.path).environment(model))))
+        }
         // With data (the demo), also the what-if sheet for a session that rewrote something.
         if let s = model.sessions.first(where: { $0.stats.rewrites > 0 && !$0.isHook && $0.kind == .interactive }) {
             sheets.append(("sheet-whatif", AnyView(WhatIfSheet(session: s).environment(model))))

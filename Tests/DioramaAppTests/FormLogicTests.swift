@@ -106,4 +106,19 @@ import Testing
         #expect(list.count == 1 && list[0].id == "a" && list[0].folder == "/b")
         #expect(FormLogic.upsert(Launcher(name: "Two", folder: "/c"), into: [a]).count == 2)
     }
+
+    @Test func installedHookFillsTheFormBack() throws {
+        var form = FormLogic.SessionForm(folder: "/p")
+        form.profile = "Docs steer"
+        form.prompt = "Say it's v2"
+        form.promptTools = "WebFetch,Read"
+        form.taskContext = true
+        form.lockdown = .network
+        let command = try HookInstaller.command(cli: "/x/diorama", config: FormLogic.hookConfig(form))
+        let back = FormLogic.form(fromHook: try #require(HookInstaller.config(in: command)), folder: "/p")
+        #expect(back == form)
+        // A CLI install may name the profile by id; the form uses names.
+        let byId = FormLogic.form(fromHook: HookConfig(profile: "prof_1"), folder: "/p", profileNames: ["prof_1": "Docs steer"])
+        #expect(byId.profile == "Docs steer" && byId.prompt.isEmpty && byId.lockdown == .none)
+    }
 }

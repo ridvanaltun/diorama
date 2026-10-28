@@ -17,7 +17,7 @@ trap cleanup EXIT
 # it would start without a window and render nothing.
 "$APP/Contents/MacOS/Diorama" -ApplePersistenceIgnoreState YES > "$WORK/app.log" 2>&1 &
 APP_PID=$!
-EXPECTED=(sessions experiments profiles settings getting-started sheet-new-session sheet-new-session-desktop sheet-new-profile sheet-new-experiment menu-bar-panel mcp-connect sheet-export-data sheet-review menu-review sheet-profile-compare model-compare sheet-playground)
+EXPECTED=(sessions experiments profiles settings getting-started sheet-new-session sheet-new-session-desktop sheet-edit-connected sheet-new-profile sheet-new-experiment menu-bar-panel mcp-connect sheet-export-data sheet-review menu-review sheet-profile-compare model-compare sheet-playground)
 for i in {1..90}; do
   sleep 1
   [[ -f "$DIORAMA_SNAPSHOT_DIR/sheet-playground.png" ]] && break

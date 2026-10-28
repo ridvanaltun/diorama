@@ -71,6 +71,20 @@ enum FormLogic {
             lockdown: f.lockdown == .none ? nil : f.lockdown)
     }
 
+    /// The form an installed hook was made from (the reverse of `hookConfig`), so it can be
+    /// edited. `profileNames` maps a profile id (CLI installs may use one) to its name.
+    static func form(fromHook c: HookConfig, folder: String, profileNames: [String: String] = [:]) -> SessionForm {
+        var f = SessionForm(folder: folder)
+        f.profile = c.profile.map { profileNames[$0] ?? $0 } ?? ""
+        if let p = c.prompt {
+            f.prompt = p.text
+            f.promptTools = p.tools.joined(separator: ",")
+            f.taskContext = p.context == .task
+        }
+        f.lockdown = c.lockdown ?? .none
+        return f
+    }
+
     static func shellQuote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 
     static func parseList(_ s: String) -> [String] {

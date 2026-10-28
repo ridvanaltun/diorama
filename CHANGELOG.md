@@ -5,6 +5,9 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+### New
+- **Edit a connected project.** **Settings → Connected projects** has an **Edit…** button, and choosing an already connected folder in **New Session → Claude desktop & IDEs** now fills the form with its hook's current profile, prompt, tools and lockdown, so changing the prompt no longer means retyping everything. **Update Hook** saves the changes for new sessions.
+
 ## 1.8.1 — 2026-10-28
 
 ### Fixed

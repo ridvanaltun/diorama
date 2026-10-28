@@ -320,6 +320,7 @@ struct ConnectedProjectsSection: View {
     @State private var projects: [HookedProject] = []
     @State private var removing: HookedProject?
     @State private var removingAll = false
+    @State private var editing: String?
 
     var body: some View {
         Section {
@@ -344,6 +345,11 @@ struct ConnectedProjectsSection: View {
                         }
                     }
                     Spacer()
+                    if let folder = p.folder {
+                        Button("Edit…") { editing = folder }
+                            .controlSize(.small)
+                            .help("Change this project's profile, prompt or lockdown")
+                    }
                     Button { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p.settingsFile)]) } label: { Image(systemName: "magnifyingglass") }
                         .buttonStyle(.borderless).help("Show the settings file in Finder")
                     Button(role: .destructive) { removing = p } label: { Image(systemName: "trash") }
@@ -361,6 +367,9 @@ struct ConnectedProjectsSection: View {
         }
         .task(id: model.eventTick / 10) { refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in refresh() }
+        .sheet(isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil; refresh() } })) {
+            if let folder = editing { NewSessionSheet(mode: .desktop, folder: folder).environment(model) }
+        }
         .confirmationDialog("Remove Diorama's hook from \(removing.flatMap(\.folder).map(Fmt.shortPath) ?? "your user settings")?",
                             isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { p in
             Button("Remove Hook", role: .destructive) { remove([p]) }
