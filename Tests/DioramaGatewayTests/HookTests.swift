@@ -92,6 +92,31 @@ extension HookEndpointTests {
     }
 }
 
+extension HookEndpointTests {
+    @Test func removingTheHookEndsItsActiveSessions() async throws {
+        let env = try await TestEnv.start()
+        defer { Task { await env.stop() } }
+        let project = FileManager.default.temporaryDirectory.appendingPathComponent("diorama-end-\(UUID().uuidString)")
+        let settings = HookInstaller.projectSettings(project.path)
+        try HookInstaller.install(command: "'/x/diorama' hook run", settings: settings)
+        let user = env.home.appendingPathComponent("claude-user-settings.json")
+        func start(_ id: String) async throws -> String {
+            try #require(try await env.client.hook(HookEvent(event: "SessionStart", claudeSessionId: id, cwd: project.path, config: HookConfig())).sessionId)
+        }
+        let sid = try await start("c-end")
+        DioramaDaemon.endDisconnectedHookSessions(store: env.daemon.store, userSettings: user)
+        #expect(try await env.client.session(sid).status == .active, "hook still installed")
+
+        try HookInstaller.uninstall(settings: settings)
+        DioramaDaemon.endDisconnectedHookSessions(store: env.daemon.store, userSettings: user)
+        #expect(try await env.client.session(sid).status == .ended)
+        #expect(try await env.client.timeline(sid).events.contains { $0.message.contains("hook was removed") })
+        // If Claude Code does report again (it kept the hook it started with), the session reopens.
+        _ = try await env.client.hook(HookEvent(event: "PostToolUse", claudeSessionId: "c-end", cwd: project.path, config: HookConfig()))
+        #expect(try await env.client.session(sid).status == .active)
+    }
+}
+
 @Suite struct HookInstallerTests {
     func tempSettings(_ initial: String?) throws -> URL {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("diorama-hooks-\(UUID().uuidString)")

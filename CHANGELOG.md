@@ -6,7 +6,12 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 ## Unreleased
 
 ### New
+- **Write the session prompt with AI.** **Write with AI…** next to "Session prompt" (New Session, both tabs, and when editing a connected project) turns what you want Claude to see differently, in your own words, into a prompt for the rewrite agent and picks its tools, or improves the prompt you have. It uses the rewrite agent's key and default model, shows the cost and counts toward the daily budget.
 - **Edit a connected project.** **Settings → Connected projects** has an **Edit…** button, and choosing an already connected folder in **New Session → Claude desktop & IDEs** now fills the form with its hook's current profile, prompt, tools and lockdown, so changing the prompt no longer means retyping everything. **Update Hook** saves the changes for new sessions.
+
+### Fixed
+- **A hook session stayed "running" after its hook was removed.** Claude Code reports a session's end through the hook, so once the hook was gone the session never ended. The daemon now ends active hook sessions whose project no longer has Diorama's hook (within about 10 seconds, with a note); a session that keeps reporting reopens.
+- The UI smoke test waits for the app to finish every snapshot instead of stopping after a fixed one.
 
 ## 1.8.1 — 2026-10-28
 

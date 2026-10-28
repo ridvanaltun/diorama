@@ -201,6 +201,7 @@ enum Snapshotter {
         var sheets: [(String, AnyView)] = [
             ("getting-started", AnyView(GettingStartedView(onNewSession: {}, onClose: {}).environment(model).frame(width: 900, height: 640))),
             ("sheet-new-session", AnyView(NewSessionSheet().environment(model))),
+            ("sheet-prompt-assist", AnyView(PromptAssistSheet(currentPrompt: "", currentTools: "WebFetch,WebSearch") { _ in }.environment(model))),
             ("sheet-new-session-desktop", AnyView(NewSessionSheet(mode: .desktop).environment(model))),
             ("sheet-new-profile", AnyView(NewProfileSheet(selection: .constant(nil)).environment(model))),
             ("sheet-new-experiment", AnyView(NewExperimentSheet(created: { _ in }).environment(model))),

@@ -89,6 +89,8 @@ public protocol RewriteProvider: Sendable {
     func rewrite(_ request: RewriteRequest) async -> RewriteResponse
     /// Content-aware matching (rule classifiers). Providers that can't classify answer with an error.
     func classify(_ request: ClassifyRequest) async -> ClassifyResponse
+    /// Drafts a session prompt (Write with AI). Providers that can't answer with an error.
+    func assistPrompt(_ request: PromptAssistRequest) async -> PromptAssistResponse
 }
 
 // MARK: - Prompt contract
@@ -303,12 +305,19 @@ public struct ScriptedRewriteProvider: RewriteProvider {
     public let id: String
     let handler: @Sendable (RewriteRequest) async -> RewriteResponse
     let classifier: (@Sendable (ClassifyRequest) async -> ClassifyResponse)?
+    let assistant: (@Sendable (PromptAssistRequest) async -> PromptAssistResponse)?
 
     public init(id: String = "scripted", classifier: (@Sendable (ClassifyRequest) async -> ClassifyResponse)? = nil,
+                assistant: (@Sendable (PromptAssistRequest) async -> PromptAssistResponse)? = nil,
                 handler: @escaping @Sendable (RewriteRequest) async -> RewriteResponse) {
         self.id = id
         self.handler = handler
         self.classifier = classifier
+        self.assistant = assistant
+    }
+
+    public func assistPrompt(_ request: PromptAssistRequest) async -> PromptAssistResponse {
+        await assistant?(request) ?? PromptAssistResponse(suggestion: nil, error: "the scripted provider has no prompt assistant")
     }
 
     public func rewrite(_ request: RewriteRequest) async -> RewriteResponse { await handler(request) }

@@ -32,6 +32,8 @@ public final class DioramaDaemon: @unchecked Sendable {
         public var cliPath: String?
         /// Overrides the LLM judge (tests).
         public var judgeOverride: JudgeProvider?
+        /// Claude Code's user settings, checked for Diorama's hook (tests point it elsewhere).
+        public var claudeUserSettings = HookInstaller.userSettings()
 
         public init(paths: DioramaPaths) { self.paths = paths }
     }
@@ -136,13 +138,20 @@ public final class DioramaDaemon: @unchecked Sendable {
         })
         background.append(Task.detached(priority: .utility) { [store] in Self.backfillSearch(store: store) })
         // Connected projects: note where the hooks of earlier hook sessions live.
-        background.append(Task.detached(priority: .utility) { [store, hookRegistry] in
-            for cwd in store.hookSessionFolders() { Self.noteHook(cwd: cwd, registry: hookRegistry) }
+        background.append(Task.detached(priority: .utility) { [store, hookRegistry, user = options.claudeUserSettings] in
+            for cwd in store.hookSessionFolders() { Self.noteHook(cwd: cwd, registry: hookRegistry, userSettings: user) }
         })
         background.append(Task { [store] in
             while !Task.isCancelled {
                 _ = try? store.applyRetention(days: store.settings().retentionDays)
                 try? await Task.sleep(for: .seconds(24 * 3600))
+            }
+        })
+        // A hook session ends when Claude Code reports it; once its hook is removed it never will.
+        background.append(Task.detached(priority: .utility) { [store, user = options.claudeUserSettings] in
+            while !Task.isCancelled {
+                Self.endDisconnectedHookSessions(store: store, userSettings: user)
+                try? await Task.sleep(for: .seconds(10))
             }
         })
         // Profile folders: pick up new and changed profile files.
@@ -701,14 +710,24 @@ public final class DioramaDaemon: @unchecked Sendable {
                 store.addEvent(sessionId: record.id, kind: .anomaly, message: "Hook configuration rejected (\(err.description)); no rules are applied in this session", refId: record.id)
             }
             try store.recordClaudeSessionId(sessionId: record.id, claudeSessionId: e.claudeSessionId)
-            Task.detached(priority: .utility) { [hookRegistry] in Self.noteHook(cwd: cwd, registry: hookRegistry) }
+            Task.detached(priority: .utility) { [hookRegistry, user = options.claudeUserSettings] in Self.noteHook(cwd: cwd, registry: hookRegistry, userSettings: user) }
             return record
         }
     }
 
+    /// Ends active hook sessions whose folder no longer has Diorama's hook (removed in the app, the
+    /// CLI or by hand): Claude Code can't report their end any more. A session that does report
+    /// again reopens (`hookSession`).
+    static func endDisconnectedHookSessions(store: Store, userSettings: URL) {
+        for s in store.activeHookSessions() where HookInstaller.locate(cwd: s.cwd, userSettings: userSettings).isEmpty {
+            store.addEvent(sessionId: s.id, kind: .warning, message: "Diorama's hook was removed from this project, so Claude Code can't report when this session ends; marked ended")
+            try? store.endSession(id: s.id)
+        }
+    }
+
     /// Records which settings files hold the hook a session in `cwd` runs, for `diorama hook list`.
-    static func noteHook(cwd: String, registry: HookRegistry) {
-        for url in HookInstaller.locate(cwd: cwd) { registry.add(url) }
+    static func noteHook(cwd: String, registry: HookRegistry, userSettings: URL) {
+        for url in HookInstaller.locate(cwd: cwd, userSettings: userSettings) { registry.add(url) }
     }
 
     func wantsTaskContext(_ s: SessionRecord) -> Bool {

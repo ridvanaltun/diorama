@@ -497,6 +497,46 @@ public enum SessionStatus: String, Codable, Sendable { case active, ended }
 /// through Claude Code hooks (Claude desktop, IDEs; tool results only, no model traffic).
 public enum SessionVia: String, Codable, Sendable { case gateway, hook }
 
+/// A session prompt the rewrite model drafted from what the user wants Claude to see differently.
+public struct PromptSuggestion: Codable, Sendable, Hashable {
+    public var prompt: String
+    public var tools: [String]
+    public var explanation: String
+
+    public init(prompt: String, tools: [String], explanation: String) {
+        self.prompt = prompt
+        self.tools = tools
+        self.explanation = explanation
+    }
+}
+
+/// `POST /prompt-assist`: the goal in the user's words, and the prompt and tools so far.
+public struct PromptAssistBody: Codable, Sendable {
+    public var goal: String
+    public var currentPrompt: String?
+    public var tools: [String]?
+
+    public init(goal: String, currentPrompt: String? = nil, tools: [String]? = nil) {
+        self.goal = goal
+        self.currentPrompt = currentPrompt
+        self.tools = tools
+    }
+}
+
+public struct PromptAssistResult: Codable, Sendable, Hashable {
+    public var suggestion: PromptSuggestion?
+    public var error: String?
+    public var model: String
+    public var costUSD: Double?
+
+    public init(suggestion: PromptSuggestion? = nil, error: String? = nil, model: String, costUSD: Double? = nil) {
+        self.suggestion = suggestion
+        self.error = error
+        self.model = model
+        self.costUSD = costUSD
+    }
+}
+
 public struct SessionSpec: Codable, Sendable, Hashable {
     public var name: String
     public var cwd: String

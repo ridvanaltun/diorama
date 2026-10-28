@@ -95,6 +95,10 @@ public struct ControlClient: Sendable {
     public func setKey(_ key: String) async throws -> KeyStatus { try await request("PUT", "key", body: SetKeyRequest(key: key)) }
     public func deleteKey() async throws -> KeyStatus { try await request("DELETE", "key") }
     public func shutdown() async throws { let _: [String: String] = try await request("POST", "shutdown") }
+    /// Write with AI: a session prompt drafted from the goal (uses the rewrite key; counts toward the daily budget).
+    public func assistPrompt(goal: String, currentPrompt: String?, tools: [String]) async throws -> PromptAssistResult {
+        try await request("POST", "prompt-assist", body: PromptAssistBody(goal: goal, currentPrompt: currentPrompt, tools: tools))
+    }
 
     /// Asks the daemon to stop and waits (up to `timeout`) until its process has exited, so a
     /// new daemon can take the single-instance lock.

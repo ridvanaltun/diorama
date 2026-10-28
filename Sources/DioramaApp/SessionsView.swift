@@ -1176,6 +1176,7 @@ struct NewSessionSheet: View {
     @State private var installedHook: String?
     /// Claude Code hasn't trusted the folder (it skips project hooks until it does).
     @State private var notTrusted = false
+    @State private var assistingPrompt = false
     @State private var justInstalled = false
     @State private var makeFolderDefault = false
     @State private var savingLauncher = false
@@ -1247,7 +1248,13 @@ struct NewSessionSheet: View {
                         Toggle("Make this the folder's default profile", isOn: $makeFolderDefault)
                     }
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Session prompt")
+                        HStack {
+                            Text("Session prompt")
+                            Spacer()
+                            Button { assistingPrompt = true } label: { Label("Write with AI…", systemImage: "sparkles") }
+                                .buttonStyle(.link).font(.caption)
+                                .help("Describe what Claude should see differently; the rewrite model drafts the prompt")
+                        }
                         TextEditor(text: $prompt).font(.body).frame(height: 70).scrollContentBackground(.hidden)
                             .padding(4).background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
                             .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
@@ -1361,6 +1368,13 @@ struct NewSessionSheet: View {
         .frame(width: 620)
         .fixedSize(horizontal: false, vertical: true)
         .onChange(of: folder, initial: true) { refreshInstalled() }
+        .sheet(isPresented: $assistingPrompt) {
+            PromptAssistSheet(currentPrompt: prompt, currentTools: promptTools) { s in
+                prompt = s.prompt
+                promptTools = s.tools.joined(separator: ",")
+            }
+            .environment(model)
+        }
         .onChange(of: mode) { refreshInstalled() }
         // Back from Terminal, where the folder may just have been trusted.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in refreshInstalled() }

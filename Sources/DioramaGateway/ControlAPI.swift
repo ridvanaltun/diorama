@@ -373,6 +373,10 @@ struct ControlAPI: Sendable {
             let r = try store.applyRetention(days: store.settings().retentionDays)
             return try ok(MaintenanceResult(exchangesCleared: r.cleared, blobsRemoved: r.blobsRemoved, blobBytes: store.blobs.totalBytes()))
         }
+        if Self.match(method, route, "POST", "prompt-assist") != nil {
+            let b = try decode(PromptAssistBody.self, req)
+            return try ok(await daemon.engine.assistPrompt(goal: b.goal, currentPrompt: b.currentPrompt, tools: b.tools ?? []))
+        }
         if Self.match(method, route, "POST", "shutdown") != nil {
             Task { try? await Task.sleep(for: .milliseconds(100)); await daemon.stop() }
             return try ok(["status": "stopping"])

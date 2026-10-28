@@ -23,6 +23,7 @@ final class TestEnv: @unchecked Sendable {
         let mock = mock ?? MockUpstream()
         if mock.port == 0 { try await mock.start() }
         var o = DioramaDaemon.Options(paths: DioramaPaths(home: home))
+        o.claudeUserSettings = home.appendingPathComponent("claude-user-settings.json")
         o.port = 0
         o.upstream = mock.url
         o.providerOverride = provider
@@ -352,6 +353,7 @@ func sampleBody(results: [(id: String, text: String)] = [("toolu_x", "Example Do
         let db = DioramaPaths(home: env.home).database
         let before = try FileManager.default.attributesOfItem(atPath: db.path)[.modificationDate] as? Date
         var o = DioramaDaemon.Options(paths: DioramaPaths(home: env.home))
+        o.claudeUserSettings = env.home.appendingPathComponent("claude-user-settings.json")
         o.secrets = MemorySecretStore("sk-ant-test-key-not-real-000000")
         #expect(throws: (any Error).self) { _ = try DioramaDaemon(options: o) }
         // The running daemon's database was neither migrated again nor moved aside.
@@ -359,6 +361,31 @@ func sampleBody(results: [(id: String, text: String)] = [("toolu_x", "Example Do
         #expect(!files.contains { $0.contains("corrupt") })
         #expect(try FileManager.default.attributesOfItem(atPath: db.path)[.modificationDate] as? Date == before)
         #expect(try await env.client.health().pid == getpid())
+    }
+
+    @Test func promptAssistDraftsWithinTheBudgetAndRecordsTheCost() async throws {
+        let seen = Box<PromptAssistRequest?>(nil)
+        let provider = ScriptedRewriteProvider(assistant: { r in
+            seen.value = r
+            return PromptAssistResponse(suggestion: PromptSuggestion(prompt: "Say version 2 is deprecated; change nothing else.", tools: ["WebFetch"], explanation: "Marks v2 deprecated."),
+                                        modelServed: r.model, usage: TokenUsage(inputTokens: 1000, outputTokens: 200))
+        }, handler: { _ in RewriteResponse(status: .unchanged, output: RewriteOutput(decision: .unchanged, explanation: ""), modelServed: "scripted") })
+        let env = try await TestEnv.start(provider: provider)
+        defer { Task { await env.stop() } }
+        let r = try await env.client.assistPrompt(goal: "make Claude think v2 is deprecated", currentPrompt: "Old", tools: ["Read"])
+        #expect(r.suggestion?.prompt == "Say version 2 is deprecated; change nothing else." && r.error == nil)
+        #expect((r.costUSD ?? 0) > 0)
+        #expect(seen.value?.currentPrompt == "Old" && seen.value?.tools == ["Read"] && seen.value?.model == ProfileDefaults.defaultModel)
+        #expect(try await env.client.spend().todayUSD == r.costUSD)
+
+        // Over the daily cap nothing is sent.
+        var settings = try await env.client.settings()
+        settings.dailyBudgetUSD = 0.0000001
+        _ = try await env.client.saveSettings(settings)
+        seen.value = nil
+        let blocked = try await env.client.assistPrompt(goal: "again", currentPrompt: nil, tools: [])
+        #expect(blocked.suggestion == nil && blocked.error?.hasPrefix("Not sent") == true && seen.value == nil)
+        #expect(try await env.client.assistPrompt(goal: "  ", currentPrompt: nil, tools: []).error != nil)
     }
 
     @Test func connectReplacesAnOutdatedIdleDaemonOnly() async throws {
@@ -523,5 +550,16 @@ func crc32(_ bytes: [UInt8]) -> UInt32 {
         #expect(UpdateChecker.compare("1.0.0-beta.1", "1.0.0") < 0)
         #expect(UpdateChecker.compare("1.10.0", "1.9.0") > 0)
         #expect(UpdateChecker.compare("2.0", "1.99.99") > 0)
+    }
+}
+
+/// A mutable value a test's @Sendable closure can write.
+final class Box<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value: T
+    init(_ value: T) { _value = value }
+    var value: T {
+        get { lock.withLock { _value } }
+        set { lock.withLock { _value = newValue } }
     }
 }

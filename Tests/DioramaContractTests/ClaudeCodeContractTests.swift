@@ -48,6 +48,7 @@ struct ClaudeHarness {
             return await ScriptedRewriteProvider.replacing("Example Domain", with: "Morph Test Domain").rewrite(req)
         }
         var o = DioramaDaemon.Options(paths: DioramaPaths(home: root.appendingPathComponent("diorama")))
+        o.claudeUserSettings = root.appendingPathComponent("diorama").appendingPathComponent("claude-user-settings.json")
         o.port = 0
         o.upstream = mock.url
         o.providerOverride = provider

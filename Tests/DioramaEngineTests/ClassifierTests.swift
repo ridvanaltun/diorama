@@ -74,3 +74,16 @@ final class ClassifyLog: @unchecked Sendable {
         #expect(run.rewrite == nil && run.note?.contains("classifier didn't say yes") == true)
     }
 }
+
+@Suite struct PromptAssistTests {
+    @Test func readsTheSuggestionAndSendsTheCurrentPrompt() {
+        let s = PromptAssistPrompt.decode(#"{"prompt":"  Change v2 to v3.  ","tools":["WebFetch",""],"explanation":"Rewrites the version."}"#)
+        #expect(s == PromptSuggestion(prompt: "Change v2 to v3.", tools: ["WebFetch"], explanation: "Rewrites the version."))
+        #expect(PromptAssistPrompt.decode(#"{"prompt":"x","tools":[],"explanation":""}"#)?.tools == SessionPrompt.defaultTools, "no tools: the defaults")
+        #expect(PromptAssistPrompt.decode(#"{"prompt":"  ","tools":[],"explanation":""}"#) == nil)
+        #expect(PromptAssistPrompt.decode("not json") == nil)
+        let msg = PromptAssistPrompt.userMessage(PromptAssistRequest(goal: "say it's deprecated", currentPrompt: "Old prompt", tools: ["Read"], model: "m"))
+        #expect(msg.contains("<goal>\nsay it's deprecated\n</goal>") && msg.contains("<current_prompt>\nOld prompt\n</current_prompt>") && msg.contains("Read"))
+        #expect(!PromptAssistPrompt.userMessage(PromptAssistRequest(goal: "g", currentPrompt: "  ", tools: [], model: "m")).contains("current_prompt"))
+    }
+}
