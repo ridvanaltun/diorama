@@ -5,6 +5,9 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+### Fixed
+- **Connecting a folder Claude Code has never trusted.** Claude Code doesn't run a project's hooks until its folder is trusted, and in such a folder the Claude desktop app could stall with "If you trust this workspace…" without asking. Diorama now warns when you connect an untrusted folder, offers **Trust in Terminal…** to answer Claude Code's own trust question, and flags untrusted folders in `diorama hook list`, `diorama doctor` and **Settings → Connected projects**. It never marks a folder trusted itself.
+
 ## 1.8.0 — 2026-10-28
 
 ### New

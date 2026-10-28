@@ -491,7 +491,8 @@ enum MCPTools {
             let command = try HookInstaller.command(cli: s.cliPath, config: HookConfig(profile: profile?.isEmpty == true ? nil : profile, prompt: prompt,
                                                                                                   lockdown: (a["lockdown"] as? String).flatMap(LockdownPreset.init(rawValue:)).flatMap { $0 == .none ? nil : $0 }))
             let url = try HookInstaller.install(command: command, settings: HookInstaller.projectSettings(folder), registry: s.hookRegistry)
-            return "Installed Diorama's hook in \(url.path). Start a new Claude Code session in that folder for it to take effect."
+            let trust = ClaudeTrust.isTrusted(folder) == false ? "\n\nWarning: " + ClaudeTrust.advice(for: folder) : ""
+            return "Installed Diorama's hook in \(url.path). Start a new Claude Code session in that folder for it to take effect." + trust
         },
         .init(
             name: "uninstall_hook",

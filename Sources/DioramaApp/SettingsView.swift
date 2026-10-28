@@ -336,6 +336,8 @@ struct ConnectedProjectsSection: View {
                         if p.cliMissing {
                             Label("Its diorama command no longer exists, so the hook does nothing. Connect the project again or remove it.", systemImage: "exclamationmark.triangle")
                                 .font(.caption).foregroundStyle(.orange)
+                        } else if p.notTrusted, let folder = p.folder {
+                            UntrustedFolderNote(folder: folder)
                         } else if p.outdated {
                             Label("Connected before input rules existed: connect it again to use them.", systemImage: "exclamationmark.triangle")
                                 .font(.caption).foregroundStyle(.orange)
@@ -358,6 +360,7 @@ struct ConnectedProjectsSection: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         .task(id: model.eventTick / 10) { refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in refresh() }
         .confirmationDialog("Remove Diorama's hook from \(removing.flatMap(\.folder).map(Fmt.shortPath) ?? "your user settings")?",
                             isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { p in
             Button("Remove Hook", role: .destructive) { remove([p]) }

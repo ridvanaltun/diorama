@@ -1174,6 +1174,8 @@ struct NewSessionSheet: View {
     @State private var claudeArgs = ""
     /// The Diorama hook currently installed in `folder` (hook mode), re-read after changes.
     @State private var installedHook: String?
+    /// Claude Code hasn't trusted the folder (it skips project hooks until it does).
+    @State private var notTrusted = false
     @State private var justInstalled = false
     @State private var makeFolderDefault = false
     @State private var savingLauncher = false
@@ -1221,6 +1223,9 @@ struct NewSessionSheet: View {
                         Label("A Diorama hook is already installed here. Installing again replaces it.", systemImage: "link")
                             .font(.caption).foregroundStyle(.secondary)
                             .help(installedHook)
+                    }
+                    if mode == .desktop, notTrusted {
+                        UntrustedFolderNote(folder: folder)
                     }
                 }
                 Section {
@@ -1349,8 +1354,14 @@ struct NewSessionSheet: View {
         .frame(width: 620)
         .fixedSize(horizontal: false, vertical: true)
         .onChange(of: folder, initial: true) { refreshInstalled() }
+        // Back from Terminal, where the folder may just have been trusted.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in refreshInstalled() }
         .onChange(of: mode) { justInstalled = false }
     }
 
-    func refreshInstalled() { installedHook = HookInstaller.installedCommand(settings: settingsFile) }
+    func refreshInstalled() {
+        installedHook = HookInstaller.installedCommand(settings: settingsFile)
+        let path = folder.trimmingCharacters(in: .whitespaces)
+        notTrusted = !path.isEmpty && FileManager.default.fileExists(atPath: (path as NSString).expandingTildeInPath) && ClaudeTrust.isTrusted(path) == false
+    }
 }

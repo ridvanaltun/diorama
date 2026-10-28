@@ -1114,6 +1114,8 @@ struct Doctor: AsyncParsableCommand {
                 let place = p.folder.map(abbreviatingHome) ?? "~/.claude/settings.json"
                 if p.cliMissing {
                     checks.append(DoctorCheck(name: "Hook", status: .warning, detail: "\(place) runs a diorama command that no longer exists; run `diorama hook install` there again or remove it"))
+                } else if p.notTrusted {
+                    checks.append(DoctorCheck(name: "Hook", status: .warning, detail: "\(place) isn't trusted by Claude Code, which skips its hook; run `claude` there once and accept the trust question"))
                 } else if p.outdated {
                     checks.append(DoctorCheck(name: "Hook", status: .warning, detail: "\(place) has an older hook without input rules; run `diorama hook install` there again"))
                 }

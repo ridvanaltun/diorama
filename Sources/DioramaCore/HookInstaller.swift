@@ -196,7 +196,7 @@ public enum HookInstaller {
 
     /// Every settings file that has Diorama's hook: the ones in `registry` plus the user settings.
     /// Entries whose hook is gone (removed by hand, folder deleted) are dropped from the registry.
-    public static func connected(registry: HookRegistry, userSettings user: URL = userSettings()) -> [HookedProject] {
+    public static func connected(registry: HookRegistry, userSettings user: URL = userSettings(), claudeConfig: URL = ClaudeTrust.configFile()) -> [HookedProject] {
         var found: [HookedProject] = []
         for path in Set(registry.files + [user.path]).sorted() {
             let url = URL(fileURLWithPath: path)
@@ -205,10 +205,12 @@ public enum HookInstaller {
                 continue
             }
             let cli = cliPath(in: command)
+            let folder = path == user.path ? nil : projectFolder(of: url)
             found.append(HookedProject(
-                settingsFile: path, folder: path == user.path ? nil : projectFolder(of: url), command: command, config: config(in: command),
+                settingsFile: path, folder: folder, command: command, config: config(in: command),
                 cliMissing: cli.map { !FileManager.default.isExecutableFile(atPath: $0) } ?? true,
-                outdated: !installedEvents(settings: url).contains("PreToolUse")))
+                outdated: !installedEvents(settings: url).contains("PreToolUse"),
+                notTrusted: folder.map { ClaudeTrust.isTrusted($0, config: claudeConfig) == false } ?? false))
         }
         return found
     }
@@ -278,8 +280,11 @@ public struct HookedProject: Codable, Sendable, Hashable, Identifiable {
     public var cliMissing: Bool
     /// Installed before input rules existed (no PreToolUse hook): install it again.
     public var outdated: Bool
+    /// Claude Code hasn't trusted the project folder, so it doesn't run the hook yet (`ClaudeTrust`).
+    public var notTrusted: Bool
 
-    public init(settingsFile: String, folder: String?, command: String, config: HookConfig?, cliMissing: Bool, outdated: Bool) {
+    public init(settingsFile: String, folder: String?, command: String, config: HookConfig?, cliMissing: Bool, outdated: Bool, notTrusted: Bool = false) {
+        self.notTrusted = notTrusted
         self.settingsFile = settingsFile
         self.folder = folder
         self.command = command

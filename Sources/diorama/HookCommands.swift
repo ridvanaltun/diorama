@@ -74,6 +74,10 @@ struct Hook: AsyncParsableCommand {
                 print("  Every Claude Code session on this account now reports to Diorama (sessions started with `diorama run` are handled by the gateway instead).")
             }
             print("  New Claude Code sessions in this folder use it, in the terminal and in the Claude desktop app. Remove it with `diorama hook uninstall`.")
+            if !target.user {
+                let folder = (target.folder ?? FileManager.default.currentDirectoryPath as String)
+                if ClaudeTrust.isTrusted(folder) == false { print("\n⚠ " + ClaudeTrust.advice(for: folder)) }
+            }
         }
     }
 
@@ -143,6 +147,7 @@ struct Hook: AsyncParsableCommand {
                 print("\(p.folder.map(abbreviatingHome) ?? "All sessions (~/.claude/settings.json)")  ·  \(p.config?.summary ?? "unknown configuration")")
                 if p.cliMissing { print("  ⚠ Its diorama command no longer exists, so the hook does nothing. Install it again or remove it.") }
                 if p.outdated { print("  ⚠ Installed before input rules existed: run `diorama hook install` there again.") }
+                if p.notTrusted { print("  ⚠ Claude Code hasn't trusted this folder, so it doesn't run the hook yet: run `claude` there once and accept the trust question.") }
             }
             print("\nRemove one with `diorama hook uninstall <folder>`, or all with `diorama hook uninstall --all`.")
         }

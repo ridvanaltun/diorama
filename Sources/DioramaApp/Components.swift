@@ -115,6 +115,29 @@ func chooseFolder(prompt: String = "Choose") -> String? {
 
 func shellQuote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 
+/// Opens Claude Code in `folder` in Terminal, where the user answers its own trust question.
+/// Diorama never records workspace trust itself.
+func trustInTerminal(_ folder: String) throws {
+    try openInTerminal("cd \(shellQuote((folder as NSString).expandingTildeInPath)) && claude")
+}
+
+/// Why a folder needs trusting, with the way to do it.
+struct UntrustedFolderNote: View {
+    let folder: String
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("Claude Code hasn't trusted this folder yet, so it won't run the hook, and the Claude desktop app can stall with \"If you trust this workspace…\" without asking. Trust it first: open Claude Code here once and accept the trust question.",
+                  systemImage: "exclamationmark.triangle")
+                .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            Button("Trust in Terminal…") { do { try trustInTerminal(folder) } catch { model.report(error) } }
+                .controlSize(.small)
+                .help("Opens Claude Code in this folder in Terminal; accept its trust question, then quit it")
+        }
+    }
+}
+
 /// Opens Terminal.app running `command` via a temporary `.command` script.
 func openInTerminal(_ command: String) throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("diorama-launch", isDirectory: true)

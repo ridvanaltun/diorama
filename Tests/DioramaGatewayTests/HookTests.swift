@@ -224,4 +224,36 @@ extension HookEndpointTests {
         try HookInstaller.install(command: "'/x/diorama' hook run", settings: user)
         #expect(HookInstaller.locate(cwd: sub.path, userSettings: user).map(\.path) == [project.path, user.path])
     }
+
+    @Test func claudeTrustFollowsClaudeCodesRules() throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("diorama-trust-\(UUID().uuidString)").standardizedFileURL
+        let plain = base.appendingPathComponent("work/plain/sub"), repo = base.appendingPathComponent("work/repo")
+        try FileManager.default.createDirectory(at: plain, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: repo.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: repo.appendingPathComponent("src"), withIntermediateDirectories: true)
+        let config = base.appendingPathComponent(".claude.json")
+        func trust(_ paths: [URL]) throws {
+            let projects = Dictionary(uniqueKeysWithValues: paths.map { ($0.path, ["hasTrustDialogAccepted": true]) })
+            try JSONSerialization.data(withJSONObject: ["projects": projects]).write(to: config)
+        }
+        #expect(ClaudeTrust.isTrusted(plain.path, config: config) == nil, "no config, no verdict")
+        try trust([])
+        #expect(ClaudeTrust.isTrusted(plain.path, config: config) == false)
+        // Outside a repository a trusted parent counts.
+        try trust([base.appendingPathComponent("work")])
+        #expect(ClaudeTrust.isTrusted(plain.path, config: config) == true)
+        // Inside one, only folders up to its root do.
+        #expect(ClaudeTrust.isTrusted(repo.appendingPathComponent("src").path, config: config) == false)
+        try trust([repo])
+        #expect(ClaudeTrust.isTrusted(repo.appendingPathComponent("src").path, config: config) == true)
+        #expect(ClaudeTrust.advice(for: repo.path).contains("run `claude` in that folder"))
+
+        // Connected projects carry the verdict.
+        let registry = HookRegistry(paths: DioramaPaths(home: base.appendingPathComponent("home")))
+        try HookInstaller.install(command: "'/x/diorama' hook run", settings: HookInstaller.projectSettings(plain.path), registry: registry)
+        try HookInstaller.install(command: "'/x/diorama' hook run", settings: HookInstaller.projectSettings(repo.path), registry: registry)
+        let list = HookInstaller.connected(registry: registry, userSettings: base.appendingPathComponent("user.json"), claudeConfig: config)
+        #expect(list.first { $0.folder == plain.path }?.notTrusted == true)
+        #expect(list.first { $0.folder == repo.path }?.notTrusted == false)
+    }
 }
