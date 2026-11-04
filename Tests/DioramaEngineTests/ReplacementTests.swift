@@ -42,4 +42,17 @@ import Testing
         }
         #expect(LockdownPreset.none.blockedProgram(in: "curl x") == nil)
     }
+
+    @Test func findsNetworkCommandsBehindWrappers() {
+        let l = LockdownPreset.network
+        for cmd in ["timeout 10 curl https://x", "timeout -s KILL 5s curl x", "nice curl x", "nice -n 5 curl x", "sudo -u root curl x",
+                    "sudo --user root -E curl x", "sudo -n curl x", "stdbuf -oL curl x", "ionice -c 2 -n 0 curl x", "/usr/bin/env curl x",
+                    "env -u HOME FOO=1 curl x", "bash -c 'curl x'", "sh -lc \"curl x\"", "bash -o pipefail -c 'curl x'", "xargs -n 1 curl",
+                    "taskset 0x3 curl x", "sudo timeout 10 nice -n 5 curl x", "eval \"curl x\""] {
+            #expect(l.blockedProgram(in: cmd) == "curl", "\(cmd)")
+        }
+        for cmd in ["command -v curl", "type curl", "timeout 10 grep curl notes.txt", "sudo -u root git status", "bash script.sh", "nice -n 5 make"] {
+            #expect(l.blockedProgram(in: cmd) == nil, "\(cmd)")
+        }
+    }
 }

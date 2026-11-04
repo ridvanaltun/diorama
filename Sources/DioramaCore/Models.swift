@@ -468,24 +468,55 @@ public enum LockdownPreset: String, Codable, Sendable, CaseIterable {
         }
     }
 
+    /// Commands that run the command after them, each with its options that take a separate
+    /// argument ("sudo -u root curl"). Shells count too, so "bash -c 'curl x'" is caught.
+    private static let wrappers: [String: Set<String>] = {
+        let shell: Set<String> = ["-o", "-O"]
+        return [
+            "sudo": ["-u", "-g", "-h", "-p", "-C", "-D", "-r", "-t", "-U", "-T", "-R", "--user", "--group", "--host", "--prompt",
+                     "--chdir", "--close-from", "--role", "--type", "--other-user", "--command-timeout", "--chroot"],
+            "doas": ["-u", "-C"], "env": ["-u", "-C", "-P", "--unset", "--chdir"], "command": [], "builtin": [], "exec": ["-a"],
+            "eval": [], "nohup": [], "time": ["-o", "-f"], "xargs": ["-a", "-d", "-E", "-I", "-J", "-L", "-n", "-P", "-R", "-S", "-s"],
+            "timeout": ["-s", "-k", "--signal", "--kill-after"], "nice": ["-n", "--adjustment"],
+            "ionice": ["-c", "-n", "-p", "-P", "-u", "--class", "--classdata"], "stdbuf": ["-i", "-o", "-e", "--input", "--output", "--error"],
+            "chrt": [], "taskset": [], "caffeinate": ["-t", "-w"], "watch": ["-n", "--interval"], "unbuffer": [], "torsocks": [],
+            "proxychains": ["-f"], "proxychains4": ["-f"],
+            "sh": shell, "bash": shell, "zsh": shell, "dash": shell, "ksh": shell,
+        ]
+    }()
+
     /// The blocked program a shell command runs, if any: any simple command in it (after `;`, `&&`,
-    /// `|`, `$(`, …), past environment assignments, `sudo`/`env`/`command`, and with any path
-    /// ("/usr/bin/curl"). A deterrent, not a sandbox: an interpreter can still fetch pages.
+    /// `|`, `$(`, …), past environment assignments, behind wrappers such as `sudo -u root`,
+    /// `timeout 10` or `nice -n 5` (see `wrappers`), and with any path ("/usr/bin/curl").
+    /// A deterrent, not a sandbox: an interpreter can still fetch pages.
     public func blockedProgram(in command: String) -> String? {
         let blocked = blockedPrograms
         guard !blocked.isEmpty else { return nil }
         var normalized = command
         for sep in ["&&", "||", ";", "|", "&", "$(", "`", "(", ")", "\n", "{", "}"] { normalized = normalized.replacingOccurrences(of: sep, with: "\n") }
-        for part in normalized.split(separator: "\n") {
-            var words = part.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
-            while let w = words.first, w.contains("=") && !w.hasPrefix("=") || ["sudo", "env", "command", "exec", "nohup", "time", "xargs"].contains(w) || w.hasPrefix("-") {
-                words.removeFirst()
+        parts: for part in normalized.split(separator: "\n") {
+            let words = part.split(whereSeparator: { $0 == " " || $0 == "\t" }).map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")) }
+            var i = 0
+            while i < words.count, words[i].contains("="), !words[i].hasPrefix("=") { i += 1 }
+            while i < words.count {
+                let program = (words[i] as NSString).lastPathComponent
+                if blocked.contains(program) { return program }
+                guard let takesArgument = Self.wrappers[program] else { continue parts }
+                i += 1
+                // Past the wrapper's options and their arguments, `env`'s assignments and numbers
+                // such as `timeout`'s duration or `taskset`'s mask.
+                while i < words.count, words[i].hasPrefix("-") || words[i].contains("=") || Self.isNumber(words[i]) {
+                    // `command -v curl` only looks the program up.
+                    if program == "command", ["-v", "-V"].contains(words[i]) { continue parts }
+                    i += takesArgument.contains(words[i]) ? 2 : 1
+                }
             }
-            guard let first = words.first else { continue }
-            let program = (first.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")) as NSString).lastPathComponent
-            if blocked.contains(program) { return program }
         }
         return nil
+    }
+
+    private static func isNumber(_ word: String) -> Bool {
+        word.range(of: #"^([0-9][0-9.,-]*[smhd]?|0x[0-9a-fA-F]+)$"#, options: .regularExpression) != nil
     }
 }
 
