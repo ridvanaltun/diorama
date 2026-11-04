@@ -5,6 +5,8 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+## 1.9.2 — 2026-11-04
+
 ### Fixed
 - **Lockdown missed network commands behind some wrappers** ([#1](https://github.com/ridvanaltun/diorama/issues/1)). In hook mode, `timeout 10 curl …`, `nice -n 5 curl …`, `sudo -u root curl …`, `stdbuf -oL curl …`, `/usr/bin/env curl …` and `bash -c 'curl …'` got through. The check now looks past these wrappers and their options, wrappers nested in each other, and wrappers given with a full path. `command -v curl`, which only looks curl up, is no longer refused. Thanks to Matt Abate for the report.
 
