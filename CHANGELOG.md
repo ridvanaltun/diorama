@@ -5,6 +5,8 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+## 1.10.0 — 2026-11-07
+
 ### New
 - **OpenCode support.** `diorama run --agent opencode` starts OpenCode 2 routed through the gateway: its Anthropic provider points at the session's gateway URL through `OPENCODE_CONFIG_CONTENT` (no file changes), on a private server (`--standalone`). Rewrites, replay, audit records and the timeline work as with Claude Code. Only Anthropic models are routed. Rules match either agent's tool names (`WebFetch` also matches `webfetch`, `Bash` matches `shell`, and so on), so existing profiles keep working. Lockdown becomes OpenCode permission rules. Input rules and page rules don't apply to OpenCode. `diorama doctor` reports the OpenCode install.
 - **OpenCode plugin (hook mode for OpenCode).** `diorama hook install --opencode` adds Diorama's plugin to a project's `.opencode/plugins` (or, with `--user`, to `~/.config/opencode/plugins`). Every OpenCode session there sends its tool results to Diorama, **with any model provider**, and gets the rewrite back; lockdown refuses network commands in the `shell` tool. Like Claude desktop's hook mode it records tool results only. The plugin file holds only the CLI path and a configuration id. `hook status`, `hook uninstall`, `hook list`, `hook uninstall --all`, the MCP hook tools (`agent: "opencode"`) and **Settings → Connected projects** handle plugins too.
