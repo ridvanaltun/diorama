@@ -2,6 +2,17 @@
 
 This file is kept current while work is in progress, so that progress survives restarts and context limits.
 
+## OpenCode support (2026-11-07, Unreleased)
+
+| # | Item | State |
+|---|---|---|
+| 1 | Spike against OpenCode 2.1.4 and a mock upstream (`spikes/opencode-poc`) | ✅ Request format, headers, inline config precedence, `--standalone`, plugin hooks, user plugin folder, session events |
+| 2 | Gateway: `diorama run --agent opencode` (D47) | ✅ Tool-name equivalence in rule matching, lockdown as OpenCode permissions, `x-opencode-session-id`, doctor check. Verified end to end with the real binary |
+| 3 | Plugin: `diorama hook install --opencode` (D48) | ✅ Rewrites, lockdown and session end verified end to end with the real binary, with and without the gateway |
+| 4 | App and MCP | ✅ New Session asks for the agent first, then Terminal or desktop & IDEs for either (launchers keep the agent), OpenCode badge, connected-projects list; MCP hook tools take `agent`. Snapshot test covers the new sheet |
+| 5 | Experiments with `opencode run` (D49) | ✅ Contract test with the real binary: rewrites, frozen treatment, judge, permissions, manifest masking. Found and handled OpenCode's database races on concurrent starts |
+| 6 | Input rules for OpenCode | Not planned: no way to make the user approve a changed input (D39) |
+
 ## v1.1.0 work in progress (2026-10-25)
 The user doesn't want an Apple Developer account (no signing or notarization). Everything else from the follow-up list:
 

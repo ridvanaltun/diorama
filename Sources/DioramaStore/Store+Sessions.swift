@@ -30,6 +30,7 @@ public struct SessionRecord: Sendable, Hashable {
     public var archived = false
     /// Profile rule ids (or "session-prompt") switched off for this session only.
     public var disabledRules: [String] = []
+    public var agent: CodingAgent = .claude
 }
 
 extension Store {
@@ -49,21 +50,21 @@ extension Store {
         try db.run(
             """
             INSERT INTO sessions(id, token_hash, name, cwd, kind, status, created_at, profile_id, profile_version_id,
-              prompt, lockdown, trial_id, on_failure, treatment_scope, via)
-            VALUES(?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              prompt, lockdown, trial_id, on_failure, treatment_scope, via, agent)
+            VALUES(?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 .text(id), .text(tokenHash), .text(spec.name), .text(spec.cwd), .text(spec.kind.rawValue), .date(now),
                 .optional(version?.profileId), .optional(version?.id), spec.prompt.map { .text(json($0)) } ?? .null,
                 .text(spec.lockdown.rawValue), .optional(spec.trialId), .optional(spec.onFailure?.rawValue),
-                .optional(spec.treatmentScope), .text((spec.via ?? .gateway).rawValue),
+                .optional(spec.treatmentScope), .text((spec.via ?? .gateway).rawValue), .text((spec.agent ?? .claude).rawValue),
             ])
         addEvent(sessionId: id, kind: .sessionCreated, message: "Session '\(spec.name)' created", refId: id)
         return SessionRecord(
             id: id, name: spec.name, cwd: spec.cwd, kind: spec.kind, status: .active, createdAt: now, endedAt: nil,
             profileId: version?.profileId, profileVersion: version, prompt: spec.prompt, lockdown: spec.lockdown,
             trialId: spec.trialId, onFailure: spec.onFailure, treatmentScope: spec.treatmentScope, claudeSessionIds: [], flags: [],
-            via: spec.via ?? .gateway)
+            via: spec.via ?? .gateway, agent: spec.agent ?? .claude)
     }
 
     func sessionRecord(_ r: Row) throws -> SessionRecord {
@@ -81,7 +82,8 @@ extension Store {
             flags: decode([String].self, r.string("flags")) ?? [],
             via: SessionVia(rawValue: r.string("via") ?? "") ?? .gateway, transcriptPath: r.string("transcript_path"),
             paused: (r.int("paused") ?? 0) != 0, notes: r.string("notes") ?? "", tags: decode([String].self, r.string("tags")) ?? [],
-            archived: (r.int("archived") ?? 0) != 0, disabledRules: decode([String].self, r.string("disabled_rules")) ?? [])
+            archived: (r.int("archived") ?? 0) != 0, disabledRules: decode([String].self, r.string("disabled_rules")) ?? [],
+            agent: CodingAgent(rawValue: r.string("agent") ?? "") ?? .claude)
     }
 
     public func session(id: String) throws -> SessionRecord? {
@@ -231,7 +233,7 @@ extension Store {
             profileId: r.profileId, profileName: r.profileVersion?.profile.name, profileVersionId: r.profileVersion?.id,
             profileVersionNumber: r.profileVersion?.number, prompt: r.prompt, lockdown: r.lockdown, trialId: r.trialId,
             claudeSessionIds: r.claudeSessionIds, flags: r.flags, stats: try stats(sessionId: r.id), via: r.via, paused: r.paused,
-            notes: r.notes, tags: r.tags, archived: r.archived, disabledRules: r.disabledRules)
+            notes: r.notes, tags: r.tags, archived: r.archived, disabledRules: r.disabledRules, agent: r.agent)
     }
 
     /// Marks sessions left `active` by a previous daemon whose Claude process is gone.

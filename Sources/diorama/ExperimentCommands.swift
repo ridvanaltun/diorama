@@ -9,18 +9,24 @@ struct Experiment: AsyncParsableCommand {
         subcommands: [Init.self, Create.self, List.self, Show.self, RunCommand.self, Status.self, Cancel.self, Compare.self, ReportCommand.self])
 
     struct Init: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Print an example experiment definition to start from.")
+        static let configuration = CommandConfiguration(
+            abstract: "Print an example experiment definition to start from.",
+            discussion: "With --agent opencode, trials run `opencode run` (Anthropic models only) instead of `claude -p`.")
+        @Option(help: "The agent trials run: claude or opencode.") var agent: CodingAgent = .claude
         func run() throws {
+            let opencode = agent == .opencode
             let example = ExperimentDefinition(
                 name: "Docs steering pilot",
                 task: "Read https://example.com and summarize what the page says in two sentences.",
                 projectPath: FileManager.default.currentDirectoryPath,
-                claude: ClaudeRunOptions(model: "claude-sonnet-5-5", allowedTools: ["WebFetch", "Read"], maxTurns: 10, maxBudgetUSD: 1.0),
+                claude: opencode
+                    ? ClaudeRunOptions(model: "claude-sonnet-4-5", allowedTools: ["webfetch", "read"], maxTurns: 10)
+                    : ClaudeRunOptions(model: "claude-sonnet-5-5", allowedTools: ["WebFetch", "Read"], maxTurns: 10, maxBudgetUSD: 1.0),
                 variants: [
                     ExperimentVariant(key: "control", name: "Unmodified"),
                     ExperimentVariant(key: "steered", name: "Steered page", prompt: SessionPrompt(text: "Change the page's main heading to 'Morph Test Domain'. Keep everything else.")),
                 ],
-                trialsPerVariant: 3, concurrency: 2, treatment: .frozen)
+                trialsPerVariant: 3, concurrency: 2, treatment: .frozen, agent: opencode ? .opencode : nil)
             print(String(decoding: try DioramaCoding.prettyEncoder.encode(example), as: UTF8.self))
         }
     }

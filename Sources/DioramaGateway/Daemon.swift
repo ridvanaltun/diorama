@@ -34,6 +34,11 @@ public final class DioramaDaemon: @unchecked Sendable {
         public var judgeOverride: JudgeProvider?
         /// Claude Code's user settings, checked for Diorama's hook (tests point it elsewhere).
         public var claudeUserSettings = HookInstaller.userSettings()
+        /// The user-wide OpenCode plugin file, checked for Diorama's plugin (tests point it elsewhere).
+        public var openCodeUserPlugin = OpenCodePlugin.userFile()
+        /// Ends hook sessions whose hook was removed, every 10 s. Tests turn it off and call
+        /// `endDisconnectedHookSessions` themselves, so it can't race their hook sessions.
+        public var watchDisconnectedHooks = true
 
         public init(paths: DioramaPaths) { self.paths = paths }
     }
@@ -104,6 +109,7 @@ public final class DioramaDaemon: @unchecked Sendable {
         runner = ExperimentRunner(
             store: store, paths: options.paths, environment: options.environment,
             claudePath: { [store] in ClaudeLocator.find(configured: store.settings().claudePath, environment: options.environment) },
+            opencodePath: { OpenCodeLocator.find(environment: options.environment) },
             judge: options.judgeOverride ?? RoutingJudge(anthropic: AnthropicJudge(baseURL: options.rewriteBaseURL, apiKey: { secrets.get() }), ollama: ollama),
             makeSession: { spec in
                 guard let make = factory.make else { throw RunnerError("daemon is shutting down") }
@@ -138,24 +144,33 @@ public final class DioramaDaemon: @unchecked Sendable {
         })
         background.append(Task.detached(priority: .utility) { [store] in Self.backfillSearch(store: store) })
         // Connected projects: note where the hooks of earlier hook sessions live.
-        background.append(Task.detached(priority: .utility) { [store, hookRegistry, user = options.claudeUserSettings] in
-            for cwd in store.hookSessionFolders() { Self.noteHook(cwd: cwd, registry: hookRegistry, userSettings: user) }
+        background.append(Task.detached(priority: .utility) { [store, hookRegistry, user = options.claudeUserSettings, plugin = options.openCodeUserPlugin] in
+            for cwd in store.hookSessionFolders() { Self.noteHook(cwd: cwd, registry: hookRegistry, userSettings: user, userPlugin: plugin) }
             // Hooks from earlier versions carry their prompt in the settings file, where Claude can read it.
-            for p in HookInstaller.connected(registry: hookRegistry, userSettings: user)
-            where (try? HookInstaller.moveConfigOut(settings: URL(fileURLWithPath: p.settingsFile), configs: hookRegistry.configs)) == true {
-                store.addEvent(sessionId: nil, kind: .warning, message: "Moved Diorama's hook settings out of \(p.settingsFile), so Claude can't read the prompt there (same configuration)")
+            let transcripts = OpenCodePlugin.transcriptsDirectory(home: hookRegistry.home)
+            for p in HookInstaller.connected(registry: hookRegistry, userSettings: user, userPlugin: plugin) {
+                let file = URL(fileURLWithPath: p.settingsFile)
+                if (try? HookInstaller.moveConfigOut(settings: file, configs: hookRegistry.configs)) == true {
+                    store.addEvent(sessionId: nil, kind: .warning, message: "Moved Diorama's hook settings out of \(p.settingsFile), so Claude can't read the prompt there (same configuration)")
+                }
+                // OpenCode plugins from earlier versions get the current template (same CLI, id and lockdown).
+                if OpenCodePlugin.isPluginFile(file), OpenCodePlugin.refresh(file: file, configs: hookRegistry.configs, transcripts: transcripts) {
+                    store.addEvent(sessionId: nil, kind: .warning, message: "Updated Diorama's OpenCode plugin in \(p.settingsFile) to this version (same configuration)")
+                }
             }
         })
-        background.append(Task { [store] in
+        background.append(Task { [store, transcripts = OpenCodePlugin.transcriptsDirectory(home: options.paths.home)] in
             while !Task.isCancelled {
-                _ = try? store.applyRetention(days: store.settings().retentionDays)
+                let days = store.settings().retentionDays
+                _ = try? store.applyRetention(days: days)
+                Self.pruneTranscripts(in: transcripts, olderThanDays: days)
                 try? await Task.sleep(for: .seconds(24 * 3600))
             }
         })
         // A hook session ends when Claude Code reports it; once its hook is removed it never will.
-        background.append(Task.detached(priority: .utility) { [store, user = options.claudeUserSettings] in
-            while !Task.isCancelled {
-                Self.endDisconnectedHookSessions(store: store, userSettings: user)
+        background.append(Task.detached(priority: .utility) { [store, user = options.claudeUserSettings, plugin = options.openCodeUserPlugin, watch = options.watchDisconnectedHooks] in
+            while watch, !Task.isCancelled {
+                Self.endDisconnectedHookSessions(store: store, userSettings: user, userPlugin: plugin)
                 try? await Task.sleep(for: .seconds(10))
             }
         })
@@ -223,6 +238,7 @@ public final class DioramaDaemon: @unchecked Sendable {
         let token = Hashing.randomToken()
         let record = try store.createSession(spec, tokenHash: Hashing.sha256Hex(token))
         let base = "\(baseURL)/s/\(token)"
+        if spec.agent == .opencode { return try openCodeLaunch(spec, record: record, token: token, base: base) }
         // DIORAMA_SESSION tells an installed Diorama hook that the gateway already handles this session.
         let env = ["ANTHROPIC_BASE_URL": base, "CLAUDE_CODE_GATEWAY_HINT_HEADERS": "1", "DIORAMA_SESSION": record.id]
         // Passing the same env through --settings makes it win over an `env` block in the user's
@@ -243,6 +259,23 @@ public final class DioramaDaemon: @unchecked Sendable {
         }
         let json = String(decoding: try JSONSerialization.data(withJSONObject: settings, options: [.sortedKeys, .withoutEscapingSlashes]), as: UTF8.self)
         return SessionLaunch(session: try store.info(record), token: token, baseURL: base, environment: env, claudeArguments: ["--settings", json])
+    }
+
+    /// An OpenCode session: its Anthropic provider is routed through the gateway with inline
+    /// configuration, on a private server (`--standalone`). The shared background service makes
+    /// the model calls of every other OpenCode window and never sees this session's environment.
+    func openCodeLaunch(_ spec: SessionSpec, record: SessionRecord, token: String, base: String) throws -> SessionLaunch {
+        let config = OpenCodeLaunch.configuration(gatewayBase: base, lockdown: spec.lockdown)
+        let json = String(decoding: try JSONSerialization.data(withJSONObject: config, options: [.sortedKeys, .withoutEscapingSlashes]), as: UTF8.self)
+        let rules = record.profileVersion?.profile.rules.filter(\.enabled) ?? []
+        if rules.contains(where: { $0.match.stage == .input }) || spec.prompt?.stage == .input {
+            store.addEvent(sessionId: record.id, kind: .warning, message: "Input rules don't apply to OpenCode sessions yet; only tool results are steered", refId: record.id)
+        }
+        if rules.contains(where: { $0.match.stage == .page }) || spec.prompt?.stage == .page {
+            store.addEvent(sessionId: record.id, kind: .warning, message: "Page rules don't apply to OpenCode: its webfetch has no separate summarizing step, so use result rules instead", refId: record.id)
+        }
+        let env = [OpenCodeLaunch.configVariable: json, "DIORAMA_SESSION": record.id]
+        return SessionLaunch(session: try store.info(record), token: token, baseURL: base, environment: env, claudeArguments: ["--standalone"])
     }
 
     // MARK: Search index
@@ -299,7 +332,7 @@ public final class DioramaDaemon: @unchecked Sendable {
         if task?.isEmpty ?? true {
             notes.append("The session's first prompt wasn't recorded (raw capture off, or an older session). Write the task before creating.")
         } else {
-            notes.append("The task is the session's first prompt. Experiments run it with `claude -p`, so make sure it works without follow-up questions.")
+            notes.append("The task is the session's first prompt. Experiments run it with `\(session.agent == .opencode ? "opencode run" : "claude -p")`, so make sure it works without follow-up questions.")
         }
 
         // Tools and model, from what the session actually used.
@@ -310,10 +343,21 @@ public final class DioramaDaemon: @unchecked Sendable {
             allowed = ["WebFetch", "WebSearch", "Read"]
             notes.append("No tool calls were recorded; allowed tools default to WebFetch, WebSearch and Read.")
         }
-        let usesMCP = allowed.contains { $0.hasPrefix("mcp__") }
-        if usesMCP { notes.append("The session used MCP tools, so trials use your Claude Code configuration (not isolated) to have them.") }
+        // OpenCode names MCP and plugin tools `<server>_<tool>`: anything that isn't built in.
+        let usesMCP = session.agent == .opencode
+            ? allowed.contains { !OpenCodeTrial.builtInTools.contains($0) }
+            : allowed.contains { $0.hasPrefix("mcp__") }
+        if usesMCP {
+            notes.append(session.agent == .opencode
+                         ? "The session used tools that aren't built into OpenCode (MCP servers or plugins), so trials use your OpenCode configuration (not isolated) to have them."
+                         : "The session used MCP tools, so trials use your Claude Code configuration (not isolated) to have them.")
+        }
         let models = mains.compactMap(\.model)
         let model = Dictionary(grouping: models, by: { $0 }).max { $0.value.count < $1.value.count }?.key
+        let openCode = session.agent == .opencode
+        if openCode, model == nil {
+            notes.append("OpenCode trials need an Anthropic model (only those are routed through Diorama); this session didn't record one, so set it before creating.")
+        }
         let turns = session.via == .hook ? (try store.decisions(sessionId: session.id).count) : mains.count
         let maxTurns = max(10, min(50, turns * 2))
 
@@ -338,9 +382,9 @@ public final class DioramaDaemon: @unchecked Sendable {
 
         let definition = ExperimentDefinition(
             name: "\(session.name) — experiment", task: task ?? "", projectPath: session.cwd,
-            claude: ClaudeRunOptions(model: model, allowedTools: allowed, maxTurns: maxTurns, maxBudgetUSD: 2, isolateConfiguration: !usesMCP),
+            claude: ClaudeRunOptions(model: model, allowedTools: allowed, maxTurns: maxTurns, maxBudgetUSD: openCode ? nil : 2, isolateConfiguration: !usesMCP),
             variants: [ExperimentVariant(key: "control", name: "Unmodified"), steered],
-            trialsPerVariant: max(1, min(trialsPerVariant, 200)), concurrency: 2)
+            trialsPerVariant: max(1, min(trialsPerVariant, 200)), concurrency: 2, agent: openCode ? .opencode : nil)
         notes.append("Trials run in copies of \(session.cwd); the folder itself is never changed. Review the trial count, then estimate the cost before running.")
         return ExperimentDraft(definition: definition, notes: notes)
     }
@@ -649,6 +693,8 @@ public final class DioramaDaemon: @unchecked Sendable {
         guard let session = try hookSession(e) else { return HookReply() }
         if e.event == "PreToolUse" {
             if let blocked = lockdownBlock(e, session: session) { return blocked }
+            // The OpenCode plugin can't ask the user to approve a changed input (D39), so input rules don't apply there.
+            if e.isOpenCode { return HookReply(sessionId: session.id) }
             return await decideInput(e, session: session)
         }
         if let path = e.transcriptPath, session.transcriptPath != path { try? store.setTranscriptPath(sessionId: session.id, path) }
@@ -669,12 +715,13 @@ public final class DioramaDaemon: @unchecked Sendable {
 
     /// Lockdown in hook mode: refuse shell network commands that could fetch a page around a rewrite.
     func lockdownBlock(_ e: HookEvent, session: SessionRecord) -> HookReply? {
-        guard session.lockdown != .none, e.toolName == "Bash", let input = e.toolInput,
+        guard session.lockdown != .none, e.toolName.map(ToolNames.isShell) == true, let input = e.toolInput,
               let command = (try? JSONValue.parse(input))?["command"]?.stringValue,
               let program = session.lockdown.blockedProgram(in: command)
         else { return nil }
         store.addEvent(sessionId: session.id, kind: .warning, message: "Lockdown blocked a network command (\(program)): \(String(command.prefix(160)))", refId: e.toolUseId)
-        return HookReply(sessionId: session.id, deny: "Network commands like \(program) are blocked in this session (Diorama lockdown); use the WebFetch or WebSearch tools instead.")
+        let tools = e.isOpenCode ? "webfetch or websearch" : "WebFetch or WebSearch"
+        return HookReply(sessionId: session.id, deny: "Network commands like \(program) are blocked in this session (Diorama lockdown); use the \(tools) tools instead.")
     }
 
     func decideInput(_ e: HookEvent, session: SessionRecord) async -> HookReply {
@@ -702,8 +749,9 @@ public final class DioramaDaemon: @unchecked Sendable {
             if e.event == "SessionEnd" { return nil }
             let cwd = (e.cwd as NSString).expandingTildeInPath
             let folder = (cwd as NSString).lastPathComponent
-            let name = e.client == "claude-desktop" ? "\(folder) · Desktop" : folder
-            var spec = SessionSpec(name: name, cwd: cwd, profile: e.config.profile, prompt: e.config.prompt, lockdown: e.config.lockdown ?? .none, via: .hook)
+            let name = e.client == "claude-desktop" ? "\(folder) · Desktop" : e.isOpenCode ? "\(folder) · OpenCode" : folder
+            var spec = SessionSpec(name: name, cwd: cwd, profile: e.config.profile, prompt: e.config.prompt, lockdown: e.config.lockdown ?? .none, via: .hook,
+                                   agent: e.isOpenCode ? .opencode : .claude)
             let record: SessionRecord
             do {
                 record = try store.createSession(spec, tokenHash: key)
@@ -715,7 +763,9 @@ public final class DioramaDaemon: @unchecked Sendable {
                 store.addEvent(sessionId: record.id, kind: .anomaly, message: "Hook configuration rejected (\(err.description)); no rules are applied in this session", refId: record.id)
             }
             try store.recordClaudeSessionId(sessionId: record.id, claudeSessionId: e.claudeSessionId)
-            Task.detached(priority: .utility) { [hookRegistry, user = options.claudeUserSettings] in Self.noteHook(cwd: cwd, registry: hookRegistry, userSettings: user) }
+            Task.detached(priority: .utility) { [hookRegistry, user = options.claudeUserSettings, plugin = options.openCodeUserPlugin] in
+                Self.noteHook(cwd: cwd, registry: hookRegistry, userSettings: user, userPlugin: plugin)
+            }
             return record
         }
     }
@@ -723,16 +773,25 @@ public final class DioramaDaemon: @unchecked Sendable {
     /// Ends active hook sessions whose folder no longer has Diorama's hook (removed in the app, the
     /// CLI or by hand): Claude Code can't report their end any more. A session that does report
     /// again reopens (`hookSession`).
-    static func endDisconnectedHookSessions(store: Store, userSettings: URL) {
-        for s in store.activeHookSessions() where HookInstaller.locate(cwd: s.cwd, userSettings: userSettings).isEmpty {
-            store.addEvent(sessionId: s.id, kind: .warning, message: "Diorama's hook was removed from this project, so Claude Code can't report when this session ends; marked ended")
+    static func endDisconnectedHookSessions(store: Store, userSettings: URL, userPlugin: URL = OpenCodePlugin.userFile()) {
+        for s in store.activeHookSessions() where HookInstaller.locate(cwd: s.cwd, userSettings: userSettings, userPlugin: userPlugin).isEmpty {
+            store.addEvent(sessionId: s.id, kind: .warning, message: "Diorama's hook was removed from this project, so the agent can't report when this session ends; marked ended")
             try? store.endSession(id: s.id)
         }
     }
 
+    /// OpenCode transcripts follow the raw-capture retention: files untouched for longer are deleted.
+    static func pruneTranscripts(in dir: URL, olderThanDays days: Int, now: Date = Date()) {
+        let cutoff = now.addingTimeInterval(-Double(days) * 86_400)
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        for f in files where f.pathExtension == "jsonl" {
+            if let m = try? f.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, m < cutoff { try? FileManager.default.removeItem(at: f) }
+        }
+    }
+
     /// Records which settings files hold the hook a session in `cwd` runs, for `diorama hook list`.
-    static func noteHook(cwd: String, registry: HookRegistry, userSettings: URL) {
-        for url in HookInstaller.locate(cwd: cwd, userSettings: userSettings) { registry.add(url) }
+    static func noteHook(cwd: String, registry: HookRegistry, userSettings: URL, userPlugin: URL = OpenCodePlugin.userFile()) {
+        for url in HookInstaller.locate(cwd: cwd, userSettings: userSettings, userPlugin: userPlugin) { registry.add(url) }
     }
 
     func wantsTaskContext(_ s: SessionRecord) -> Bool {
@@ -781,6 +840,11 @@ public final class DioramaDaemon: @unchecked Sendable {
             checks.append(DoctorCheck(name: "Claude Code", status: .ok, detail: "\(claude) — \(ClaudeLocator.version(at: claude) ?? "version unknown")"))
         } else {
             checks.append(DoctorCheck(name: "Claude Code", status: .failure, detail: "`claude` not found on PATH; install Claude Code or set claudePath in settings"))
+        }
+        if let opencode = OpenCodeLocator.find(environment: options.environment) {
+            checks.append(DoctorCheck(name: "OpenCode (optional)", status: .ok, detail: "\(opencode) — \(ClaudeLocator.version(at: opencode) ?? "version unknown"); use `diorama run --agent opencode`"))
+        } else {
+            checks.append(DoctorCheck(name: "OpenCode (optional)", status: .ok, detail: "not found — only needed for `diorama run --agent opencode`"))
         }
         let key = keyStatus()
         let needsKey = options.providerOverride == nil && options.provider == .anthropic

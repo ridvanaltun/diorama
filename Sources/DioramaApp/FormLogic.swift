@@ -13,11 +13,13 @@ enum FormLogic {
         var pageStage = false
         var lockdown = LockdownPreset.none
         var claudeArgs = ""
+        var agent = CodingAgent.claude
     }
 
     /// The shell command that starts a routed session (every value shell-quoted).
     static func sessionCommand(_ f: SessionForm, cli: String) -> String {
         var parts = ["cd", shellQuote(f.folder), "&&", shellQuote(cli), "run"]
+        if f.agent == .opencode { parts += ["--agent", "opencode"] }
         if !f.name.isEmpty { parts += ["--name", shellQuote(f.name)] }
         if !f.profile.isEmpty { parts += ["--profile", shellQuote(f.profile)] }
         if !f.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -38,7 +40,8 @@ enum FormLogic {
     static func launcher(_ f: SessionForm, name: String, id: String? = nil) -> Launcher {
         let prompt = f.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         var l = Launcher(name: name, folder: f.folder, profile: f.profile.isEmpty ? nil : f.profile, prompt: prompt.isEmpty ? nil : f.prompt,
-                         promptTools: parseList(f.promptTools), taskContext: f.taskContext, pageStage: f.pageStage, lockdown: f.lockdown, claudeArgs: f.claudeArgs)
+                         promptTools: parseList(f.promptTools), taskContext: f.taskContext, pageStage: f.pageStage, lockdown: f.lockdown, claudeArgs: f.claudeArgs,
+                         agent: f.agent == .opencode ? .opencode : nil)
         if let id { l.id = id }
         return l
     }
@@ -119,6 +122,7 @@ enum FormLogic {
         var frozen = true
         var isolate = true
         var useJudge = false
+        var agent = CodingAgent.claude
         var variants: [ExperimentVariant] = [
             ExperimentVariant(key: "control", name: "Unmodified"),
             ExperimentVariant(key: "steered", name: "Steered", prompt: SessionPrompt(text: "")),
@@ -136,9 +140,10 @@ enum FormLogic {
         }
         return ExperimentDefinition(
             name: f.name, task: f.task, projectPath: f.project,
-            claude: ClaudeRunOptions(model: f.claudeModel.isEmpty ? nil : f.claudeModel, allowedTools: tools, maxTurns: f.maxTurns, maxBudgetUSD: f.budget, isolateConfiguration: f.isolate),
+            claude: ClaudeRunOptions(model: f.claudeModel.isEmpty ? nil : f.claudeModel, allowedTools: tools, maxTurns: f.maxTurns,
+                                     maxBudgetUSD: f.agent == .opencode ? nil : f.budget, isolateConfiguration: f.isolate),
             variants: variants, trialsPerVariant: f.trials, concurrency: f.concurrency, treatment: f.frozen ? .frozen : .fresh,
-            judge: f.useJudge ? JudgeConfig() : nil)
+            judge: f.useJudge ? JudgeConfig() : nil, agent: f.agent == .opencode ? .opencode : nil)
     }
 
     /// Problems that would make a rule silently never match or do nothing.

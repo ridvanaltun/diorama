@@ -320,20 +320,22 @@ struct ConnectedProjectsSection: View {
     @State private var projects: [HookedProject] = []
     @State private var removing: HookedProject?
     @State private var removingAll = false
-    @State private var editing: String?
+    @State private var editing: (folder: String, agent: CodingAgent)?
 
     var body: some View {
         Section {
             if projects.isEmpty {
-                Text("None. New Session → Desktop connects a project, so the Claude desktop app's Code tab and IDEs report to Diorama.")
+                Text("None. New Session → Claude desktop & IDEs connects a project, so the Claude desktop app's Code tab and IDEs report to Diorama; with OpenCode selected, OpenCode desktop & IDEs does the same for OpenCode Desktop.")
                     .font(.callout).foregroundStyle(.secondary)
             }
             ForEach(projects) { p in
                 HStack {
                     Image(systemName: p.folder == nil ? "person.crop.circle" : "folder").foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(p.folder.map(Fmt.shortPath) ?? "All sessions (user settings)").lineLimit(1).truncationMode(.middle).help(p.settingsFile)
-                        Text(p.config?.summary ?? "unknown configuration").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        Text(p.folder.map(Fmt.shortPath) ?? (p.agent == .opencode ? "All OpenCode sessions" : "All sessions (user settings)"))
+                            .lineLimit(1).truncationMode(.middle).help(p.settingsFile)
+                        Text((p.agent == .opencode ? "OpenCode plugin · " : "") + (p.config?.summary ?? "unknown configuration"))
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         if p.cliMissing {
                             Label("Its diorama command no longer exists, so the hook does nothing. Connect the project again or remove it.", systemImage: "exclamationmark.triangle")
                                 .font(.caption).foregroundStyle(.orange)
@@ -346,14 +348,14 @@ struct ConnectedProjectsSection: View {
                     }
                     Spacer()
                     if let folder = p.folder {
-                        Button("Edit…") { editing = folder }
+                        Button("Edit…") { editing = (folder, p.agent ?? .claude) }
                             .controlSize(.small)
                             .help("Change this project's profile, prompt or lockdown")
                     }
                     Button { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p.settingsFile)]) } label: { Image(systemName: "magnifyingglass") }
-                        .buttonStyle(.borderless).help("Show the settings file in Finder")
+                        .buttonStyle(.borderless).help(p.agent == .opencode ? "Show the plugin file in Finder" : "Show the settings file in Finder")
                     Button(role: .destructive) { removing = p } label: { Image(systemName: "trash") }
-                        .buttonStyle(.borderless).help("Remove Diorama's hook")
+                        .buttonStyle(.borderless).help(p.agent == .opencode ? "Remove Diorama's OpenCode plugin" : "Remove Diorama's hook")
                 }
             }
             if projects.count > 1 {
@@ -362,26 +364,28 @@ struct ConnectedProjectsSection: View {
         } header: {
             Text("Connected projects (hook mode)")
         } footer: {
-            Text("Removing a hook deletes only Diorama's entries from that settings file. Sessions already open keep reporting until they end; their records stay.")
+            Text("Removing a hook deletes only Diorama's entries from that settings file (or Diorama's OpenCode plugin file). Sessions already open keep reporting until they end; their records stay.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .task(id: model.eventTick / 10) { refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in refresh() }
         .sheet(isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil; refresh() } })) {
-            if let folder = editing { NewSessionSheet(mode: .desktop, folder: folder).environment(model) }
+            if let e = editing { NewSessionSheet(mode: .desktop, agent: e.agent, folder: e.folder).environment(model) }
         }
         .confirmationDialog("Remove Diorama's hook from \(removing.flatMap(\.folder).map(Fmt.shortPath) ?? "your user settings")?",
                             isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { p in
             Button("Remove Hook", role: .destructive) { remove([p]) }
         } message: { p in
-            Text(p.folder == nil
+            Text(p.agent == .opencode
+                 ? (p.folder == nil ? "OpenCode sessions on this account will stop reporting to Diorama." : "OpenCode sessions in this folder will stop reporting to Diorama.")
+                 : p.folder == nil
                  ? "Claude Code sessions on this account will stop reporting to Diorama."
                  : "New Claude Code sessions in this folder, including the Claude desktop app's, will stop reporting to Diorama.")
         }
         .confirmationDialog("Remove Diorama's hook from \(Fmt.plural(projects.count, "place"))?", isPresented: $removingAll) {
             Button("Remove All", role: .destructive) { remove(projects) }
         } message: {
-            Text("Claude Code sessions in these projects will stop reporting to Diorama. Other settings stay.")
+            Text("Claude Code and OpenCode sessions in these projects will stop reporting to Diorama. Other settings stay.")
         }
     }
 

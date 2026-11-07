@@ -41,6 +41,7 @@ diorama run ──▶ claude (your terminal)
 - **Precise:** Diorama edits outgoing requests by splicing bytes. Only the text of matching `tool_result` blocks changes, and every other byte is forwarded exactly. Responses stream back unbuffered.
 - **Reproducible:** the first decision for each tool result is frozen and replayed byte-for-byte on every later turn. The model's history stays consistent and the prompt cache stays warm.
 - **Claude desktop too:** the desktop app's Code tab can't be routed through a gateway, so `diorama hook install` connects a project through Claude Code hooks instead. Tool results are rewritten and recorded the same way; model traffic isn't captured.
+- **OpenCode too:** `diorama run --agent opencode` routes [OpenCode](https://opencode.ai)'s Anthropic models through the same gateway, and `diorama hook install --opencode` adds a plugin that steers its tool results with any model provider. Rules written for Claude Code's tools (`WebFetch`, `Bash`) also match OpenCode's (`webfetch`, `shell`). Experiments can run OpenCode trials too. See the [user guide](docs/user-guide.md#opencode) for the details and limits.
 - **AI control:** `diorama mcp install --claude-code` (or `--claude-desktop`) lets Claude inspect sessions and audit records, write profiles, connect projects and run experiments for you. Runs that cost money need the estimate's confirmation token.
 - **Separate credentials:** the rewrite agent uses **your own Anthropic API key**, stored in the macOS Keychain, behind a pluggable provider interface. It never reuses Claude Code's credentials.
 
@@ -48,6 +49,7 @@ diorama run ──▶ claude (your terminal)
 
 - macOS 15 or later (Apple Silicon or Intel)
 - [Claude Code](https://code.claude.com) CLI 2.1 or later (tested with 2.1.296)
+- Optional: [OpenCode](https://opencode.ai) 2.x for `--agent opencode` (tested with 2.1.4)
 - An Anthropic API key for the rewrite agent (only needed when rules are active)
 - To build from source: Xcode 16 or later / Swift 6
 

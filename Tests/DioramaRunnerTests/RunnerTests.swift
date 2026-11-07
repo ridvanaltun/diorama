@@ -242,3 +242,14 @@ import DioramaEngine
         #expect(throws: StoreError.self) { try store.createProfile(Profile(name: "bad", rules: [Rule(name: "r", match: RuleMatch(tools: ["X"], content: "(oops"), instructions: "i")])) }
     }
 }
+
+@Suite struct OpenCodeTrialStartTests {
+    @Test func onlyAServerThatNeverStartedIsRetried() {
+        let notReady = "Error: Standalone server exited before reporting readiness\n    at cli.standalone.endpoint"
+        #expect(ExperimentRunner.openCodeFailedToStart(stdout: "", stderr: notReady))
+        #expect(!ExperimentRunner.openCodeFailedToStart(stdout: #"{"type":"step_start"}"#, stderr: notReady), "it already ran something")
+        #expect(!ExperimentRunner.openCodeFailedToStart(stdout: "", stderr: "Error: invalid x-api-key"))
+        #expect(ExperimentRunner.maskToken(#"{"baseURL":"http://127.0.0.1:47821/s/0123456789abcdef0123456789abcdef/v1"}"#)
+            == #"{"baseURL":"http://127.0.0.1:47821/s/<session-token>/v1"}"#)
+    }
+}

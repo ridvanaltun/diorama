@@ -582,13 +582,16 @@ public struct SessionSpec: Codable, Sendable, Hashable {
     public var treatmentScope: String?
     /// Nil means `.gateway`.
     public var via: SessionVia?
+    /// The agent a gateway session launches; it decides how the launch routes it. Nil means `.claude`.
+    public var agent: CodingAgent?
 
     public init(
         name: String, cwd: String, profile: String? = nil, prompt: SessionPrompt? = nil, lockdown: LockdownPreset = .none,
         kind: SessionKind = .interactive, trialId: String? = nil, onFailure: FailurePolicy? = nil, treatmentScope: String? = nil,
-        via: SessionVia? = nil
+        via: SessionVia? = nil, agent: CodingAgent? = nil
     ) {
         self.via = via
+        self.agent = agent
         self.name = name
         self.cwd = cwd
         self.profile = profile
@@ -643,13 +646,18 @@ public struct SessionInfo: Codable, Sendable, Hashable, Identifiable {
     public var isArchived: Bool { archived == true }
     /// Rule ids switched off for this session only (nil from older daemons).
     public var disabledRules: [String]?
+    /// The agent the session ran in (nil from older daemons means Claude Code).
+    public var agent: CodingAgent?
+    public var isOpenCode: Bool { agent == .opencode }
 
     public init(
         id: String, name: String, cwd: String, kind: SessionKind, status: SessionStatus, createdAt: Date, endedAt: Date?,
         profileId: String?, profileName: String?, profileVersionId: String?, profileVersionNumber: Int?,
         prompt: SessionPrompt?, lockdown: LockdownPreset, trialId: String?, claudeSessionIds: [String], flags: [String],
-        stats: SessionStats, via: SessionVia? = nil, paused: Bool? = nil, notes: String? = nil, tags: [String]? = nil, archived: Bool? = nil, disabledRules: [String]? = nil
+        stats: SessionStats, via: SessionVia? = nil, paused: Bool? = nil, notes: String? = nil, tags: [String]? = nil, archived: Bool? = nil, disabledRules: [String]? = nil,
+        agent: CodingAgent? = nil
     ) {
+        self.agent = agent
         self.archived = archived
         self.disabledRules = disabledRules
         self.paused = paused
@@ -700,7 +708,8 @@ public struct HookEvent: Codable, Sendable {
     public var claudeSessionId: String
     public var cwd: String
     public var transcriptPath: String?
-    /// `CLAUDE_CODE_ENTRYPOINT` of the hooked session (e.g. `claude-desktop`, `cli`).
+    /// `CLAUDE_CODE_ENTRYPOINT` of the hooked session (e.g. `claude-desktop`, `cli`), or `opencode`
+    /// for Diorama's OpenCode plugin.
     public var client: String?
     public var toolName: String?
     public var toolUseId: String?
@@ -711,6 +720,9 @@ public struct HookEvent: Codable, Sendable {
     public var config: HookConfig
     /// Set for a `diorama run` session (its gateway session id): only its tool inputs go through the hook.
     public var dioramaSessionId: String?
+    /// Sent by Diorama's OpenCode plugin rather than a Claude Code hook.
+    public var isOpenCode: Bool { client == HookEvent.openCodeClient }
+    public static let openCodeClient = "opencode"
 
     public init(
         event: String, claudeSessionId: String, cwd: String, transcriptPath: String? = nil, client: String? = nil, toolName: String? = nil,
@@ -995,9 +1007,10 @@ public struct SessionLaunch: Codable, Sendable {
     public var session: SessionInfo
     public var token: String
     public var baseURL: String
-    /// Environment variables to set for Claude Code.
+    /// Environment variables to set for the agent.
     public var environment: [String: String]
-    /// Extra Claude Code CLI arguments (settings override, lockdown).
+    /// Extra agent CLI arguments: Claude Code's settings override and lockdown, or OpenCode's
+    /// `--standalone` (the name predates OpenCode support and stays for wire compatibility).
     public var claudeArguments: [String]
 
     public init(session: SessionInfo, token: String, baseURL: String, environment: [String: String], claudeArguments: [String]) {
@@ -1768,12 +1781,15 @@ public struct Launcher: Codable, Sendable, Hashable, Identifiable {
     public var taskContext: Bool
     public var pageStage: Bool
     public var lockdown: LockdownPreset
-    /// Extra arguments for Claude Code (split on spaces).
+    /// Extra arguments for the agent (split on spaces).
     public var claudeArgs: String
+    /// The agent to start; nil (launchers saved by earlier versions) means Claude Code.
+    public var agent: CodingAgent?
 
     public init(id: String = "launch-" + UUID().uuidString.prefix(8).lowercased(), name: String, folder: String, profile: String? = nil, prompt: String? = nil,
                 promptTools: [String] = SessionPrompt.defaultTools, taskContext: Bool = false, pageStage: Bool = false, lockdown: LockdownPreset = .none,
-                claudeArgs: String = "") {
+                claudeArgs: String = "", agent: CodingAgent? = nil) {
+        self.agent = agent
         self.id = id
         self.name = name
         self.folder = folder
@@ -1789,6 +1805,7 @@ public struct Launcher: Codable, Sendable, Hashable, Identifiable {
     /// Arguments for `diorama run` (run from `folder`).
     public var runArguments: [String] {
         var a = ["run", "--name", name]
+        if agent == .opencode { a += ["--agent", "opencode"] }
         if let p = profile, !p.isEmpty { a += ["--profile", p] }
         if let p = prompt, !p.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             a += ["--prompt", p]

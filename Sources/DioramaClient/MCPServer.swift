@@ -150,6 +150,16 @@ enum MCPTools {
 
     static func string(_ description: String) -> [String: any Sendable] { ["type": "string", "description": description] }
 
+    static let agentArgument: [String: any Sendable] = [
+        "type": "string", "enum": ["claude", "opencode"],
+        "description": "claude (default): the Claude Code hook; opencode: Diorama's OpenCode plugin.",
+    ]
+
+    /// The file a hook tool acts on: the folder's Claude Code settings, or its OpenCode plugin.
+    static func hookFile(folder: String, _ args: Args) -> URL {
+        args["agent"] as? String == CodingAgent.opencode.rawValue ? OpenCodePlugin.projectFile(folder) : HookInstaller.projectSettings(folder)
+    }
+
     static func arg(_ args: Args, _ key: String) throws -> String {
         guard let v = args[key] as? String, !v.isEmpty else { throw MCPServer.ToolError("missing argument '\(key)'") }
         return v
@@ -362,10 +372,10 @@ enum MCPTools {
             return clip(try await s.daemon().report(try arg(a, "run_id"), format: "md"), 20000)
         },
         .init(
-            name: "get_hook_status", description: "Whether a project folder has Diorama's Claude Code hook (hook mode, used by the Claude desktop app and IDEs), and its configuration.",
-            schema: schema(["folder": string("Absolute path of the project folder.")], required: ["folder"]), readOnly: true
+            name: "get_hook_status", description: "Whether a project folder has Diorama's Claude Code hook (hook mode, used by the Claude desktop app and IDEs), or with agent=opencode Diorama's OpenCode plugin, and its configuration.",
+            schema: schema(["folder": string("Absolute path of the project folder."), "agent": agentArgument], required: ["folder"]), readOnly: true
         ) { s, a in
-            let url = HookInstaller.projectSettings(try arg(a, "folder"))
+            let url = hookFile(folder: try arg(a, "folder"), a)
             guard let command = HookInstaller.installedCommand(settings: url) else { return "No Diorama hook in \(url.path)" }
             let config = HookInstaller.resolvedConfig(in: command, configs: s.hookRegistry.configs)
             return "Diorama hook installed in \(url.path): \(config?.summary ?? "unknown configuration")\n\(command)"
@@ -469,9 +479,9 @@ enum MCPTools {
         },
         .init(
             name: "install_hook",
-            description: "Connect a project folder to Diorama through Claude Code hooks (writes .claude/settings.local.json). New Claude Code sessions in that folder, including the Claude desktop app's Code tab, then have their tool results rewritten by the profile or prompt and recorded. Replaces an existing Diorama hook there.",
+            description: "Connect a project folder to Diorama through Claude Code hooks (writes .claude/settings.local.json). New Claude Code sessions in that folder, including the Claude desktop app's Code tab, then have their tool results rewritten by the profile or prompt and recorded. With agent=opencode it installs Diorama's OpenCode plugin (.opencode/plugins/diorama) instead, for OpenCode sessions with any model provider (input rules don't apply there). Replaces an existing Diorama hook there.",
             schema: schema([
-                "folder": string("Absolute path of the project folder."), "profile": string("Profile name or id (optional)."),
+                "folder": string("Absolute path of the project folder."), "agent": agentArgument, "profile": string("Profile name or id (optional)."),
                 "prompt": string("Session prompt for the rewrite agent (optional)."),
                 "prompt_tools": ["type": "array", "items": ["type": "string"], "description": "Tools the prompt applies to (default WebFetch, WebSearch)."],
                 "share_task": ["type": "boolean", "description": "Give the rewrite agent the session's task (default false)."],
@@ -491,15 +501,16 @@ enum MCPTools {
             }
             let config = HookConfig(profile: profile?.isEmpty == true ? nil : profile, prompt: prompt,
                                     lockdown: (a["lockdown"] as? String).flatMap(LockdownPreset.init(rawValue:)).flatMap { $0 == .none ? nil : $0 })
-            let url = try HookInstaller.install(cli: s.cliPath, config: config, settings: HookInstaller.projectSettings(folder), registry: s.hookRegistry)
+            let url = try HookInstaller.install(cli: s.cliPath, config: config, settings: hookFile(folder: folder, a), registry: s.hookRegistry)
+            if OpenCodePlugin.isPluginFile(url) { return "Installed Diorama's OpenCode plugin in \(url.path). OpenCode sessions in that folder use it without a restart." }
             let trust = ClaudeTrust.isTrusted(folder) == false ? "\n\nWarning: " + ClaudeTrust.advice(for: folder) : ""
             return "Installed Diorama's hook in \(url.path). Start a new Claude Code session in that folder for it to take effect." + trust
         },
         .init(
             name: "uninstall_hook",
-            description: "Remove Diorama's hook from a project folder's .claude/settings.local.json, or with all=true from every connected project and the user settings (other settings stay).",
+            description: "Remove Diorama's hook from a project folder's .claude/settings.local.json (with agent=opencode: its OpenCode plugin), or with all=true from every connected project and the user settings (other settings stay).",
             schema: schema([
-                "folder": string("Absolute path of the project folder."),
+                "folder": string("Absolute path of the project folder."), "agent": agentArgument,
                 "all": ["type": "boolean", "description": "Remove it everywhere list_hooks shows it (ask the user first)."],
             ]), readOnly: false
         ) { s, a in
@@ -508,11 +519,11 @@ enum MCPTools {
                 let lines = removed.map { "Removed Diorama's hook from \($0.path)." } + failures.map { "Could not change \($0)" }
                 return lines.isEmpty ? "No project has Diorama's hook." : lines.joined(separator: "\n")
             }
-            let url = HookInstaller.projectSettings(try arg(a, "folder"))
+            let url = hookFile(folder: try arg(a, "folder"), a)
             return try HookInstaller.uninstall(settings: url, registry: s.hookRegistry) ? "Removed Diorama's hook from \(url.path)." : "No Diorama hook in \(url.path)."
         },
         .init(
-            name: "list_hooks", description: "List the project folders (and user settings) that have Diorama's Claude Code hook, with each one's configuration and any problem.",
+            name: "list_hooks", description: "List the project folders (and user settings) that have Diorama's Claude Code hook or OpenCode plugin (agent), with each one's configuration and any problem.",
             schema: schema([:]), readOnly: true
         ) { s, _ in
             let projects = HookInstaller.connected(registry: s.hookRegistry)
@@ -581,7 +592,7 @@ enum MCPTools {
         },
         .init(
             name: "create_experiment",
-            description: "Define an experiment (nothing runs yet). Definition: {name, task, projectPath, claude: {allowedTools, model?, maxTurns?, maxBudgetUSD?}, variants: [{key, name, profile?, prompt?: {text, tools}}] including one unmodified control, trialsPerVariant, concurrency?, treatment?: frozen|fresh, judge?: {}}.",
+            description: "Define an experiment (nothing runs yet). Definition: {name, task, projectPath, claude: {allowedTools, model?, maxTurns?, maxBudgetUSD?}, variants: [{key, name, profile?, prompt?: {text, tools}}] including one unmodified control, trialsPerVariant, concurrency?, treatment?: frozen|fresh, judge?: {}, agent?: claude|opencode}. With agent opencode, trials run `opencode run` and claude.model must be an Anthropic model (e.g. claude-sonnet-4-5).",
             schema: schema(["definition": ["type": "object", "description": "The experiment definition."]], required: ["definition"]), readOnly: false
         ) { s, a in
             let e = try await s.daemon().createExperiment(try object(a, "definition", as: ExperimentDefinition.self))

@@ -62,6 +62,27 @@ public struct StreamTranscript: Sendable {
         if case .number(let s)? = v { return Double(s) }
         return nil
     }
+
+    /// An OpenCode trial: answer, tool calls and turns from its JSON output; usage and cost from
+    /// the gateway's records of the trial session (OpenCode doesn't print the last step's usage).
+    public static func openCode(_ output: OpenCodeOutput, exchanges: [ExchangeSummary], exitCode: Int32) -> StreamTranscript {
+        var t = StreamTranscript()
+        t.finalOutput = output.finalOutput
+        t.assistantTexts = output.assistantTexts
+        t.toolSequence = output.toolSequence.map { ($0.name, $0.input) }
+        t.toolCalls = output.toolCalls
+        t.numTurns = output.numTurns
+        t.isError = output.error != nil || exitCode != 0
+        t.sawResult = exitCode == 0 && output.error == nil && output.numTurns > 0
+        var cost: Double?
+        for e in exchanges where e.method == "POST" {
+            guard let u = e.usage else { continue }
+            t.usage = t.usage + u
+            if let m = e.model, let c = Pricing.cost(model: m, usage: u) { cost = (cost ?? 0) + c }
+        }
+        t.costUSD = cost
+        return t
+    }
 }
 
 /// Heuristic interpretation. Deliberately simple and transparent: every signal lists the

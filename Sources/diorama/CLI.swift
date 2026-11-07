@@ -82,20 +82,26 @@ extension ContextMode: ExpressibleByArgument {}
 extension RuleStage: ExpressibleByArgument {}
 extension LockdownPreset: ExpressibleByArgument {}
 extension SessionKind: ExpressibleByArgument {}
+extension CodingAgent: ExpressibleByArgument {}
 
 // MARK: - run
 
 struct Run: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Start Claude Code in the current folder, routed through Diorama.",
+        abstract: "Start Claude Code (or OpenCode) in the current folder, routed through Diorama.",
         discussion: """
-            Everything after `--` is passed to Claude Code. Only this session is routed through Diorama; \
-            other Claude Code sessions and your settings files are not changed.
+            Everything after `--` is passed to the agent. Only this session is routed through Diorama; \
+            other sessions and your settings files are not changed.
+
+            With --agent opencode, OpenCode runs on a private server (--standalone) and only its \
+            Anthropic models are routed; pick one with -m anthropic/<model>.
 
             Examples:
               diorama run
               diorama run --profile "Web: subtle factual edit"
               diorama run --prompt "Say the library is deprecated" -- --model sonnet
+              diorama run --agent opencode --profile web
+              diorama run --agent opencode -- run -m anthropic/claude-sonnet-4-5 "Summarize README.md"
             """)
 
     @OptionGroup var global: GlobalOptions
@@ -108,17 +114,16 @@ struct Run: AsyncParsableCommand {
     @Option(help: "Rewrite model for the session prompt (default: profile/global default).") var promptModel: String?
     @Option(help: "Where the session prompt applies: result (tool results) or page (WebFetch raw page, before summarization).") var promptStage: RuleStage = .result
     @Option(help: "Block shell network tools that bypass rewrites: none or network.") var lockdown: LockdownPreset = .none
+    @Option(help: "The agent to start: claude or opencode.") var agent: CodingAgent = .claude
     @Option(help: "Path to the claude executable.") var claude: String?
+    @Option(help: "Path to the opencode executable.") var opencode: String?
     @Flag(help: "Don't use the folder's default profile (see `diorama folders`).") var noFolderDefault = false
-    @Argument(parsing: .postTerminator, help: "Arguments passed to Claude Code.") var claudeArguments: [String] = []
+    @Argument(parsing: .postTerminator, help: "Arguments passed to the agent.") var claudeArguments: [String] = []
 
     func run() async throws {
+        if agent == .opencode { return try await runOpenCode() }
         let client = try await global.client()
-        var promptText = prompt
-        if let f = promptFile { promptText = try String(contentsOfFile: (f as NSString).expandingTildeInPath, encoding: .utf8) }
-        let sessionPrompt = promptText.map {
-            SessionPrompt(text: $0, tools: promptTools.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }, context: promptContext, model: promptModel, stage: promptStage)
-        }
+        let sessionPrompt = try makeSessionPrompt()
         if claudeArguments.contains("--settings") {
             eprint("diorama: note: you passed --settings to Claude Code; Diorama also passes --settings to route this session. If yours sets ANTHROPIC_BASE_URL the session may bypass Diorama.")
         }
@@ -128,18 +133,76 @@ struct Run: AsyncParsableCommand {
             throw ValidationError("could not find `claude`; install Claude Code or pass --claude PATH")
         }
         let cwd = FileManager.default.currentDirectoryPath
-        var profile = profile
-        // No profile or prompt given: use the folder's default, if one is set.
-        if profile == nil, sessionPrompt == nil, !noFolderDefault, let d = settings.folderDefault(for: cwd), let p = d.profile {
-            if try await client.profiles().contains(where: { $0.name == p || $0.id == p }) {
-                profile = p
-                eprint("◆ Using \(p), the default profile for \(d.path) (--no-folder-default to skip)")
-            } else {
-                eprint("diorama: note: \(d.path)'s default profile '\(p)' no longer exists; running without a profile. Fix it with `diorama folders set`.")
-            }
-        }
+        let profile = try await sessionProfile(client: client, settings: settings, cwd: cwd, hasPrompt: sessionPrompt != nil)
         let launch = try await client.createSession(SessionSpec(
             name: name ?? (cwd as NSString).lastPathComponent, cwd: cwd, profile: profile, prompt: sessionPrompt, lockdown: lockdown))
+        try await announce(launch, client: client)
+
+        var childEnv = env
+        for (k, v) in launch.environment { childEnv[k] = v }
+        let args = claudeArguments + launch.claudeArguments
+        let status = await Supervisor(paths: global.paths, port: client.info.port).run(claudePath, args, childEnv)
+        try await finish(launch.session, status: status)
+    }
+
+    /// `diorama run --agent opencode`: OpenCode on a private server, its Anthropic provider routed
+    /// through the gateway by inline configuration (no file changes).
+    func runOpenCode() async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let opencodePath = opencode.map({ ($0 as NSString).expandingTildeInPath }) ?? findOpenCode(env) else {
+            throw ValidationError("could not find `opencode`; install OpenCode or pass --opencode PATH")
+        }
+        if claude != nil { eprint("diorama: note: --claude is ignored with --agent opencode") }
+        let client = try await global.client()
+        let sessionPrompt = try makeSessionPrompt()
+        let settings = try await client.settings()
+        let cwd = FileManager.default.currentDirectoryPath
+        let profile = try await sessionProfile(client: client, settings: settings, cwd: cwd, hasPrompt: sessionPrompt != nil)
+        let launch = try await client.createSession(SessionSpec(
+            name: name ?? "\((cwd as NSString).lastPathComponent) · OpenCode", cwd: cwd, profile: profile, prompt: sessionPrompt,
+            lockdown: lockdown, agent: .opencode))
+        let args: [String]
+        switch OpenCodeLaunch.arguments(user: claudeArguments, launch: launch.claudeArguments) {
+        case .success(let a): args = a
+        case .failure(let problem):
+            _ = try? await client.endSession(launch.session.id)
+            throw ValidationError(problem.description)
+        }
+        try await announce(launch, client: client)
+        eprint("  only Anthropic models are routed: choose one with -m anthropic/<model> (other providers bypass Diorama)")
+
+        var childEnv = env
+        for (k, v) in launch.environment where k != OpenCodeLaunch.configVariable { childEnv[k] = v }
+        if let ours = launch.environment[OpenCodeLaunch.configVariable],
+           let overlay = (try? JSONSerialization.jsonObject(with: Data(ours.utf8))) as? [String: Any] {
+            let merged = OpenCodeLaunch.environmentValue(existing: env[OpenCodeLaunch.configVariable], overlay: overlay)
+            if merged.replacedInvalid { eprint("diorama: note: \(OpenCodeLaunch.configVariable) in your environment isn't a JSON object; it's replaced for this session") }
+            childEnv[OpenCodeLaunch.configVariable] = merged.value
+        }
+        let status = await Supervisor(paths: global.paths, port: client.info.port).run(opencodePath, args, childEnv)
+        try await finish(launch.session, status: status)
+    }
+
+    func makeSessionPrompt() throws -> SessionPrompt? {
+        var promptText = prompt
+        if let f = promptFile { promptText = try String(contentsOfFile: (f as NSString).expandingTildeInPath, encoding: .utf8) }
+        return promptText.map {
+            SessionPrompt(text: $0, tools: promptTools.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }, context: promptContext, model: promptModel, stage: promptStage)
+        }
+    }
+
+    /// The profile to apply: the one given, or else (with no prompt either) the folder's default.
+    func sessionProfile(client: ControlClient, settings: DioramaSettings, cwd: String, hasPrompt: Bool) async throws -> String? {
+        guard profile == nil, !hasPrompt, !noFolderDefault, let d = settings.folderDefault(for: cwd), let p = d.profile else { return profile }
+        if try await client.profiles().contains(where: { $0.name == p || $0.id == p }) {
+            eprint("◆ Using \(p), the default profile for \(d.path) (--no-folder-default to skip)")
+            return p
+        }
+        eprint("diorama: note: \(d.path)'s default profile '\(p)' no longer exists; running without a profile. Fix it with `diorama folders set`.")
+        return nil
+    }
+
+    func announce(_ launch: SessionLaunch, client: ControlClient) async throws {
         let s = launch.session
         eprint("◆ Diorama session \"\(s.name)\" (\(s.id))")
         var bits = ["profile: \(s.profileName.map { "\($0) v\(s.profileVersionNumber ?? 0)" } ?? "none")"]
@@ -151,12 +214,9 @@ struct Run: AsyncParsableCommand {
             if !key.configured { eprint("  ⚠︎ no rewrite API key configured — matching tool results will pass through unchanged (run `diorama key set`)") }
         }
         eprint("  timeline: diorama session show \(s.id)  (or open the Diorama app)")
+    }
 
-        var childEnv = env
-        for (k, v) in launch.environment { childEnv[k] = v }
-        let args = claudeArguments + launch.claudeArguments
-        let status = await Supervisor(paths: global.paths, port: client.info.port).run(claudePath, args, childEnv)
-
+    func finish(_ s: SessionInfo, status: Int32) async throws -> Never {
         if let fresh = try? await ControlClient.connect(paths: global.paths, autostart: false),
            let ended = try? await fresh.endSession(s.id) {
             let st = ended.stats
@@ -165,7 +225,12 @@ struct Run: AsyncParsableCommand {
         }
         throw ExitCode(status)
     }
+}
 
+func findOpenCode(_ env: [String: String]) -> String? {
+    let home = env["HOME"] ?? NSHomeDirectory()
+    let dirs = (env["PATH"] ?? "").split(separator: ":").map(String.init) + ["\(home)/.opencode/bin", "/opt/homebrew/bin", "/usr/local/bin"]
+    return dirs.map { ($0 as NSString).appendingPathComponent("opencode") }.first { FileManager.default.isExecutableFile(atPath: $0) }
 }
 
 func findClaude(_ env: [String: String]) -> String? {
@@ -286,7 +351,7 @@ struct Session: AsyncParsableCommand {
             let decisions = Dictionary(uniqueKeysWithValues: t.decisions.map { ($0.toolUseId, $0) })
             if s.isHook {
                 // Hook mode has no model requests to show: list the tool results Diorama decided.
-                print("hook mode (Claude desktop / IDE): tool results only, no model traffic\n")
+                print(s.isOpenCode ? "hook mode (OpenCode plugin): tool results only, no model traffic\n" : "hook mode (Claude desktop / IDE): tool results only, no model traffic\n")
                 for d in t.decisions.sorted(by: { $0.createdAt < $1.createdAt }) {
                     let mark = d.outcome == .rewritten ? "✎ rewritten" : d.outcome == .failed ? "✗ failed" : "· unchanged"
                     print("    \(mark) \(d.toolName ?? "?") \(d.toolUseId) — \(short(d.reason, 90))")

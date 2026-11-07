@@ -41,6 +41,12 @@ public enum HookInstaller {
         try validate(config)
         let id = installedCommand(settings: url).flatMap(configId(in:)) ?? HookConfigStore.newId()
         registry.configs.save(config, id: id)
+        if OpenCodePlugin.isPluginFile(url) {
+            defer { registry.add(url) }
+            try OpenCodePlugin.write(cli: cli, configId: id, lockdown: (config.lockdown ?? .none) != .none,
+                                     transcripts: OpenCodePlugin.transcriptsDirectory(home: registry.home), to: url)
+            return url
+        }
         return try install(command: command(cli: cli, configId: id), settings: url, registry: registry)
     }
 
@@ -67,7 +73,7 @@ public enum HookInstaller {
     /// keeping each entry's events and every other setting. Returns true when the file changed.
     @discardableResult
     public static func moveConfigOut(settings url: URL, configs: HookConfigStore) throws -> Bool {
-        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        guard !OpenCodePlugin.isPluginFile(url), FileManager.default.fileExists(atPath: url.path) else { return false }
         var root = try read(url)
         guard var hooks = root["hooks"] as? [String: Any] else { return false }
         var replaced: [String: String] = [:]
@@ -193,6 +199,12 @@ public enum HookInstaller {
     @discardableResult
     public static func uninstall(settings url: URL, registry: HookRegistry? = nil) throws -> Bool {
         registry?.remove(url)
+        if OpenCodePlugin.isPluginFile(url) {
+            guard let installed = OpenCodePlugin.installedCommand(file: url) else { return false }
+            try OpenCodePlugin.remove(file: url)
+            if let registry, let id = configId(in: installed) { registry.configs.remove(id) }
+            return true
+        }
         guard FileManager.default.fileExists(atPath: url.path) else { return false }
         var root = try read(url)
         let before = root["hooks"] as? [String: Any] ?? [:]
@@ -206,12 +218,15 @@ public enum HookInstaller {
 
     /// The installed Diorama hook command, if any.
     public static func installedCommand(settings url: URL) -> String? {
+        if OpenCodePlugin.isPluginFile(url) { return OpenCodePlugin.installedCommand(file: url) }
         guard let root = try? read(url) else { return nil }
         return installedCommand(in: root["hooks"] as? [String: Any] ?? [:])
     }
 
     /// The hook events Diorama's hook is installed for (older installs lack PreToolUse).
     public static func installedEvents(settings url: URL) -> Set<String> {
+        // The OpenCode plugin always handles tool inputs and results.
+        if OpenCodePlugin.isPluginFile(url) { return OpenCodePlugin.installedCommand(file: url) == nil ? [] : Set(events.map(\.name)) }
         guard let hooks = (try? read(url))?["hooks"] as? [String: Any] else { return [] }
         return Set(hooks.compactMap { event, value in
             ((value as? [[String: Any]]) ?? []).contains { ($0["hooks"] as? [[String: Any]] ?? []).contains(where: isDiorama) } ? event : nil
@@ -263,32 +278,37 @@ public enum HookInstaller {
 
     // MARK: Connected projects
 
-    /// Every settings file that has Diorama's hook: the ones in `registry` plus the user settings.
-    /// Entries whose hook is gone (removed by hand, folder deleted) are dropped from the registry.
-    public static func connected(registry: HookRegistry, userSettings user: URL = userSettings(), claudeConfig: URL = ClaudeTrust.configFile()) -> [HookedProject] {
+    /// Every settings file (or OpenCode plugin) that has Diorama's hook: the ones in `registry` plus
+    /// the user-wide ones. Entries whose hook is gone (removed by hand, folder deleted) are dropped
+    /// from the registry.
+    public static func connected(registry: HookRegistry, userSettings user: URL = userSettings(), userPlugin: URL = OpenCodePlugin.userFile(),
+                                 claudeConfig: URL = ClaudeTrust.configFile()) -> [HookedProject] {
         var found: [HookedProject] = []
-        for path in Set(registry.files + [user.path]).sorted() {
+        let userWide: Set<String> = [user.path, userPlugin.path]
+        for path in Set(registry.files).union(userWide).sorted() {
             let url = URL(fileURLWithPath: path)
             guard let command = installedCommand(settings: url) else {
-                if path != user.path { registry.remove(url) }
+                if !userWide.contains(path) { registry.remove(url) }
                 continue
             }
             let cli = cliPath(in: command)
-            let folder = path == user.path ? nil : projectFolder(of: url)
+            let isPlugin = OpenCodePlugin.isPluginFile(url)
+            let folder = userWide.contains(path) ? nil : isPlugin ? OpenCodePlugin.projectFolder(of: url) : projectFolder(of: url)
             found.append(HookedProject(
                 settingsFile: path, folder: folder, command: command, config: resolvedConfig(in: command, configs: registry.configs),
                 cliMissing: cli.map { !FileManager.default.isExecutableFile(atPath: $0) } ?? true,
                 outdated: !installedEvents(settings: url).contains("PreToolUse"),
-                notTrusted: folder.map { ClaudeTrust.isTrusted($0, config: claudeConfig) == false } ?? false))
+                notTrusted: isPlugin ? false : folder.map { ClaudeTrust.isTrusted($0, config: claudeConfig) == false } ?? false,
+                agent: isPlugin ? .opencode : .claude))
         }
         return found
     }
 
     /// Removes Diorama's hook from every connected project and the user settings; returns the
     /// files changed. A file that can't be changed (not JSON any more) is reported in `failures`.
-    public static func uninstallAll(registry: HookRegistry, userSettings user: URL = userSettings()) -> (removed: [URL], failures: [String]) {
+    public static func uninstallAll(registry: HookRegistry, userSettings user: URL = userSettings(), userPlugin: URL = OpenCodePlugin.userFile()) -> (removed: [URL], failures: [String]) {
         var removed: [URL] = [], failures: [String] = []
-        for project in connected(registry: registry, userSettings: user) {
+        for project in connected(registry: registry, userSettings: user, userPlugin: userPlugin) {
             let url = URL(fileURLWithPath: project.settingsFile)
             do {
                 if try uninstall(settings: url, registry: registry) { removed.append(url) }
@@ -299,22 +319,28 @@ public enum HookInstaller {
         return (removed, failures)
     }
 
-    /// The settings files whose Diorama hook a session in `cwd` runs: the nearest project
-    /// settings at or above `cwd`, and the user settings.
-    public static func locate(cwd: String, userSettings user: URL = userSettings()) -> [URL] {
+    /// The files whose Diorama hook a session in `cwd` runs: the nearest project settings at or
+    /// above `cwd` and the user settings (Claude Code), and the OpenCode plugins OpenCode loads
+    /// there (every project plugin at or above `cwd`, and the user one). A folder with neither has
+    /// no Diorama hook of any kind.
+    public static func locate(cwd: String, userSettings user: URL = userSettings(), userPlugin: URL = OpenCodePlugin.userFile()) -> [URL] {
         var found: [URL] = []
         var dir = URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath, isDirectory: true).standardizedFileURL
+        var claudeFound = false
         while true {
             let url = projectSettings(dir.path)
-            if url.path != user.path, installedCommand(settings: url) != nil {
+            if !claudeFound, url.path != user.path, installedCommand(settings: url) != nil {
                 found.append(url)
-                break
+                claudeFound = true
             }
+            let plugin = OpenCodePlugin.projectFile(dir.path)
+            if plugin.path != userPlugin.path, OpenCodePlugin.installedCommand(file: plugin) != nil { found.append(plugin) }
             let parent = dir.deletingLastPathComponent()
             if parent.path == dir.path { break }
             dir = parent
         }
         if installedCommand(settings: user) != nil { found.append(user) }
+        if OpenCodePlugin.installedCommand(file: userPlugin) != nil { found.append(userPlugin) }
         return found
     }
 
@@ -351,8 +377,12 @@ public struct HookedProject: Codable, Sendable, Hashable, Identifiable {
     public var outdated: Bool
     /// Claude Code hasn't trusted the project folder, so it doesn't run the hook yet (`ClaudeTrust`).
     public var notTrusted: Bool
+    /// Which agent runs it: a Claude Code hook or the OpenCode plugin. Nil (older daemons) means Claude Code.
+    public var agent: CodingAgent?
 
-    public init(settingsFile: String, folder: String?, command: String, config: HookConfig?, cliMissing: Bool, outdated: Bool, notTrusted: Bool = false) {
+    public init(settingsFile: String, folder: String?, command: String, config: HookConfig?, cliMissing: Bool, outdated: Bool, notTrusted: Bool = false,
+                agent: CodingAgent? = nil) {
+        self.agent = agent
         self.notTrusted = notTrusted
         self.settingsFile = settingsFile
         self.folder = folder
@@ -380,6 +410,9 @@ public struct HookRegistry: Sendable {
 
     public func add(_ settings: URL) { update { $0.insert(settings.path) } }
     public func remove(_ settings: URL) { update { $0.remove(settings.path) } }
+
+    /// Diorama's data folder, where this registry lives.
+    public var home: URL { url.deletingLastPathComponent() }
 
     /// The hook configurations, next to this registry in the data folder.
     public var configs: HookConfigStore { HookConfigStore(url: url.deletingLastPathComponent().appendingPathComponent("hook-configs.json")) }

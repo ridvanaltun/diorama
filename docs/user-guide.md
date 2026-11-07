@@ -51,6 +51,48 @@ In the app, picking a profile in **New Session** offers **Make this the folder's
 
 **Surfaces:** `diorama run` covers the terminal CLI. The VS Code extension also works if you set the printed variables in `claudeCode.environmentVariables`. The Claude desktop app's Code tab sets its own `ANTHROPIC_BASE_URL` for every session and can't be routed through the gateway. Use hook mode for it, described next.
 
+## OpenCode
+
+Diorama works with [OpenCode](https://opencode.ai) 2.x in two ways, like Claude Code: through the gateway (`diorama run --agent opencode`: full capture, Anthropic models only) or through a plugin (`diorama hook install --opencode`: tool results only, any model provider). Both use the same profiles, decision replay, audit records and timeline. In the app, **New Session** asks for the agent first (**Claude Code** or **OpenCode**), then offers the same two choices for either: **Terminal** starts a routed session, and **Claude desktop & IDEs** or **OpenCode desktop & IDEs** connects a project (Claude Code's hook, or OpenCode's plugin, which OpenCode Desktop loads too). Launchers remember the agent.
+
+### Through the gateway
+
+`diorama run --agent opencode` starts OpenCode instead of Claude Code, routed through the gateway.
+
+```bash
+diorama run --agent opencode --profile web                 # the OpenCode TUI
+diorama run --agent opencode -- run -m anthropic/claude-sonnet-4-5 "Summarize README.md"
+diorama run --agent opencode --opencode ~/bin/opencode     # a specific executable
+```
+
+- **Only Anthropic models are routed.** Diorama sets OpenCode's Anthropic provider's `baseURL` to the session's gateway URL. Pick an Anthropic model (`-m anthropic/<model>` or `/models` in the TUI); OpenAI, Gemini and other providers go straight to their APIs and aren't recorded or steered. OpenCode uses its own Anthropic credentials, which Diorama forwards unchanged.
+- **No file changes.** The configuration goes in `OPENCODE_CONFIG_CONTENT` for that process only, merged over any value already in your environment. It takes precedence over your global and project `opencode.json`, including a `baseURL` they set.
+- **A private OpenCode server.** OpenCode normally runs model calls in a shared background service, which wouldn't see the session's configuration. Diorama adds `--standalone` (after `run` or `mini`, or first for the TUI). `--server` and subcommands that don't start a session, such as `serve` or `acp`, are refused.
+- **Rules use either agent's tool names.** A rule for `WebFetch` also matches OpenCode's `webfetch`, and the same goes for `WebSearch`/`websearch`, `Read`/`read`, `Bash`/`shell`, `Grep`/`grep`, `Glob`/`glob`, `Edit`/`edit`, `Write`/`write` and `Skill`/`skill`. Existing profiles work unchanged. MCP tool names differ between the two agents and aren't mapped.
+- **Lockdown** becomes OpenCode `permissions` rules that deny `curl`, `wget` and the other network programs in the `shell` tool. OpenCode's shell scanner checks every subcommand.
+- **Not supported:** input rules (they need a hook before the tool runs) and page rules (OpenCode's `webfetch` has no separate summarizing step, so use result rules). The session records a warning when its rules include input or page rules. Experiments work too: see [Experiments with OpenCode](#experiments-with-opencode).
+
+### Through the plugin (any provider)
+
+```bash
+cd ~/code/project
+diorama hook install --opencode --profile "Docs steer"     # .opencode/plugins/diorama in this project
+diorama hook install --opencode --user --lockdown network  # every OpenCode session (~/.config/opencode/plugins)
+diorama hook status --opencode
+diorama hook uninstall --opencode
+```
+
+The plugin hands each tool result to `diorama hook run`, the same command Claude Code's hooks run, and gives OpenCode the rewritten result. It works with every OpenCode model provider (OpenAI, Gemini, local models…) but, like hook mode for Claude desktop, records tool results only: no model requests, token usage or replies.
+
+- **OpenCode loads it by itself**, with no restart: project plugins from `.opencode/plugins/` and user plugins from `~/.config/opencode/plugins/` (or `$XDG_CONFIG_HOME`). Sessions are named `<folder> · OpenCode`, and each OpenCode session (subagents included) gets its own Diorama session.
+- **The plugin file holds only the `diorama` path and a configuration id**; the profile, prompt and lockdown stay in Diorama's data folder, as with Claude Code hooks. If Diorama is moved or removed, the plugin does nothing, and a failure or timeout leaves the original result.
+- **Lockdown** refuses `curl`, `wget` and the rest in the `shell` tool, and the model is told to use `webfetch` or `websearch` instead. Input rules don't apply: OpenCode's plugin can't ask you to approve a changed input (see D39).
+- **The model's replies are visible.** OpenCode keeps no transcript file, so the plugin writes one per session (prompts, the model's text and tool calls; never tool output) to `opencode-transcripts/` in Diorama's data folder and passes its path with every event. Impact labels ("Did Claude use it?"), "What Claude did next", session reports, task context and experiment drafts then work as in Claude Code's hook mode. The files follow the raw-capture retention setting.
+- **Sessions end** when OpenCode deletes or archives them, or when the OpenCode server that ran them stops. A session that reports again later is reopened.
+- **Upgrades:** when the daemon starts, it rewrites installed OpenCode plugins with the current version's template (same configuration), so you don't have to install them again.
+- **With `diorama run --agent opencode`** in a connected folder, the gateway handles the session and the plugin stays out of it, so nothing is rewritten twice.
+- `diorama hook list` and **Settings → Connected projects** show plugins next to Claude Code hooks, and `diorama hook uninstall --all` (and `brew uninstall --zap`) removes them too.
+
 ## Claude desktop and IDEs (hook mode)
 
 Hook mode connects a project folder to Diorama through Claude Code's hooks instead of the gateway. It works wherever Claude Code reads the project's settings: the Claude desktop app's Code tab, IDE extensions, and the terminal.
@@ -476,6 +518,18 @@ Key fields:
 - Trials whose rewrite failed are marked `invalid` and excluded from the facts, because they didn't receive the intended treatment.
 
 `diorama experiment report <run> --format md|json` exports a report. The JSON bundle contains every trial's manifest.
+
+### Experiments with OpenCode
+
+Set `"agent": "opencode"` (or pick **OpenCode** under **Agent** in the app, or start from `diorama experiment init --agent opencode`) and trials run `opencode run --standalone --auto --format json` instead of `claude -p`, routed through the gateway the same way. Everything after the trial (facts, heuristics, the judge, comparisons and reports) is the same. An experiment drafted from an OpenCode session is an OpenCode experiment.
+
+The `claude` options carry over where OpenCode has an equivalent:
+- `model` is **required** and must be an Anthropic model (`claude-sonnet-4-5` or `anthropic/claude-sonnet-4-5`): only those reach the gateway.
+- `allowedTools` and `disallowedTools` become OpenCode permissions: everything is denied except the allowed tools, and disallowed ones are denied last. Either agent's names work (`Read` or `read`, `Bash(git log:*)` becomes `shell` with `git log *`, `mcp__docs__search` becomes `docs_search`). OpenCode doesn't offer a denied tool to the model at all.
+- `maxTurns` becomes the `build` agent's `steps`. `permissionMode` and `maxBudgetUSD` have no equivalent and are ignored; the turn limit and `timeoutSeconds` still bound a trial.
+- `isolateConfiguration` gives each trial an empty `XDG_CONFIG_HOME`, so your global OpenCode configuration, plugins and MCP servers don't apply. Credentials, kept in OpenCode's data folder, still work, and the project's own `.opencode` configuration applies, as with Claude Code.
+
+Token usage and cost come from the gateway's records of each trial, priced like Claude Code's (OpenCode doesn't print the last step's usage). Trials appear in OpenCode's own session list, because they share its data folder. Before the trials start, Diorama runs `opencode session list --standalone` once so OpenCode creates its database; a trial whose OpenCode server fails to start before doing anything ("database is locked" when several start together) is started again, up to three times, and the trial's timeline says so.
 
 ### Reading the results: differences vs the control
 

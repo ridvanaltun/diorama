@@ -118,11 +118,16 @@ public struct ExperimentDefinition: Codable, Sendable, Hashable {
     public var seed: UInt64?
     /// Optional LLM judge (costs rewrite-key usage; off unless set).
     public var judge: JudgeConfig?
+    /// The agent trials run: nil means Claude Code (`claude -p`); `.opencode` runs `opencode run`
+    /// with the same options where OpenCode has them (see `OpenCodeTrial`).
+    public var agent: CodingAgent?
 
     public init(
         name: String, task: String, projectPath: String, claude: ClaudeRunOptions = .init(), variants: [ExperimentVariant],
-        trialsPerVariant: Int = 3, concurrency: Int = 2, treatment: TreatmentMode = .frozen, seed: UInt64? = nil, judge: JudgeConfig? = nil
+        trialsPerVariant: Int = 3, concurrency: Int = 2, treatment: TreatmentMode = .frozen, seed: UInt64? = nil, judge: JudgeConfig? = nil,
+        agent: CodingAgent? = nil
     ) {
+        self.agent = agent
         self.judge = judge
         self.name = name
         self.task = task
@@ -147,7 +152,10 @@ public struct ExperimentDefinition: Codable, Sendable, Hashable {
         treatment = try c.decodeIfPresent(TreatmentMode.self, forKey: .treatment) ?? .frozen
         seed = try c.decodeIfPresent(UInt64.self, forKey: .seed)
         judge = try c.decodeIfPresent(JudgeConfig.self, forKey: .judge)
+        agent = try c.decodeIfPresent(CodingAgent.self, forKey: .agent)
     }
+
+    public var runsOpenCode: Bool { agent == .opencode }
 
     /// Returns human-readable validation problems (empty when valid).
     public func validate() -> [String] {
@@ -163,6 +171,7 @@ public struct ExperimentDefinition: Codable, Sendable, Hashable {
         }
         if trialsPerVariant < 1 || trialsPerVariant > 200 { problems.append("trialsPerVariant must be between 1 and 200") }
         if concurrency < 1 || concurrency > 8 { problems.append("concurrency must be between 1 and 8") }
+        if runsOpenCode { problems += OpenCodeTrial.problems(claude) }
         var isDir: ObjCBool = false
         if !FileManager.default.fileExists(atPath: projectPath, isDirectory: &isDir) || !isDir.boolValue {
             problems.append("projectPath is not an existing directory: \(projectPath)")
@@ -273,13 +282,17 @@ public struct TrialManifest: Codable, Sendable, Hashable {
     public var macOSVersion: String
     public var seed: UInt64
     public var order: Int
+    /// The agent the trial ran (nil from earlier versions: Claude Code). With OpenCode,
+    /// `claudeVersion` and `claudePath` describe `opencode`.
+    public var agent: CodingAgent?
 
     public init(
         dioramaVersion: String, rewritePromptVersion: String, claudeVersion: String?, claudePath: String, arguments: [String],
         environment: [String: String], model: String?, variantKey: String, profileVersionId: String?, promptHash: String?,
         treatment: TreatmentMode, experimentDefinitionHash: String, projectSnapshot: String, macOSVersion: String,
-        seed: UInt64, order: Int
+        seed: UInt64, order: Int, agent: CodingAgent? = nil
     ) {
+        self.agent = agent
         self.dioramaVersion = dioramaVersion
         self.rewritePromptVersion = rewritePromptVersion
         self.claudeVersion = claudeVersion

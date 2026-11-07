@@ -208,13 +208,20 @@ public enum ContentText {
               let obj = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
         else { return json }
         if let s = obj as? String { return s }
-        if let blocks = obj as? [[String: Any]] {
-            return blocks.map { b -> String in
-                if (b["type"] as? String) == "text", let t = b["text"] as? String { return t }
-                return "[\(b["type"] as? String ?? "block")]"
-            }.joined(separator: "\n\n")
+        if let blocks = obj as? [[String: Any]] { return displayBlocks(blocks) }
+        // A hook-mode result whose model-visible text is in content blocks (OpenCode tools, MCP results).
+        if let o = obj as? [String: Any], let blocks = o["content"] as? [[String: Any]],
+           blocks.contains(where: { $0["type"] as? String == "text" }) {
+            return displayBlocks(blocks)
         }
         return json
+    }
+
+    static func displayBlocks(_ blocks: [[String: Any]]) -> String {
+        blocks.map { b -> String in
+            if (b["type"] as? String) == "text", let t = b["text"] as? String { return t }
+            return "[\(b["type"] as? String ?? "block")]"
+        }.joined(separator: "\n\n")
     }
 }
 

@@ -82,7 +82,9 @@ struct SessionReport {
     static func time(_ d: Date) -> String { d.formatted(date: .abbreviated, time: .standard) }
 
     func mode(code: Bool = true) -> String {
-        session.isHook ? "hook mode (Claude desktop / IDE: tool results only)" : (code ? "gateway (`diorama run`)" : "gateway (diorama run)")
+        session.isHook ? (session.isOpenCode ? "hook mode (OpenCode plugin: tool results only)" : "hook mode (Claude desktop / IDE: tool results only)")
+            : session.isOpenCode ? (code ? "gateway (`diorama run --agent opencode`)" : "gateway (diorama run --agent opencode)")
+            : (code ? "gateway (`diorama run`)" : "gateway (diorama run)")
     }
 
     /// "“text” — calls WebFetch, Read", whichever parts exist.

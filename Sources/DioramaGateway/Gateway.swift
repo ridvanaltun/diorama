@@ -57,11 +57,12 @@ struct GatewayHandler: Sendable {
 
     func handle(token: String, rest: String, _ req: HTTPRequest, _ writer: ResponseWriter) async {
         guard let session = sessions.lookup(token: token) else {
-            await reject(writer, 403, "permission_error", "Unknown or expired Diorama session. Start Claude Code with `diorama run`.")
+            await reject(writer, 403, "permission_error", "Unknown or expired Diorama session. Start the session again with `diorama run`.")
             return
         }
         let requestClass = req.header("x-claude-code-request-class")
-        let claudeSessionId = req.header("x-claude-code-session-id")
+        // The agent's own session id: Claude Code's, or OpenCode's (`ses_…`).
+        let claudeSessionId = req.header("x-claude-code-session-id") ?? req.header("x-opencode-session-id")
         if let csid = claudeSessionId { sessions.noteClaudeSession(sessionId: session.id, claudeSessionId: csid) }
         let path = rest.isEmpty ? "/" : rest
         let pathOnly = HTTPServer.split(path).0

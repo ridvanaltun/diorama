@@ -42,7 +42,9 @@ public enum RuleMatcher {
             }
             return "the rule applies to \(what(m.stage)), not \(what(ctx.stage))"
         }
-        guard m.tools.contains(where: { Glob.matches($0, ctx.toolName) }) else {
+        // A rule for `WebFetch` also matches OpenCode's `webfetch`, and the other way round.
+        let names = ToolNames.allNames(ctx.toolName)
+        guard m.tools.contains(where: { glob in names.contains { Glob.matches(glob, $0) } }) else {
             return "\(ctx.toolName) isn't in the rule's tools (\(m.tools.joined(separator: ", ")))"
         }
         if ctx.isError, !m.includeErrors { return "the result is an error and the rule excludes errors" }

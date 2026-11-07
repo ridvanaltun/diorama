@@ -30,7 +30,8 @@ public final class ScriptedModel: @unchecked Sendable {
         let tools = (body["tools"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
         let stream = body["stream"] as? Bool ?? false
         let messages = body["messages"] as? [[String: Any]] ?? []
-        let isMain = tools.contains("Read") || tools.contains("Bash")
+        // Claude Code's tools, or OpenCode's lowercase ones.
+        let isMain = tools.contains("Read") || tools.contains("Bash") || tools.contains("read") || tools.contains("shell")
         guard isMain else {
             // WebFetch's summarizing request: answer with the page we were given, so tests can
             // see exactly what the extraction model received.

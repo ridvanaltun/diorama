@@ -24,6 +24,8 @@ final class TestEnv: @unchecked Sendable {
         if mock.port == 0 { try await mock.start() }
         var o = DioramaDaemon.Options(paths: DioramaPaths(home: home))
         o.claudeUserSettings = home.appendingPathComponent("claude-user-settings.json")
+        o.openCodeUserPlugin = home.appendingPathComponent("opencode-user/plugins/diorama/index.ts")
+        o.watchDisconnectedHooks = false
         o.port = 0
         o.upstream = mock.url
         o.providerOverride = provider

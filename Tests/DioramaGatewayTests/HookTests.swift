@@ -104,11 +104,11 @@ extension HookEndpointTests {
             try #require(try await env.client.hook(HookEvent(event: "SessionStart", claudeSessionId: id, cwd: project.path, config: HookConfig())).sessionId)
         }
         let sid = try await start("c-end")
-        DioramaDaemon.endDisconnectedHookSessions(store: env.daemon.store, userSettings: user)
+        DioramaDaemon.endDisconnectedHookSessions(store: env.daemon.store, userSettings: user, userPlugin: noUserPlugin)
         #expect(try await env.client.session(sid).status == .active, "hook still installed")
 
         try HookInstaller.uninstall(settings: settings)
-        DioramaDaemon.endDisconnectedHookSessions(store: env.daemon.store, userSettings: user)
+        DioramaDaemon.endDisconnectedHookSessions(store: env.daemon.store, userSettings: user, userPlugin: noUserPlugin)
         #expect(try await env.client.session(sid).status == .ended)
         #expect(try await env.client.timeline(sid).events.contains { $0.message.contains("hook was removed") })
         // If Claude Code does report again (it kept the hook it started with), the session reopens.
@@ -136,6 +136,9 @@ extension HookEndpointTests {
         #expect(HookInstaller.resolvedConfig(in: command, configs: registry.configs)?.prompt?.text == "Secret steer")
     }
 }
+
+/// Keeps tests away from the user's real `~/.config/opencode/plugins/diorama`.
+let noUserPlugin = FileManager.default.temporaryDirectory.appendingPathComponent("diorama-no-user-plugin/plugins/diorama/index.ts")
 
 @Suite struct HookInstallerTests {
     func tempSettings(_ initial: String?) throws -> URL {
@@ -235,7 +238,7 @@ extension HookEndpointTests {
         try HookInstaller.install(command: "'/gone/diorama' hook run", settings: b, registry: registry)
         #expect(Set(registry.files) == [a.path, b.path])
 
-        var list = HookInstaller.connected(registry: registry, userSettings: user)
+        var list = HookInstaller.connected(registry: registry, userSettings: user, userPlugin: noUserPlugin)
         #expect(list.map(\.settingsFile).sorted() == [a.path, b.path].sorted())
         let pa = try #require(list.first { $0.settingsFile == a.path })
         #expect(pa.folder == a.deletingLastPathComponent().deletingLastPathComponent().path)
@@ -245,16 +248,16 @@ extension HookEndpointTests {
         // A hook removed by hand drops out of the registry; the user settings count when they have one.
         try HookInstaller.uninstall(settings: b)
         try HookInstaller.install(command: "'/x/diorama' hook run", settings: user)
-        list = HookInstaller.connected(registry: registry, userSettings: user)
+        list = HookInstaller.connected(registry: registry, userSettings: user, userPlugin: noUserPlugin)
         #expect(list.map(\.settingsFile).sorted() == [a.path, user.path].sorted())
         #expect(list.first { $0.settingsFile == user.path }?.folder == nil)
         #expect(registry.files == [a.path])
 
-        let (removed, failures) = HookInstaller.uninstallAll(registry: registry, userSettings: user)
+        let (removed, failures) = HookInstaller.uninstallAll(registry: registry, userSettings: user, userPlugin: noUserPlugin)
         #expect(Set(removed.map(\.path)) == [a.path, user.path] && failures.isEmpty)
         #expect(try load(a)["permissions"] != nil && load(a)["hooks"] == nil)
         #expect(try load(user)["model"] as? String == "x")
-        #expect(HookInstaller.connected(registry: registry, userSettings: user).isEmpty && registry.files.isEmpty)
+        #expect(HookInstaller.connected(registry: registry, userSettings: user, userPlugin: noUserPlugin).isEmpty && registry.files.isEmpty)
     }
 
     @Test func locateFindsTheNearestProjectAndTheUserSettings() throws {
@@ -263,11 +266,11 @@ extension HookEndpointTests {
         let sub = root.appendingPathComponent("src/deep")
         try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
         let user = try tempSettings(nil)
-        #expect(HookInstaller.locate(cwd: sub.path, userSettings: user).isEmpty)
+        #expect(HookInstaller.locate(cwd: sub.path, userSettings: user, userPlugin: noUserPlugin).isEmpty)
         try HookInstaller.install(command: "'/x/diorama' hook run", settings: project)
-        #expect(HookInstaller.locate(cwd: sub.path, userSettings: user).map(\.path) == [project.path])
+        #expect(HookInstaller.locate(cwd: sub.path, userSettings: user, userPlugin: noUserPlugin).map(\.path) == [project.path])
         try HookInstaller.install(command: "'/x/diorama' hook run", settings: user)
-        #expect(HookInstaller.locate(cwd: sub.path, userSettings: user).map(\.path) == [project.path, user.path])
+        #expect(HookInstaller.locate(cwd: sub.path, userSettings: user, userPlugin: noUserPlugin).map(\.path) == [project.path, user.path])
     }
 
     @Test func claudeTrustFollowsClaudeCodesRules() throws {
@@ -297,7 +300,7 @@ extension HookEndpointTests {
         let registry = HookRegistry(paths: DioramaPaths(home: base.appendingPathComponent("home")))
         try HookInstaller.install(command: "'/x/diorama' hook run", settings: HookInstaller.projectSettings(plain.path), registry: registry)
         try HookInstaller.install(command: "'/x/diorama' hook run", settings: HookInstaller.projectSettings(repo.path), registry: registry)
-        let list = HookInstaller.connected(registry: registry, userSettings: base.appendingPathComponent("user.json"), claudeConfig: config)
+        let list = HookInstaller.connected(registry: registry, userSettings: base.appendingPathComponent("user.json"), userPlugin: noUserPlugin, claudeConfig: config)
         #expect(list.first { $0.folder == plain.path }?.notTrusted == true)
         #expect(list.first { $0.folder == repo.path }?.notTrusted == false)
     }
@@ -314,7 +317,7 @@ extension HookEndpointTests {
         let id = try #require(HookInstaller.configId(in: command))
         #expect(id.hasPrefix("hk_") && command == "[ -x '/x/diorama' ] && exec '/x/diorama' hook run --config \(id) || true")
         #expect(HookInstaller.resolvedConfig(in: command, configs: registry.configs) == config)
-        #expect(HookInstaller.connected(registry: registry, userSettings: try tempSettings(nil)).first?.config == config)
+        #expect(HookInstaller.connected(registry: registry, userSettings: try tempSettings(nil), userPlugin: noUserPlugin).first?.config == config)
         let mode = try FileManager.default.attributesOfItem(atPath: registry.configs.url.path)[.posixPermissions] as? Int
         #expect(mode == 0o600)
 

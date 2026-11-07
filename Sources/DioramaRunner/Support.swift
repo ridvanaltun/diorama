@@ -27,6 +27,15 @@ public enum ClaudeLocator {
     }
 }
 
+/// Finds the `opencode` executable (only `diorama run --agent opencode` needs it).
+public enum OpenCodeLocator {
+    public static func find(environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
+        let home = environment["HOME"] ?? NSHomeDirectory()
+        let dirs = (environment["PATH"] ?? "").split(separator: ":").map(String.init) + ["\(home)/.opencode/bin", "/opt/homebrew/bin", "/usr/local/bin"]
+        return dirs.map { ($0 as NSString).appendingPathComponent("opencode") }.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+}
+
 /// Spawns processes with explicit environment, working directory and timeout.
 public enum ProcessRunner {
     public struct Result: Sendable {

@@ -100,6 +100,29 @@ import Testing
         #expect(plain.runArguments == ["run", "--name", "plain"])
     }
 
+    @Test func openCodeSessionsAndLaunchersPassTheAgent() throws {
+        var f = FormLogic.SessionForm(folder: "/p")
+        f.agent = .opencode
+        f.claudeArgs = "run -m anthropic/claude-sonnet-4-5 hi"
+        #expect(FormLogic.sessionCommand(f, cli: "diorama") == "cd '/p' && 'diorama' run --agent opencode -- run -m anthropic/claude-sonnet-4-5 hi")
+        let l = FormLogic.launcher(f, name: "OC")
+        #expect(l.agent == .opencode)
+        #expect(l.runArguments == ["run", "--name", "OC", "--agent", "opencode", "--", "run", "-m", "anthropic/claude-sonnet-4-5", "hi"])
+        // Claude Code launchers don't store an agent, so earlier versions read them unchanged.
+        #expect(FormLogic.launcher(FormLogic.SessionForm(folder: "/p"), name: "C").agent == nil)
+        let old = try JSONDecoder().decode(Launcher.self, from: Data(#"{"id":"a","name":"A","folder":"/a","promptTools":[],"taskContext":false,"pageStage":false,"lockdown":"none","claudeArgs":""}"#.utf8))
+        #expect(old.agent == nil && !old.runArguments.contains("--agent"))
+    }
+
+    @Test func openCodeExperimentFormSetsTheAgentAndDropsTheBudget() {
+        var f = FormLogic.ExperimentForm(project: "/p")
+        f.claudeModel = "claude-sonnet-4-5"
+        #expect(FormLogic.experimentDefinition(f).agent == nil && FormLogic.experimentDefinition(f).claude.maxBudgetUSD == 2)
+        f.agent = .opencode
+        let d = FormLogic.experimentDefinition(f)
+        #expect(d.runsOpenCode && d.claude.maxBudgetUSD == nil && d.claude.model == "claude-sonnet-4-5")
+    }
+
     @Test func upsertReplacesTheSameNameAndKeepsItsId() {
         let a = Launcher(id: "a", name: "One", folder: "/a")
         let list = FormLogic.upsert(Launcher(id: "new", name: "one", folder: "/b"), into: [a])

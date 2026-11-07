@@ -113,6 +113,10 @@ public final class Store: @unchecked Sendable {
         CREATE TABLE profile_sync(
           path TEXT PRIMARY KEY, profile_id TEXT, body_hash TEXT, mtime REAL, error TEXT, synced_at REAL NOT NULL);
         """,
+        // v12: the agent a session ran in (Claude Code or OpenCode)
+        """
+        ALTER TABLE sessions ADD COLUMN agent TEXT NOT NULL DEFAULT 'claude';
+        """,
     ]
 
     public static var schemaVersion: Int { migrations.count }

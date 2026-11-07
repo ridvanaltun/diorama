@@ -357,6 +357,7 @@ struct SessionRow: View {
             HStack(spacing: 6) {
                 if session.isPaused { Badge(text: "paused", color: .orange) }
                 if session.isArchived { Badge(text: "archived", color: .secondary) }
+                if session.isOpenCode { Badge(text: "OpenCode", color: .indigo).help("An OpenCode session") }
                 if session.isHook { Badge(text: "hook", color: .teal).help("Hook mode: tool results only") }
                 if session.stats.rewrites > 0 { Badge(text: Fmt.plural(session.stats.rewrites, "rewrite"), color: .purple) }
                 if session.stats.failures > 0 { Badge(text: Fmt.plural(session.stats.failures, "failure"), color: .red) }
@@ -526,6 +527,20 @@ struct SessionHeader: View {
     @State private var hookFile: URL?
     @State private var removingHook = false
 
+    /// The Claude Code hook, or for an OpenCode session the OpenCode plugin, that its folder runs.
+    func sessionHookFile() -> URL? {
+        HookInstaller.locate(cwd: session.cwd).first { OpenCodePlugin.isPluginFile($0) == session.isOpenCode }
+    }
+
+    var isUserWideHook: Bool { hookFile == HookInstaller.userSettings() || hookFile == OpenCodePlugin.userFile() }
+
+    /// `<folder>/.claude/settings.local.json` or `<folder>/.opencode/plugins/diorama/index.ts` → `<folder>`.
+    static func hookFolder(_ file: URL) -> String {
+        var url = file
+        for _ in 0..<(OpenCodePlugin.isPluginFile(file) ? 4 : 2) { url.deleteLastPathComponent() }
+        return url.path
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
@@ -592,26 +607,32 @@ struct SessionHeader: View {
                 .disabled(session.kind != .interactive)
                 .help("Measure this session's steering: an experiment with the same task and project, plus an unmodified control")
                 if session.isHook, hookFile != nil {
-                    Button { removingHook = true } label: { Label("Remove Hook…", systemImage: "minus.circle") }
+                    Button { removingHook = true } label: { Label(session.isOpenCode ? "Remove Plugin…" : "Remove Hook…", systemImage: "minus.circle") }
                         .controlSize(.small)
-                        .help("Disconnect this project: new Claude Code sessions in it stop reporting to Diorama")
+                        .help("Disconnect this project: new \(session.isOpenCode ? "OpenCode" : "Claude Code") sessions in it stop reporting to Diorama")
                 }
                 Spacer()
             }
-            .task(id: session.id) { hookFile = session.isHook ? HookInstaller.locate(cwd: session.cwd).first : nil }
-            .confirmationDialog(hookFile == HookInstaller.userSettings()
-                                ? "Remove Diorama's hook from your user settings?"
-                                : "Remove Diorama's hook from \(hookFile.map { Fmt.shortPath($0.deletingLastPathComponent().deletingLastPathComponent().path) } ?? "")?",
+            .task(id: session.id) { hookFile = session.isHook ? sessionHookFile() : nil }
+            .confirmationDialog(isUserWideHook
+                                ? "Remove Diorama's \(session.isOpenCode ? "plugin from your OpenCode configuration" : "hook from your user settings")?"
+                                : "Remove Diorama's \(session.isOpenCode ? "plugin" : "hook") from \(hookFile.map { Fmt.shortPath(Self.hookFolder($0)) } ?? "")?",
                                 isPresented: $removingHook) {
-                Button("Remove Hook", role: .destructive) {
+                Button(session.isOpenCode ? "Remove Plugin" : "Remove Hook", role: .destructive) {
                     guard let url = hookFile else { return }
                     do { try HookInstaller.uninstall(settings: url, registry: model.hookRegistry) } catch { model.report(error) }
-                    hookFile = HookInstaller.locate(cwd: session.cwd).first
+                    hookFile = sessionHookFile()
                 }
             } message: {
-                Text(hookFile == HookInstaller.userSettings()
-                     ? "This hook is in ~/.claude/settings.json: every Claude Code session on this account stops reporting to Diorama. This session's records stay."
-                     : "New Claude Code sessions in this folder stop reporting to Diorama; sessions already open keep reporting until they end. Other settings and this session's records stay.")
+                if session.isOpenCode {
+                    Text(isUserWideHook
+                         ? "The plugin is in ~/.config/opencode/plugins: every OpenCode session on this account stops reporting to Diorama. This session's records stay."
+                         : "OpenCode sessions in this folder stop reporting to Diorama. This session's records stay.")
+                } else {
+                    Text(isUserWideHook
+                         ? "This hook is in ~/.claude/settings.json: every Claude Code session on this account stops reporting to Diorama. This session's records stay."
+                         : "New Claude Code sessions in this folder stop reporting to Diorama; sessions already open keep reporting until they end. Other settings and this session's records stay.")
+                }
             }
             .sheet(isPresented: $showWhatIf) { WhatIfSheet(session: session) }
             .sheet(isPresented: Binding(get: { compareWith != nil }, set: { if !$0 { compareWith = nil } })) {
@@ -1155,9 +1176,19 @@ struct AttemptRow: View {
 // MARK: - New session
 
 struct NewSessionSheet: View {
+    /// Start a routed session in Terminal, or connect a project so the agent's desktop app and
+    /// IDEs report to Diorama (a Claude Code hook, or the OpenCode plugin).
     enum Mode: String, CaseIterable {
-        case terminal = "Terminal"
-        case desktop = "Claude desktop & IDEs"
+        case terminal
+        case desktop
+
+        func label(for agent: CodingAgent) -> String {
+            switch (self, agent) {
+            case (.terminal, _): "Terminal"
+            case (.desktop, .claude): "Claude desktop & IDEs"
+            case (.desktop, .opencode): "OpenCode desktop & IDEs"
+            }
+        }
     }
 
     @Environment(AppModel.self) private var model
@@ -1172,6 +1203,7 @@ struct NewSessionSheet: View {
     @State private var pageStage = false
     @State private var lockdown = LockdownPreset.none
     @State private var claudeArgs = ""
+    @State private var agent: CodingAgent
     /// The Diorama hook currently installed in `folder` (hook mode), re-read after changes.
     @State private var installedHook: String?
     /// Claude Code hasn't trusted the folder (it skips project hooks until it does).
@@ -1189,31 +1221,53 @@ struct NewSessionSheet: View {
     /// returning to the app doesn't overwrite edits).
     @State private var filledFrom: String?
 
-    init(mode: Mode = .terminal, folder: String? = nil) {
+    init(mode: Mode = .terminal, agent: CodingAgent = .claude, folder: String? = nil) {
         _mode = State(initialValue: mode)
+        _agent = State(initialValue: agent)
         if let folder { _folder = State(initialValue: folder) }
     }
 
     var form: FormLogic.SessionForm {
         FormLogic.SessionForm(
             folder: folder, name: name, profile: profile, prompt: prompt, promptTools: promptTools, taskContext: taskContext,
-            pageStage: mode == .terminal && pageStage, lockdown: lockdown, claudeArgs: claudeArgs)
+            pageStage: mode == .terminal && agent == .claude && pageStage, lockdown: lockdown, claudeArgs: claudeArgs,
+            agent: agent)
     }
 
+    /// Connecting a project for OpenCode (its plugin) rather than for Claude Code (its hook).
+    var installsPlugin: Bool { mode == .desktop && agent == .opencode }
+
     var command: String { FormLogic.sessionCommand(form, cli: model.cliPath) }
-    var settingsFile: URL { HookInstaller.projectSettings(folder) }
+    var settingsFile: URL { installsPlugin ? OpenCodePlugin.projectFile(folder) : HookInstaller.projectSettings(folder) }
+    /// What hook mode installs, for button titles.
+    var hookNoun: String { installsPlugin ? "Plugin" : "Hook" }
+
+    var modeDescription: String {
+        switch (mode, agent) {
+        case (.terminal, .opencode):
+            "Starts OpenCode in Terminal through Diorama's gateway: full capture of its Anthropic models (pick one with -m anthropic/<model>). Your other sessions and settings are untouched."
+        case (.terminal, .claude):
+            "Starts Claude Code in Terminal through Diorama's gateway: full capture, and the only mode experiments use. Your other sessions and settings are untouched."
+        case (.desktop, .claude):
+            "Adds a hook to this project's .claude/settings.local.json. Claude Code sessions in the folder, including the Claude desktop app's Code tab, then send their tool results to Diorama. Hook mode records tool results only: no model requests or token usage."
+        case (.desktop, .opencode):
+            "Adds Diorama's plugin to this project's .opencode/plugins. OpenCode sessions in the folder, including OpenCode Desktop's, with any model provider, then send their tool results to Diorama. Hook mode records tool results only: no model requests or token usage."
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
                 Text("New routed session").font(.title2.bold())
+                Picker("Agent", selection: $agent) {
+                    ForEach(CodingAgent.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                }
+                .pickerStyle(.segmented).fixedSize()
                 Picker("Run in", selection: $mode) {
-                    ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    ForEach(Mode.allCases, id: \.self) { Text($0.label(for: agent)).tag($0) }
                 }
                 .pickerStyle(.segmented).labelsHidden().fixedSize()
-                Text(mode == .terminal
-                     ? "Starts Claude Code in Terminal through Diorama's gateway: full capture, and the only mode experiments use. Your other sessions and settings are untouched."
-                     : "Adds a hook to this project's .claude/settings.local.json. Claude Code sessions in the folder, including the Claude desktop app's Code tab, then send their tool results to Diorama. Hook mode records tool results only: no model requests or token usage.")
+                Text(modeDescription)
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             .padding([.horizontal, .top], 20)
@@ -1228,11 +1282,11 @@ struct NewSessionSheet: View {
                     if mode == .terminal {
                         TextField("Name", text: $name, prompt: Text("Optional"))
                     } else if let installedHook {
-                        Label("Connected. The form shows the hook's current settings; Update Hook saves your changes for new sessions.", systemImage: "link")
+                        Label("Connected. The form shows the \(hookNoun.lowercased())'s current settings; Update \(hookNoun) saves your changes for new sessions.", systemImage: "link")
                             .font(.caption).foregroundStyle(.secondary)
                             .help(installedHook)
                     }
-                    if mode == .desktop, notTrusted {
+                    if mode == .desktop, agent == .claude, notTrusted {
                         UntrustedFolderNote(folder: folder)
                     }
                 }
@@ -1261,8 +1315,8 @@ struct NewSessionSheet: View {
                         Text("Optional. Instructions for this session only, applied after the profile's rules.").font(.caption).foregroundStyle(.secondary)
                     }
                     if !prompt.isEmpty {
-                        TextField("Applies to tools", text: $promptTools).disabled(mode == .terminal && pageStage)
-                        if mode == .terminal {
+                        TextField("Applies to tools", text: $promptTools).disabled(mode == .terminal && agent == .claude && pageStage)
+                        if mode == .terminal, agent == .claude {
                             Toggle("Edit WebFetch pages before summarization", isOn: $pageStage)
                         }
                         Toggle("Share the session's task with the rewrite agent", isOn: $taskContext)
@@ -1276,7 +1330,9 @@ struct NewSessionSheet: View {
                             Text("None").tag(LockdownPreset.none)
                             Text("Block shell network tools").tag(LockdownPreset.network)
                         }
-                        Text("Refuses curl, wget and similar commands, so Claude can't fetch a page around a rewrite; Claude is told to use WebFetch instead.")
+                        Text(installsPlugin
+                             ? "Refuses curl, wget and similar commands in OpenCode's shell tool, so the model can't fetch a page around a rewrite. Input rules don't apply in OpenCode."
+                             : "Refuses curl, wget and similar commands, so Claude can't fetch a page around a rewrite; Claude is told to use WebFetch instead.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -1286,7 +1342,8 @@ struct NewSessionSheet: View {
                             Text("None").tag(LockdownPreset.none)
                             Text("Block shell network tools").tag(LockdownPreset.network)
                         }
-                        TextField("Extra Claude Code arguments", text: $claudeArgs, prompt: Text("e.g. --model sonnet"))
+                        TextField(agent == .opencode ? "Extra OpenCode arguments" : "Extra Claude Code arguments", text: $claudeArgs,
+                                  prompt: Text(agent == .opencode ? "e.g. run -m anthropic/claude-sonnet-4-5 \"task\"" : "e.g. --model sonnet"))
                     }
                     Section("Command") {
                         Text(command).font(.caption.monospaced()).textSelection(.enabled).lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
@@ -1300,7 +1357,9 @@ struct NewSessionSheet: View {
                     .foregroundStyle(.orange).font(.caption).padding(.horizontal, 20)
             }
             if justInstalled {
-                Label("Installed. Start a new Code session in this folder in Claude desktop (sessions already open keep running without it).", systemImage: "checkmark.circle.fill")
+                Label(installsPlugin
+                      ? "Installed. OpenCode Desktop and other OpenCode sessions in this folder pick it up without a restart."
+                      : "Installed. Start a new Code session in this folder in Claude desktop (sessions already open keep running without it).", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green).font(.callout).padding(.horizontal, 20).padding(.top, 8)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1308,7 +1367,7 @@ struct NewSessionSheet: View {
                 if mode == .terminal {
                     Button("Copy Command") { copyToPasteboard(command) }
                 } else if installedHook != nil {
-                    Button("Remove Hook", role: .destructive) {
+                    Button("Remove \(hookNoun)", role: .destructive) {
                         do {
                             try HookInstaller.uninstall(settings: settingsFile, registry: model.hookRegistry)
                             justInstalled = false
@@ -1351,7 +1410,7 @@ struct NewSessionSheet: View {
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                 } else {
-                    Button(installedHook == nil ? "Install Hook" : "Update Hook") {
+                    Button(installedHook == nil ? "Install \(hookNoun)" : "Update \(hookNoun)") {
                         do {
                             try HookInstaller.install(cli: model.cliPath, config: FormLogic.hookConfig(form), settings: settingsFile, registry: model.hookRegistry)
                             justInstalled = true
@@ -1378,19 +1437,23 @@ struct NewSessionSheet: View {
         // Back from Terminal, where the folder may just have been trusted.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in refreshInstalled() }
         .onChange(of: mode) { justInstalled = false }
+        .onChange(of: agent) {
+            justInstalled = false
+            refreshInstalled()
+        }
     }
 
     func refreshInstalled() {
         installedHook = HookInstaller.installedCommand(settings: settingsFile)
         // A connected folder: show what its hook does, ready to edit.
-        if mode == .desktop, filledFrom != folder, let command = installedHook,
+        if mode == .desktop, filledFrom != settingsFile.path, let command = installedHook,
            let config = HookInstaller.resolvedConfig(in: command, configs: model.hookRegistry.configs) {
             let names = Dictionary(model.profiles.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
             let f = FormLogic.form(fromHook: config, folder: folder, profileNames: names)
             (profile, prompt, promptTools, taskContext, lockdown) = (f.profile, f.prompt, f.promptTools, f.taskContext, f.lockdown)
-            filledFrom = folder
+            filledFrom = settingsFile.path
         }
         let path = folder.trimmingCharacters(in: .whitespaces)
-        notTrusted = !path.isEmpty && FileManager.default.fileExists(atPath: (path as NSString).expandingTildeInPath) && ClaudeTrust.isTrusted(path) == false
+        notTrusted = mode == .desktop && agent == .claude && !path.isEmpty && FileManager.default.fileExists(atPath: (path as NSString).expandingTildeInPath) && ClaudeTrust.isTrusted(path) == false
     }
 }

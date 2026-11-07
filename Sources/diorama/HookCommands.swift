@@ -7,11 +7,14 @@ import Foundation
 /// IDE extensions) report their tool results through Claude Code hooks instead.
 struct Hook: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Use Diorama from Claude desktop and IDEs through Claude Code hooks.",
+        abstract: "Use Diorama from Claude desktop, IDEs and OpenCode through hooks.",
         discussion: """
             `diorama hook install` adds a hook to a project's .claude/settings.local.json. Every Claude Code \
             session in that folder, including the Claude desktop app's Code tab, then sends its tool results \
             to Diorama, which applies your profile or prompt and records each decision.
+
+            With --opencode it installs Diorama's OpenCode plugin instead (.opencode/plugins/diorama), which \
+            does the same for every OpenCode session in that folder, with any model provider.
 
             Hook mode sees tool results only: no model requests, token usage or cache data, and no \
             pre-extraction (WebFetch pages). Use `diorama run` for full capture and for experiments.
@@ -36,10 +39,13 @@ struct Hook: AsyncParsableCommand {
 
     struct Target: ParsableArguments {
         @Argument(help: "Project folder (default: the current folder).") var folder: String?
-        @Flag(help: "Use ~/.claude/settings.json instead: every Claude Code session not started with `diorama run`.") var user = false
+        @Flag(help: "Use ~/.claude/settings.json instead: every Claude Code session not started with `diorama run` (with --opencode: ~/.config/opencode/plugins).") var user = false
+        @Flag(help: "Diorama's OpenCode plugin instead of the Claude Code hook.") var opencode = false
 
         var settingsURL: URL {
-            user ? HookInstaller.userSettings() : HookInstaller.projectSettings(folder ?? FileManager.default.currentDirectoryPath)
+            let folder = folder ?? FileManager.default.currentDirectoryPath
+            if opencode { return user ? OpenCodePlugin.userFile() : OpenCodePlugin.projectFile(folder) }
+            return user ? HookInstaller.userSettings() : HookInstaller.projectSettings(folder)
         }
     }
 
@@ -51,6 +57,7 @@ struct Hook: AsyncParsableCommand {
                   diorama hook install --profile "Web: subtle factual edit"
                   diorama hook install ~/code/app --prompt "Say the v1 API is deprecated" --prompt-tools WebFetch
                   diorama hook install --profile "Docs steer" --lockdown network   # also block curl, wget, …
+                  diorama hook install --opencode --profile "Docs steer"           # OpenCode sessions in this folder
                 Run it again to change the configuration. Sessions already running keep the configuration they started with.
                 """)
         @OptionGroup var global: GlobalOptions
@@ -65,6 +72,7 @@ struct Hook: AsyncParsableCommand {
                 guard profiles.contains(where: { $0.name == p || $0.id == p }) else { throw ValidationError("unknown profile '\(p)'") }
             }
             let url = try HookInstaller.install(cli: selfPath(), config: config, settings: target.settingsURL, registry: HookRegistry(paths: global.paths))
+            if target.opencode { return printOpenCodeInstalled(url, config: config) }
             print("✓ Diorama hook installed in \(url.path)")
             if config.profile == nil && config.prompt == nil {
                 print("  No profile or prompt: sessions are recorded but never changed. Re-run with --profile or --prompt to steer them.")
@@ -78,18 +86,30 @@ struct Hook: AsyncParsableCommand {
                 if ClaudeTrust.isTrusted(folder) == false { print("\n⚠ " + ClaudeTrust.advice(for: folder)) }
             }
         }
+
+        func printOpenCodeInstalled(_ url: URL, config: HookConfig) {
+            print("✓ Diorama's OpenCode plugin installed in \(url.path)")
+            if config.profile == nil && config.prompt == nil {
+                print("  No profile or prompt: sessions are recorded but never changed. Re-run with --profile or --prompt to steer them.")
+            }
+            print(target.user
+                  ? "  Every OpenCode session on this account now reports its tool results to Diorama, with any model provider."
+                  : "  OpenCode sessions in this folder now report their tool results to Diorama, with any model provider.")
+            print("  OpenCode picks it up without a restart. Input rules don't apply in OpenCode; tool results and lockdown do.")
+            print("  Remove it with `diorama hook uninstall --opencode`.")
+        }
     }
 
     struct Uninstall: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             abstract: "Remove Diorama's hook from a project (or from ~/.claude/settings.json with --user).",
-            discussion: "`diorama hook uninstall --all` removes it from every project `diorama hook list` shows. Other settings and hooks stay as they are.")
+            discussion: "`diorama hook uninstall --all` removes it, and Diorama's OpenCode plugins, from every project `diorama hook list` shows. Other settings and hooks stay as they are.")
         @OptionGroup var global: GlobalOptions
         @OptionGroup var target: Target
         @Flag(help: "Remove it from every connected project and from your user settings.") var all = false
 
         func validate() throws {
-            if all, target.folder != nil || target.user { throw ValidationError("--all can't be combined with a folder or --user") }
+            if all, target.folder != nil || target.user || target.opencode { throw ValidationError("--all can't be combined with a folder, --user or --opencode") }
         }
 
         func run() async throws {
@@ -104,7 +124,7 @@ struct Hook: AsyncParsableCommand {
             }
             let url = target.settingsURL
             if try HookInstaller.uninstall(settings: url, registry: registry) {
-                print("✓ Removed Diorama's hook from \(url.path)")
+                print(target.opencode ? "✓ Removed Diorama's OpenCode plugin (\(url.path))" : "✓ Removed Diorama's hook from \(url.path)")
             } else {
                 print("No Diorama hook in \(url.path)")
             }
@@ -125,6 +145,12 @@ struct Hook: AsyncParsableCommand {
             print("Diorama hook installed in \(url.path)")
             print("  \(HookInstaller.resolvedConfig(in: command, configs: HookRegistry(paths: global.paths).configs)?.summary ?? "unknown configuration")")
             print("  \(command)")
+            if target.opencode {
+                if !FileManager.default.isExecutableFile(atPath: HookInstaller.cliPath(in: command) ?? "") {
+                    print("  ⚠ Its diorama command doesn't exist any more (was Diorama moved?). Run `diorama hook install --opencode` again.")
+                }
+                return
+            }
             if HookInstaller.configId(in: command) == nil {
                 print("  ⚠ Its settings are written in the command, where Claude can read them; the daemon moves them out when it starts.")
             }
@@ -148,12 +174,14 @@ struct Hook: AsyncParsableCommand {
             if json { return try printJSON(projects) }
             guard !projects.isEmpty else { return print("No project has Diorama's hook. Add one with `diorama hook install`.") }
             for p in projects {
-                print("\(p.folder.map(abbreviatingHome) ?? "All sessions (~/.claude/settings.json)")  ·  \(p.config?.summary ?? "unknown configuration")")
+                let everywhere = p.agent == .opencode ? "All OpenCode sessions (~/.config/opencode/plugins)" : "All sessions (~/.claude/settings.json)"
+                let label = p.folder.map { abbreviatingHome($0) + (p.agent == .opencode ? " (OpenCode)" : "") } ?? everywhere
+                print("\(label)  ·  \(p.config?.summary ?? "unknown configuration")")
                 if p.cliMissing { print("  ⚠ Its diorama command no longer exists, so the hook does nothing. Install it again or remove it.") }
                 if p.outdated { print("  ⚠ Installed before input rules existed: run `diorama hook install` there again.") }
                 if p.notTrusted { print("  ⚠ Claude Code hasn't trusted this folder, so it doesn't run the hook yet: run `claude` there once and accept the trust question.") }
             }
-            print("\nRemove one with `diorama hook uninstall <folder>`, or all with `diorama hook uninstall --all`.")
+            print("\nRemove one with `diorama hook uninstall <folder>` (add --opencode for an OpenCode plugin), or all with `diorama hook uninstall --all`.")
         }
     }
 
@@ -164,6 +192,7 @@ struct Hook: AsyncParsableCommand {
         @OptionGroup var global: GlobalOptions
         @OptionGroup var options: ConfigOptions
         @Option(name: .customLong("config"), help: "The hook's configuration id (its settings are kept in the data folder).") var configId: String?
+        @Option(help: "Who runs the hook: `opencode` for Diorama's OpenCode plugin (default: Claude Code).") var client: String?
 
         /// The stored configuration for `--config`, or the options older hooks pass inline. An
         /// unknown id records the session without rules rather than failing it.
@@ -178,11 +207,12 @@ struct Hook: AsyncParsableCommand {
             let env = ProcessInfo.processInfo.environment
             let input = FileHandle.standardInput.readDataToEndOfFile()
             do {
-                guard var event = try Self.event(from: input, config: config, client: env["CLAUDE_CODE_ENTRYPOINT"]) else { return }
+                guard var event = try Self.event(from: input, config: config, client: client ?? env["CLAUDE_CODE_ENTRYPOINT"]) else { return }
                 // Sessions started with `diorama run`: the gateway handles their results (acting here too would
-                // rewrite twice); only tool inputs come through the hook.
+                // rewrite twice); only tool inputs come through the hook. OpenCode's gateway sessions get their
+                // lockdown from permissions, so its plugin has nothing to do there.
                 if let gateway = env["DIORAMA_SESSION"] {
-                    guard event.event == "PreToolUse" else { return }
+                    guard event.event == "PreToolUse", !event.isOpenCode else { return }
                     event.dioramaSessionId = gateway
                 }
                 let client = try await ControlClient.connect(paths: global.paths, autostart: true, timeout: 10)

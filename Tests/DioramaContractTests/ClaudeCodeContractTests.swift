@@ -32,7 +32,7 @@ struct ClaudeHarness {
         var value: Int { lock.withLock { n } }
     }
 
-    static func start(steps: [ScriptedModel.Step], userSettings: [String: Any]? = nil) async throws -> ClaudeHarness {
+    static func start(steps: [ScriptedModel.Step], userSettings: [String: Any]? = nil, openCode: Bool = false) async throws -> ClaudeHarness {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("diorama-contract-\(UUID().uuidString)")
         let fakeUserHome = root.appendingPathComponent("userhome")
         try FileManager.default.createDirectory(at: fakeUserHome.appendingPathComponent(".claude"), withIntermediateDirectories: true)
@@ -49,12 +49,14 @@ struct ClaudeHarness {
         }
         var o = DioramaDaemon.Options(paths: DioramaPaths(home: root.appendingPathComponent("diorama")))
         o.claudeUserSettings = root.appendingPathComponent("diorama").appendingPathComponent("claude-user-settings.json")
+        o.openCodeUserPlugin = root.appendingPathComponent("diorama").appendingPathComponent("opencode-user/plugins/diorama/index.ts")
         o.port = 0
         o.upstream = mock.url
         o.providerOverride = provider
         o.secrets = MemorySecretStore("sk-ant-test-key-not-real-000000")
         o.judgeOverride = ScriptedJudge.substring
         o.environment = ClaudeHarness.claudeEnvironment(home: fakeUserHome)
+        if openCode { o.environment.merge(ClaudeHarness.openCodeEnvironment(home: fakeUserHome)) { _, b in b } }
         let d = try DioramaDaemon(options: o)
         _ = try await d.start()
         Task { _ = try? await d.run() }
@@ -73,6 +75,15 @@ struct ClaudeHarness {
             "PATH": pe["PATH"] ?? "/usr/bin:/bin", "HOME": home.path, "USER": NSUserName(), "LOGNAME": NSUserName(),
             "TMPDIR": NSTemporaryDirectory(), "TERM": "dumb", "ANTHROPIC_API_KEY": "sk-ant-api03-dummy-key-for-contract-tests",
             "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "DISABLE_AUTOUPDATER": "1",
+        ]
+    }
+
+    /// OpenCode's folders inside the fake home (never the user's), and no network beyond loopback.
+    static func openCodeEnvironment(home: URL) -> [String: String] {
+        [
+            "XDG_CONFIG_HOME": home.appendingPathComponent(".config").path, "XDG_DATA_HOME": home.appendingPathComponent(".local/share").path,
+            "XDG_STATE_HOME": home.appendingPathComponent(".local/state").path, "XDG_CACHE_HOME": home.appendingPathComponent(".cache").path,
+            "OPENCODE_DISABLE_MODELS_FETCH": "1", "OPENCODE_DISABLE_AUTOUPDATE": "1",
         ]
     }
 

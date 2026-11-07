@@ -126,12 +126,13 @@ struct ExperimentSummaryView: View {
                 }
                 Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
                     GridRow { Text("Project").foregroundStyle(.secondary); Text(Fmt.shortPath(d.projectPath)).textSelection(.enabled) }
+                    GridRow { Text("Agent").foregroundStyle(.secondary); Text(d.runsOpenCode ? "OpenCode (opencode run)" : "Claude Code (claude -p)") }
                     GridRow { Text("Model").foregroundStyle(.secondary); Text(d.claude.model ?? "Claude Code default") }
                     GridRow { Text("Allowed tools").foregroundStyle(.secondary); Text(d.claude.allowedTools.joined(separator: ", ")) }
                     GridRow { Text("Trials").foregroundStyle(.secondary); Text("\(d.trialsPerVariant) per variant, \(d.concurrency) at a time") }
                     GridRow { Text("Treatment").foregroundStyle(.secondary); Text(d.treatment == .frozen ? "Frozen — identical rewrites reused across trials" : "Fresh rewrite in every trial") }
-                    GridRow { Text("Limits").foregroundStyle(.secondary); Text("\(d.claude.maxTurns.map { "\($0) turns" } ?? "no turn limit") · \(d.claude.maxBudgetUSD.map { Fmt.money($0) + " per trial" } ?? "no budget limit")") }
-                    GridRow { Text("Configuration").foregroundStyle(.secondary); Text(d.claude.isolateConfiguration ? "Isolated (no user settings or MCP servers)" : "User's Claude Code configuration") }
+                    GridRow { Text("Limits").foregroundStyle(.secondary); Text("\(d.claude.maxTurns.map { "\($0) turns" } ?? "no turn limit") · \(d.runsOpenCode ? "no budget limit in OpenCode" : d.claude.maxBudgetUSD.map { Fmt.money($0) + " per trial" } ?? "no budget limit")") }
+                    GridRow { Text("Configuration").foregroundStyle(.secondary); Text(d.claude.isolateConfiguration ? "Isolated (no user settings or MCP servers)" : "User's \(d.runsOpenCode ? "OpenCode" : "Claude Code") configuration") }
                     if let j = d.judge { GridRow { Text("LLM judge").foregroundStyle(.secondary); Text(j.model) } }
                 }
                 .font(.callout)
@@ -681,6 +682,7 @@ struct NewExperimentSheet: View {
     @State private var frozen = true
     @State private var isolate = true
     @State private var useJudge = false
+    @State private var agent = CodingAgent.claude
     @State private var variants: [ExperimentVariant] = [
         ExperimentVariant(key: "control", name: "Unmodified"),
         ExperimentVariant(key: "steered", name: "Steered", prompt: SessionPrompt(text: "")),
@@ -704,6 +706,7 @@ struct NewExperimentSheet: View {
         _frozen = State(initialValue: d.treatment == .frozen)
         _isolate = State(initialValue: d.claude.isolateConfiguration)
         _useJudge = State(initialValue: d.judge != nil)
+        _agent = State(initialValue: d.agent ?? .claude)
         _variants = State(initialValue: d.variants)
     }
 
@@ -711,7 +714,7 @@ struct NewExperimentSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(notes.isEmpty ? "New experiment" : "New experiment from a session").font(.title2.bold())
-                Text("Runs the same task repeatedly in fresh copies of a project — unmodified and steered — and compares what Claude Code did.")
+                Text("Runs the same task repeatedly in fresh copies of a project — unmodified and steered — and compares what the agent did.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if !notes.isEmpty {
                     VStack(alignment: .leading, spacing: 3) {
@@ -727,7 +730,7 @@ struct NewExperimentSheet: View {
                 Section {
                     TextField("Name", text: $name)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Task given to Claude Code")
+                        Text("Task given to \(agent.displayName)")
                         TextEditor(text: $task).font(.body).frame(height: 60).scrollContentBackground(.hidden)
                             .padding(4).background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
                             .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
@@ -769,12 +772,24 @@ struct NewExperimentSheet: View {
                 } footer: {
                     Text("A variant with no profile and no prompt is the unmodified control (green). One is required.").font(.caption).foregroundStyle(.secondary)
                 }
-                Section("Claude Code") {
-                    TextField("Model", text: $claudeModel, prompt: Text("Default"))
+                Section {
+                    Picker("Agent", selection: $agent) {
+                        ForEach(CodingAgent.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                    }
+                    TextField("Model", text: $claudeModel, prompt: Text(agent == .opencode ? "Required, e.g. claude-sonnet-4-5" : "Default"))
                     TextField("Allowed tools", text: $allowedTools)
                     Stepper("Max turns: \(maxTurns)", value: $maxTurns, in: 1...200)
-                    Stepper("Max budget per trial: \(Fmt.money(budget))", value: $budget, in: 0.1...50, step: 0.5)
+                    if agent == .claude {
+                        Stepper("Max budget per trial: \(Fmt.money(budget))", value: $budget, in: 0.1...50, step: 0.5)
+                    }
                     Toggle("Isolate configuration (no user settings or MCP servers)", isOn: $isolate)
+                } header: {
+                    Text("Agent")
+                } footer: {
+                    if agent == .opencode {
+                        Text("Trials run `opencode run` with an Anthropic model (only those are routed through Diorama). OpenCode has no per-trial budget limit; the turn limit and timeout apply.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 Section("Trials") {
                     Stepper("Trials per variant: \(trials)", value: $trials, in: 1...200)
@@ -793,7 +808,7 @@ struct NewExperimentSheet: View {
                         let def = FormLogic.experimentDefinition(FormLogic.ExperimentForm(
                             name: name, task: task, project: project, claudeModel: claudeModel, allowedTools: allowedTools, maxTurns: maxTurns,
                             budget: budget, trials: trials, concurrency: concurrency, frozen: frozen, isolate: isolate, useJudge: useJudge,
-                            variants: variants))
+                            agent: agent, variants: variants))
                         if let e = await model.perform({ try await $0.createExperiment(def) }) {
                             await model.refreshExperiments()
                             created(e.id)

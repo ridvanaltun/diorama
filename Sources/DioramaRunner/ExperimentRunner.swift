@@ -8,8 +8,9 @@ public struct RunnerError: Error, CustomStringConvertible, Sendable {
     public init(_ d: String) { description = d }
 }
 
-/// Orchestrates A/B experiment runs: isolated project clones, headless `claude -p` trials
-/// routed through the gateway, facts/heuristics extraction, comparisons and reports.
+/// Orchestrates A/B experiment runs: isolated project clones, headless `claude -p` (or
+/// `opencode run`) trials routed through the gateway, facts/heuristics extraction, comparisons
+/// and reports.
 public final class ExperimentRunner: @unchecked Sendable {
     public typealias SessionFactory = @Sendable (SessionSpec) throws -> SessionLaunch
 
@@ -17,6 +18,7 @@ public final class ExperimentRunner: @unchecked Sendable {
     let paths: DioramaPaths
     let makeSession: SessionFactory
     let claudePath: @Sendable () -> String?
+    let opencodePath: @Sendable () -> String?
     let baseEnvironment: [String: String]
     let judge: JudgeProvider?
     private let lock = NSLock()
@@ -24,7 +26,9 @@ public final class ExperimentRunner: @unchecked Sendable {
     private var processes: [String: TrialProcess] = [:]
 
     public init(store: Store, paths: DioramaPaths, environment: [String: String] = ProcessInfo.processInfo.environment,
-                claudePath: @escaping @Sendable () -> String?, judge: JudgeProvider? = nil, makeSession: @escaping SessionFactory) {
+                claudePath: @escaping @Sendable () -> String?, opencodePath: @escaping @Sendable () -> String? = { OpenCodeLocator.find() },
+                judge: JudgeProvider? = nil, makeSession: @escaping SessionFactory) {
+        self.opencodePath = opencodePath
         self.judge = judge
         self.store = store
         self.paths = paths
@@ -58,7 +62,7 @@ public final class ExperimentRunner: @unchecked Sendable {
         guard let exp = try store.experiment(id: experimentId) else { throw RunnerError("unknown experiment \(experimentId)") }
         let def = exp.definition
         let trials = def.trialsPerVariant * def.variants.count
-        let model = def.claude.model
+        let model = def.runsOpenCode ? OpenCodeTrial.modelId(def.claude.model) : def.claude.model
         var notes: [String] = []
         let low: Double, high: Double, basis: String
         if let h = try store.historicalTrialCost(model: model), h.n >= 2 {
@@ -70,7 +74,9 @@ public final class ExperimentRunner: @unchecked Sendable {
             let b = Self.baselines[key] ?? (0.5, 2.5)
             (low, high) = b
             basis = "baseline for \(key) (no history yet)"
-            notes.append("Baselines include Claude Code's ~35K-token system prompt per trial; long or tool-heavy tasks cost more.")
+            notes.append(def.runsOpenCode
+                         ? "Baselines are Claude Code's; OpenCode's system prompt is smaller, but long or tool-heavy tasks cost more."
+                         : "Baselines include Claude Code's ~35K-token system prompt per trial; long or tool-heavy tasks cost more.")
         }
         // Rewrite agent cost: rough per-rewrite figure by model, times expected rewrites.
         var rewriteLow = 0.0, rewriteHigh = 0.0
@@ -88,7 +94,11 @@ public final class ExperimentRunner: @unchecked Sendable {
             rewriteHigh += per.1 * Double(trials)
             notes.append("LLM judge (\(j.model)) rates every successful trial once after the run; included in the rewrite-agent figure.")
         }
-        notes.append("Claude Code usage is billed to the account Claude Code is signed in with; on subscription plans the figures are notional and count toward plan limits.")
+        if def.runsOpenCode {
+            notes.append("OpenCode usage is billed to OpenCode's Anthropic credentials. OpenCode has no per-trial budget limit, so maxBudgetUSD doesn't apply; the trial timeout and turn limit do.")
+        } else {
+            notes.append("Claude Code usage is billed to the account Claude Code is signed in with; on subscription plans the figures are notional and count toward plan limits.")
+        }
         notes.append("Rewrite-agent calls use your Anthropic API key.")
         if def.treatment == .frozen { notes.append("Frozen treatment: identical tool results reuse one rewrite across trials.") }
         let estimate = CostEstimate(
@@ -118,7 +128,10 @@ public final class ExperimentRunner: @unchecked Sendable {
         guard let expected = try store.runConfirmationToken(id: runId), Hashing.constantTimeEqual(expected, confirmationToken) else {
             throw RunnerError("confirmation token does not match this run's cost estimate")
         }
-        guard let claude = claudePath() else { throw RunnerError("could not find the `claude` executable; set its path in settings") }
+        let agentPath = exp.definition.runsOpenCode ? opencodePath() : claudePath()
+        guard let claude = agentPath else {
+            throw RunnerError(exp.definition.runsOpenCode ? "could not find the `opencode` executable; install OpenCode" : "could not find the `claude` executable; set its path in settings")
+        }
         try store.setRunStatus(id: runId, .running)
         store.addEvent(sessionId: nil, kind: .runStarted, message: "Run started for '\(exp.name)' (\(run.trialsTotal) trials)", refId: runId)
         let task = Task { [self] in
@@ -152,6 +165,13 @@ public final class ExperimentRunner: @unchecked Sendable {
         // Hashing the project, git and `claude --version` block: keep them off the cooperative pool.
         let (sourceHashes, snapshot, claudeVersion) = await offloadBlocking {
             (ProjectCloner.fileHashes(source), ProjectCloner.snapshotIdentity(source), ClaudeLocator.version(at: claude))
+        }
+        if def.runsOpenCode {
+            let env = withAccountDefaults(baseEnvironment.filter { k, _ in !Self.openCodeOverrides.contains(k) && !k.hasPrefix("DIORAMA_") })
+            let dir = paths.runs.appendingPathComponent(run.id)
+            if let problem = await offloadBlocking({ Self.prepareOpenCode(claude, environment: env, in: dir) }) {
+                store.addEvent(sessionId: nil, kind: .warning, message: "Could not prepare OpenCode before the trials (\(problem)); concurrent trials may fail to start", refId: run.id)
+            }
         }
         let trials = (try? store.trials(runId: run.id)) ?? []
         let limit = max(1, def.concurrency)
@@ -190,6 +210,32 @@ public final class ExperimentRunner: @unchecked Sendable {
         }
         for (k, v) in launch.environment { env[k] = v }
         env["DISABLE_AUTOUPDATER"] = "1"
+        return withAccountDefaults(env)
+    }
+
+    /// Variables that would change an OpenCode trial's configuration or attach it elsewhere.
+    static let openCodeOverrides: Set<String> = [
+        "OPENCODE_CONFIG", "OPENCODE_CONFIG_CONTENT", "OPENCODE_CONFIG_DIR", "OPENCODE_CLI_CONFIG_CONTENT", "OPENCODE_DISABLE_PROJECT_CONFIG",
+        "OPENCODE_CONFIG_PROJECT_DISABLE", "OPENCODE_SESSION_ID", "OPENCODE_SERVER_PASSWORD", "OPENCODE_PASSWORD", "OPENCODE_ROUTE",
+    ]
+
+    /// An OpenCode trial's environment: the user's, without their configuration overrides, plus
+    /// the trial's inline configuration. `isolatedConfig` replaces the user's configuration folder.
+    func openCodeTrialEnvironment(launch: SessionLaunch, options o: ClaudeRunOptions, isolatedConfig: URL?) -> [String: String] {
+        var env = baseEnvironment.filter { k, _ in !Self.openCodeOverrides.contains(k) && !k.hasPrefix("DIORAMA_") && k != "ANTHROPIC_BASE_URL" }
+        for (k, v) in launch.environment where k != OpenCodeLaunch.configVariable { env[k] = v }
+        let session = launch.environment[OpenCodeLaunch.configVariable].flatMap { (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any] } ?? [:]
+        let config = OpenCodeTrial.configuration(o, session: session)
+        if let data = try? JSONSerialization.data(withJSONObject: config, options: [.sortedKeys, .withoutEscapingSlashes]) {
+            env[OpenCodeLaunch.configVariable] = String(decoding: data, as: UTF8.self)
+        }
+        if let isolatedConfig { env["XDG_CONFIG_HOME"] = isolatedConfig.path }
+        env["OPENCODE_DISABLE_AUTOUPDATE"] = "1"
+        return withAccountDefaults(env)
+    }
+
+    func withAccountDefaults(_ environment: [String: String]) -> [String: String] {
+        var env = environment
         if env["HOME"] == nil { env["HOME"] = NSHomeDirectory() }
         if env["USER"] == nil { env["USER"] = NSUserName() }
         if env["LOGNAME"] == nil { env["LOGNAME"] = NSUserName() }
@@ -211,8 +257,32 @@ public final class ExperimentRunner: @unchecked Sendable {
         return args
     }
 
+    /// Lets OpenCode create its database before trials start together: concurrent first starts on
+    /// a fresh data folder race its migrations, and all but one fail. Uses a private server, never
+    /// the shared background service. Returns a problem, or nil.
+    static func prepareOpenCode(_ opencode: String, environment: [String: String], in dir: URL) -> String? {
+        var env = environment
+        env["OPENCODE_DISABLE_AUTOUPDATE"] = "1"
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        guard let r = try? ProcessRunner.run(opencode, ["session", "list", "--standalone"], cwd: dir.path, environment: env, timeout: 60) else { return "could not run opencode" }
+        if r.timedOut { return "timed out" }
+        return r.exitCode == 0 ? nil : "exit \(r.exitCode)"
+    }
+
+    /// OpenCode exited before running anything because its private server never became ready.
+    static func openCodeFailedToStart(stdout: String, stderr: String) -> Bool {
+        stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && stderr.contains("Standalone server exited before reporting readiness")
+    }
+
+    /// Session tokens in recorded values (gateway URLs inside inline configuration) are masked.
+    static func maskToken(_ value: String) -> String {
+        value.replacingOccurrences(of: #"/s/[0-9a-f]{32}"#, with: "/s/<session-token>", options: .regularExpression)
+    }
+
     func runTrial(_ trial: TrialInfo, run: RunSummary, experiment: ExperimentInfo, claude: String, claudeVersion: String?, source: URL, sourceHashes: [String: String], snapshot: String) async {
         let def = experiment.definition
+        let opencode = def.runsOpenCode
+        let agentName = opencode ? "opencode" : "claude"
         guard let variant = def.variants.first(where: { $0.key == trial.variantKey }) else { return }
         let trialDir = paths.runs.appendingPathComponent(run.id).appendingPathComponent(trial.id)
         let workdir = trialDir.appendingPathComponent("project")
@@ -230,50 +300,80 @@ public final class ExperimentRunner: @unchecked Sendable {
         let spec = SessionSpec(
             name: "\(experiment.name) · \(variant.key) #\(trial.index + 1)", cwd: workdir.path, profile: variant.profile, prompt: variant.prompt,
             lockdown: variant.lockdown, kind: .trial, trialId: trial.id, onFailure: .invalidateTrial,
-            treatmentScope: variant.isControl ? nil : (def.treatment == .frozen ? "\(run.id):\(variant.key)" : nil))
+            treatmentScope: variant.isControl ? nil : (def.treatment == .frozen ? "\(run.id):\(variant.key)" : nil),
+            agent: opencode ? .opencode : nil)
         let launch: SessionLaunch
         do { launch = try makeSession(spec) } catch {
             fail("could not create the trial session: \(error)")
             return
         }
-        let args = Self.arguments(definition: def, launch: launch)
-        let env = trialEnvironment(launch: launch)
-        let manifestEnv = Dictionary(uniqueKeysWithValues: launch.environment.map { k, v in (k, k.contains("BASE_URL") ? "http://127.0.0.1:<port>/s/<session-token>" : v) })
-            .merging(["DISABLE_AUTOUPDATER": "1"]) { a, _ in a }
+        let args: [String], env: [String: String], manifestEnv: [String: String]
+        if opencode {
+            let isolated = def.claude.isolateConfiguration ? trialDir.appendingPathComponent("opencode-config") : nil
+            if let isolated { try? FileManager.default.createDirectory(at: isolated, withIntermediateDirectories: true) }
+            args = OpenCodeTrial.arguments(def.claude)
+            env = openCodeTrialEnvironment(launch: launch, options: def.claude, isolatedConfig: isolated)
+            var recorded = [OpenCodeLaunch.configVariable: Self.maskToken(env[OpenCodeLaunch.configVariable] ?? ""), "OPENCODE_DISABLE_AUTOUPDATE": "1"]
+            recorded["DIORAMA_SESSION"] = env["DIORAMA_SESSION"]
+            if isolated != nil { recorded["XDG_CONFIG_HOME"] = "<empty folder per trial>" }
+            manifestEnv = recorded
+        } else {
+            args = Self.arguments(definition: def, launch: launch)
+            env = trialEnvironment(launch: launch)
+            manifestEnv = Dictionary(uniqueKeysWithValues: launch.environment.map { k, v in (k, k.contains("BASE_URL") ? "http://127.0.0.1:<port>/s/<session-token>" : v) })
+                .merging(["DISABLE_AUTOUPDATER": "1"]) { a, _ in a }
+        }
         let manifest = TrialManifest(
             dioramaVersion: DioramaVersion.current, rewritePromptVersion: DioramaVersion.rewritePromptVersion, claudeVersion: claudeVersion,
             claudePath: claude, arguments: args.map { $0.contains("/s/") ? "<settings with session token>" : $0 }, environment: manifestEnv,
             model: def.claude.model, variantKey: variant.key, profileVersionId: launch.session.profileVersionId,
             promptHash: variant.prompt.map { Hashing.sha256Hex($0.text).prefix(16).description }, treatment: def.treatment,
             experimentDefinitionHash: experiment.definitionHash, projectSnapshot: snapshot,
-            macOSVersion: ProcessInfo.processInfo.operatingSystemVersionString, seed: run.seed, order: trial.order)
+            macOSVersion: ProcessInfo.processInfo.operatingSystemVersionString, seed: run.seed, order: trial.order, agent: opencode ? .opencode : nil)
         try? store.trialStarted(id: trial.id, sessionId: launch.session.id, workdir: workdir.path, manifest: manifest)
         store.addEvent(sessionId: launch.session.id, kind: .trialStarted, message: "Trial \(trial.order + 1) (\(variant.key)) started", refId: trial.id)
 
         let stdoutURL = trialDir.appendingPathComponent("stdout.jsonl")
         let stderrURL = trialDir.appendingPathComponent("stderr.txt")
         let taskURL = trialDir.appendingPathComponent("task.txt")
-        let started = Date()
-        let proc: TrialProcess
-        do {
-            try Data(def.task.utf8).write(to: taskURL)
-            proc = try TrialProcess(path: claude, args: args, cwd: workdir.path, environment: env, stdout: stdoutURL, stderr: stderrURL)
-            proc.process.standardInput = try FileHandle(forReadingFrom: taskURL)
-            try proc.start()
-        } catch {
-            try? store.endSession(id: launch.session.id)
-            fail("could not start claude: \(error.localizedDescription)")
-            return
+        var started = Date()
+        var proc: TrialProcess
+        var exitCode: Int32 = 0, timedOut = false
+        var attempt = 1
+        while true {
+            started = Date()
+            do {
+                try Data(def.task.utf8).write(to: taskURL)
+                proc = try TrialProcess(path: claude, args: args, cwd: workdir.path, environment: env, stdout: stdoutURL, stderr: stderrURL)
+                proc.process.standardInput = try FileHandle(forReadingFrom: taskURL)
+                try proc.start()
+            } catch {
+                try? store.endSession(id: launch.session.id)
+                fail("could not start \(agentName): \(error.localizedDescription)")
+                return
+            }
+            lock.withLock { processes[trial.id] = proc }
+            (exitCode, timedOut) = await proc.wait(timeout: def.claude.timeoutSeconds)
+            _ = lock.withLock { processes.removeValue(forKey: trial.id) }
+            // OpenCode's private server sometimes fails to start while another trial's holds its
+            // database ("database is locked"). Nothing happened yet, so starting again is safe.
+            guard opencode, attempt < 3, exitCode != 0, !timedOut, !proc.wasTerminated, !Task.isCancelled,
+                  Self.openCodeFailedToStart(stdout: (try? String(contentsOf: stdoutURL, encoding: .utf8)) ?? "",
+                                             stderr: (try? String(contentsOf: stderrURL, encoding: .utf8)) ?? ""),
+                  ((try? store.exchanges(sessionId: launch.session.id)) ?? []).isEmpty
+            else { break }
+            store.addEvent(sessionId: launch.session.id, kind: .warning, message: "OpenCode's server didn't start (attempt \(attempt)); starting trial \(trial.order + 1) again", refId: trial.id)
+            attempt += 1
+            try? await Task.sleep(for: .milliseconds(Int.random(in: 300...1200)))
         }
-        lock.withLock { processes[trial.id] = proc }
-        let (exitCode, timedOut) = await proc.wait(timeout: def.claude.timeoutSeconds)
-        _ = lock.withLock { processes.removeValue(forKey: trial.id) }
         try? store.endSession(id: launch.session.id)
 
         let stdout = (try? String(contentsOf: stdoutURL, encoding: .utf8)) ?? ""
         let stderr = (try? String(contentsOf: stderrURL, encoding: .utf8)) ?? ""
         let transcriptBlob = try? store.blobs.put(stdout)
-        let transcript = StreamTranscript.parse(stdout)
+        let transcript = opencode
+            ? StreamTranscript.openCode(OpenCodeOutput.parse(stdout), exchanges: (try? store.exchanges(sessionId: launch.session.id)) ?? [], exitCode: exitCode)
+            : StreamTranscript.parse(stdout)
         let decisions = (try? store.decisions(sessionId: launch.session.id)) ?? []
         let rewriteCost = (try? store.stats(sessionId: launch.session.id).rewriteCostUSD) ?? 0
         let afterHashes = ProjectCloner.fileHashes(workdir)
@@ -298,7 +398,8 @@ public final class ExperimentRunner: @unchecked Sendable {
         } else if !transcript.sawResult {
             status = .failed
             let tail = stderr.split(whereSeparator: \.isNewline).suffix(3).joined(separator: " | ")
-            error = "claude exited \(exitCode) without a result" + (tail.isEmpty ? "" : ": \(tail)")
+            let reported = opencode ? OpenCodeOutput.parse(stdout).error.map { " (\($0))" } ?? "" : ""
+            error = "\(agentName) exited \(exitCode) without a result\(reported)" + (tail.isEmpty ? "" : ": \(tail)")
         } else if flags.contains("trial-invalid") {
             status = .invalid
             error = "a rewrite failed during this trial, so it did not receive the intended treatment"

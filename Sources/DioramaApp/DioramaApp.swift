@@ -203,6 +203,8 @@ enum Snapshotter {
             ("sheet-new-session", AnyView(NewSessionSheet().environment(model))),
             ("sheet-prompt-assist", AnyView(PromptAssistSheet(currentPrompt: "", currentTools: "WebFetch,WebSearch") { _ in }.environment(model))),
             ("sheet-new-session-desktop", AnyView(NewSessionSheet(mode: .desktop).environment(model))),
+            ("sheet-new-session-opencode", AnyView(NewSessionSheet(mode: .terminal, agent: .opencode).environment(model))),
+            ("sheet-new-session-opencode-desktop", AnyView(NewSessionSheet(mode: .desktop, agent: .opencode).environment(model))),
             ("sheet-new-profile", AnyView(NewProfileSheet(selection: .constant(nil)).environment(model))),
             ("sheet-new-experiment", AnyView(NewExperimentSheet(created: { _ in }).environment(model))),
             ("menu-bar-panel", AnyView(MenuBarPanel().environment(model))),
