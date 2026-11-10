@@ -21,11 +21,27 @@ extension Store {
         else { return nil }
         return ExperimentInfo(
             id: id, name: r.string("name") ?? def.name, definition: def, definitionHash: r.string("definition_hash") ?? "",
-            createdAt: r.date("created_at") ?? Date(), runs: try runs(experimentId: id))
+            createdAt: r.date("created_at") ?? Date(), runs: try runs(experimentId: id), archived: r.int("archived") == 1)
     }
 
-    public func experiments() throws -> [ExperimentInfo] {
-        try db.query("SELECT id FROM experiments ORDER BY created_at DESC").compactMap { try $0.string("id").flatMap(experiment(id:)) }
+    public func experiments(archived: ArchiveFilter = .hide) throws -> [ExperimentInfo] {
+        let filter = switch archived {
+        case .hide: "WHERE archived = 0"
+        case .only: "WHERE archived = 1"
+        case .all: ""
+        }
+        return try db.query("SELECT id FROM experiments \(filter) ORDER BY created_at DESC").compactMap { try $0.string("id").flatMap(experiment(id:)) }
+    }
+
+    /// Hides an experiment from the list (or shows it again). Its runs, trials and their sessions
+    /// stay. An experiment with a run in progress can't be archived.
+    public func setExperimentArchived(id: String, _ archived: Bool) throws {
+        guard let e = try experiment(id: id) else { throw StoreError("unknown experiment \(id)") }
+        guard e.isArchived != archived else { return }
+        if archived, e.runs.contains(where: { $0.status == .running }) {
+            throw StoreError("'\(e.name)' has a run in progress; cancel it or wait for it to finish")
+        }
+        try db.run("UPDATE experiments SET archived = ? WHERE id = ?", [.int(archived ? 1 : 0), .text(id)])
     }
 
     // MARK: Runs

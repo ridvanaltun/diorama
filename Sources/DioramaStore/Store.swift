@@ -117,6 +117,10 @@ public final class Store: @unchecked Sendable {
         """
         ALTER TABLE sessions ADD COLUMN agent TEXT NOT NULL DEFAULT 'claude';
         """,
+        // v13: archiving experiments (hidden from the list, kept otherwise)
+        """
+        ALTER TABLE experiments ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
+        """,
     ]
 
     public static var schemaVersion: Int { migrations.count }

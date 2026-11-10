@@ -401,14 +401,47 @@ public struct ProfileSummary: Codable, Sendable, Hashable, Identifiable {
     public var currentVersionNumber: Int
     public var ruleCount: Int
     public var updatedAt: Date
+    /// Archived profiles are hidden from lists and can't be picked by name; nil in older payloads.
+    public var archived: Bool?
+    public var isArchived: Bool { archived == true }
 
-    public init(id: String, name: String, currentVersionId: String, currentVersionNumber: Int, ruleCount: Int, updatedAt: Date) {
+    public init(id: String, name: String, currentVersionId: String, currentVersionNumber: Int, ruleCount: Int, updatedAt: Date, archived: Bool? = nil) {
         self.id = id
         self.name = name
         self.currentVersionId = currentVersionId
         self.currentVersionNumber = currentVersionNumber
         self.ruleCount = ruleCount
         self.updatedAt = updatedAt
+        self.archived = archived
+    }
+}
+
+/// Moves what names one profile (folder defaults, launchers, hooks) to another.
+public struct RepointProfileRequest: Codable, Sendable {
+    /// The profile to point them at, by id or name.
+    public var to: String
+    public init(to: String) { self.to = to }
+}
+
+/// Something that names a profile: a folder default, launcher, installed hook, watched-folder
+/// file or experiment variant. Shown before archiving, since references by name stop resolving.
+public struct ProfileReference: Codable, Sendable, Hashable, Identifiable {
+    public enum Kind: String, Codable, Sendable { case folderDefault, launcher, hook, syncedFile, experiment }
+    public var kind: Kind
+    /// What it is, for people: a folder, launcher name, settings file or experiment name.
+    public var label: String
+    /// True when it names the profile (stops resolving once archived); false for an id or version id.
+    public var byName: Bool
+    /// Pinned to one version (`pv_…`): keeps working, and moving references leaves it alone.
+    public var pinned: Bool?
+
+    public var id: String { "\(kind.rawValue):\(label)" }
+
+    public init(kind: Kind, label: String, byName: Bool, pinned: Bool? = nil) {
+        self.kind = kind
+        self.label = label
+        self.byName = byName
+        self.pinned = pinned
     }
 }
 
@@ -1546,6 +1579,73 @@ public struct ExchangeRawPayload: Codable, Sendable {
         self.response = response
         self.requestHeaders = requestHeaders
         self.responseHeaders = responseHeaders
+    }
+}
+
+/// What Diorama's data folder holds, for the Storage section and `diorama storage`.
+public struct StorageUsage: Codable, Sendable, Hashable {
+    /// The SQLite database, its write-ahead log included.
+    public var databaseBytes: Int64
+    /// Captured bodies, tool results, rewrites and transcripts.
+    public var blobBytes: Int64
+    public var sessions: Int
+    public var archivedSessions: Int
+    public var experiments: Int
+    public var archivedExperiments: Int
+    public var decisions: Int
+    public var exchanges: Int
+
+    public var totalBytes: Int64 { databaseBytes + blobBytes }
+
+    public init(databaseBytes: Int64, blobBytes: Int64, sessions: Int, archivedSessions: Int, experiments: Int, archivedExperiments: Int, decisions: Int, exchanges: Int) {
+        self.databaseBytes = databaseBytes
+        self.blobBytes = blobBytes
+        self.sessions = sessions
+        self.archivedSessions = archivedSessions
+        self.experiments = experiments
+        self.archivedExperiments = archivedExperiments
+        self.decisions = decisions
+        self.exchanges = exchanges
+    }
+}
+
+/// Permanently deletes archived sessions and experiments older than `olderThanDays`.
+/// `dryRun` only counts what would go.
+public struct PurgeRequest: Codable, Sendable {
+    public var olderThanDays: Int
+    public var dryRun: Bool
+
+    public init(olderThanDays: Int, dryRun: Bool = false) {
+        self.olderThanDays = olderThanDays
+        self.dryRun = dryRun
+    }
+}
+
+public struct PurgeResult: Codable, Sendable, Hashable {
+    public var dryRun: Bool
+    /// Archived sessions (experiment trials are counted under `trialSessions`).
+    public var sessions: Int
+    public var experiments: Int
+    public var runs: Int
+    public var trialSessions: Int
+    public var decisions: Int
+    public var exchanges: Int
+    public var blobsRemoved: Int
+    /// Storage freed (blobs and database); 0 for a dry run.
+    public var bytesFreed: Int64
+
+    public var isEmpty: Bool { sessions == 0 && experiments == 0 }
+
+    public init(dryRun: Bool, sessions: Int, experiments: Int, runs: Int, trialSessions: Int, decisions: Int, exchanges: Int, blobsRemoved: Int = 0, bytesFreed: Int64 = 0) {
+        self.dryRun = dryRun
+        self.sessions = sessions
+        self.experiments = experiments
+        self.runs = runs
+        self.trialSessions = trialSessions
+        self.decisions = decisions
+        self.exchanges = exchanges
+        self.blobsRemoved = blobsRemoved
+        self.bytesFreed = bytesFreed
     }
 }
 

@@ -389,6 +389,95 @@ public final class DioramaDaemon: @unchecked Sendable {
         return ExperimentDraft(definition: definition, notes: notes)
     }
 
+    // MARK: Profile references
+
+    /// How a reference string names a profile.
+    enum ProfileRefKind { case name, id, version }
+
+    /// Classifies references against one profile: by name (stops resolving once it's archived),
+    /// by id, or pinned to one of its versions (both keep working).
+    func profileRefMatcher(profileId: String) throws -> (String?) -> ProfileRefKind? {
+        guard let current = try store.currentProfileVersion(profileId: profileId) else { throw StoreError("unknown profile \(profileId)") }
+        let name = try store.profiles(includeArchived: true).first { $0.id == profileId }?.name ?? current.profile.name
+        let versionIds = Set(try store.profileVersions(profileId: profileId).map(\.id))
+        let names: Set<String> = [name, current.profile.name]
+        return { ref in
+            guard let ref, !ref.isEmpty else { return nil }
+            if ref == profileId { return .id }
+            if versionIds.contains(ref) { return .version }
+            return names.contains(ref) ? .name : nil
+        }
+    }
+
+    var connectedHooks: [HookedProject] {
+        HookInstaller.connected(registry: hookRegistry, userSettings: options.claudeUserSettings, userPlugin: options.openCodeUserPlugin)
+    }
+
+    /// Everything that names a profile, so archiving it can say what stops resolving.
+    func profileReferences(profileId: String) throws -> [ProfileReference] {
+        let kind = try profileRefMatcher(profileId: profileId)
+        func ref(_ k: ProfileReference.Kind, _ label: String, _ r: String?) -> ProfileReference? {
+            kind(r).map { ProfileReference(kind: k, label: label, byName: $0 == .name, pinned: $0 == .version ? true : nil) }
+        }
+        var found: [ProfileReference] = []
+        let settings = store.settings()
+        for (path, r) in settings.folderProfiles.sorted(by: { $0.key < $1.key }) { found += [ref(.folderDefault, path, r)].compactMap { $0 } }
+        for l in settings.launchers { found += [ref(.launcher, l.name, l.profile)].compactMap { $0 } }
+        for h in connectedHooks { found += [ref(.hook, h.folder ?? h.settingsFile, h.config?.profile)].compactMap { $0 } }
+        if let file = store.syncedFile(profileId: profileId) {
+            found.append(ProfileReference(kind: .syncedFile, label: file, byName: false))
+        }
+        for e in try store.experiments() {
+            let refs = e.definition.variants.compactMap { kind($0.profile) }
+            if !refs.isEmpty { found.append(ProfileReference(kind: .experiment, label: e.name, byName: refs.contains(.name))) }
+        }
+        return found
+    }
+
+    /// Points folder defaults, launchers and hooks that name `profileId` (by name or id) at
+    /// `target` instead, keeping the style: a name stays a name, an id an id. References pinned to a
+    /// version stay, and experiments can't change (their definition is fixed). Returns what moved.
+    func repointProfileReferences(from profileId: String, to targetRef: String) throws -> [ProfileReference] {
+        guard let target = try store.resolveProfile(targetRef),
+              let summary = try store.profiles().first(where: { $0.id == target.profileId })
+        else { throw StoreError("unknown profile '\(targetRef)'") }
+        guard target.profileId != profileId else { throw StoreError("pick a different profile to move them to") }
+        let kind = try profileRefMatcher(profileId: profileId)
+        func replacement(_ r: String?) -> String? {
+            switch kind(r) {
+            case .name: summary.name
+            case .id: summary.id
+            case .version, nil: nil
+            }
+        }
+        var moved: [ProfileReference] = []
+        var settings = store.settings()
+        for (path, r) in settings.folderProfiles.sorted(by: { $0.key < $1.key }) {
+            if let new = replacement(r) {
+                settings.folderProfiles[path] = new
+                moved.append(ProfileReference(kind: .folderDefault, label: path, byName: kind(r) == .name))
+            }
+        }
+        for i in settings.launchers.indices {
+            let r = settings.launchers[i].profile
+            if let new = replacement(r) {
+                settings.launchers[i].profile = new
+                moved.append(ProfileReference(kind: .launcher, label: settings.launchers[i].name, byName: kind(r) == .name))
+            }
+        }
+        let hookLabels = Dictionary(connectedHooks.compactMap { h in HookInstaller.configId(in: h.command).map { ($0, h.folder ?? h.settingsFile) } },
+                                    uniquingKeysWith: { a, _ in a })
+        hookRegistry.configs.updateAll { id, config in
+            guard let new = replacement(config.profile) else { return false }
+            moved.append(ProfileReference(kind: .hook, label: hookLabels[id] ?? id, byName: kind(config.profile) == .name))
+            config.profile = new
+            return true
+        }
+        try store.saveSettings(settings)
+        sessions.settingsChanged()
+        return moved
+    }
+
     // MARK: Budget
 
     func spendSummary() throws -> SpendSummary {

@@ -304,6 +304,22 @@ The decision records the outcome: "not rewritten: rewrite rejected in review" or
 
 **Export…** in the profile editor saves the profile's saved version as a `.diorama-profile.json` file. **Import Profile…** in the Profiles toolbar, or dropping `.json` files on the profile list, adds each one as a new profile at version 1. If the name is taken, a number is appended, for example "Docs steer (2)". The files are plain JSON in the same format as `diorama profiles export` and `diorama profiles create --file`, so they work in git, in pull requests or on another Mac. They hold only rules and defaults, never keys.
 
+### Archiving profiles
+
+Right-click a profile and choose **Archive…** (or use **Archive** in the Profiles toolbar) to hide one you no longer use. It leaves the list and every profile picker, and its name can be used again. Nothing is deleted: its versions stay, so past sessions, decisions, rule usage, experiment results and anything that refers to it by id or version id (`prof_…`, `pv_…`) keep working.
+
+Before archiving, Diorama lists what names the profile **by name**, because those stop finding it: folder defaults, launchers, installed hooks and experiment variants (new runs of such an experiment fail until you pick another profile). References by id are unaffected.
+
+To keep them working, pick a profile under **Move folder defaults, launchers and hooks to** before archiving. Each one then uses that profile instead, and keeps its style: a name becomes the new profile's name, an id its id. References pinned to one version (`pv_…`) stay as they are, and experiments can't be changed (duplicate one to point it at another profile). From the terminal: `diorama profiles archive "Docs steer" --move-to "Docs steer v2"`. `diorama doctor` also flags a folder default whose profile is gone. If the profile is synced from a file in a watched folder, a later change to that file brings it back as a new profile; remove the file or stop watching the folder to prevent that.
+
+**Archive → Show Archived Profiles** lists archived ones, and right-click → **Unarchive** brings one back under its name. If another profile took the name meanwhile, rename or archive that one first.
+
+```bash
+diorama profiles archive "Docs steer"     # `delete` also works; prints what named it by name
+diorama profiles list --archived
+diorama profiles unarchive "Docs steer"
+```
+
 ### Profile folders: profiles as files in git
 
 To share profiles with a team, keep them as JSON files, for example in a git repository's `profiles/` directory, and watch that folder: **Settings → Profile folders → Add Folder…**, or `diorama profiles folders --add ~/code/team/profiles`.
@@ -519,6 +535,25 @@ Key fields:
 
 `diorama experiment report <run> --format md|json` exports a report. The JSON bundle contains every trial's manifest.
 
+### Duplicating experiments
+
+An experiment's definition is fixed once it's created, so its results stay comparable. To repeat it with changes (more trials, another model, a different profile), click **Duplicate…** in its summary or right-click menu. The New Experiment form opens filled in with its settings, named "… (copy)". Settings the form doesn't show, such as disallowed tools, extra arguments, timeouts and the judge's model, are kept. The copy gets no seed, so its trial order is drawn afresh. From the terminal:
+
+```bash
+diorama experiment init --from exp_abc > exp.json   # edit, then:
+diorama experiment create exp.json
+```
+
+### Archiving experiments
+
+Right-click an experiment and choose **Archive** to hide it from the list once you're done with it. Nothing is deleted: its runs, trials, reports and exports stay, and it's still reachable by id. An experiment with a run in progress can't be archived. **Archive → Show Archived Experiments** lists archived ones, and right-click → **Unarchive** brings one back.
+
+```bash
+diorama experiment archive exp_abc
+diorama experiment list --archived
+diorama experiment unarchive exp_abc
+```
+
 ### Experiments with OpenCode
 
 Set `"agent": "opencode"` (or pick **OpenCode** under **Agent** in the app, or start from `diorama experiment init --agent opencode`) and trials run `opencode run --standalone --auto --format json` instead of `claude -p`, routed through the gateway the same way. Everything after the trial (facts, heuristics, the judge, comparisons and reports) is the same. An experiment drafted from an OpenCode session is an OpenCode experiment.
@@ -620,3 +655,18 @@ Everything lives under `~/Library/Application Support/Diorama/`, or under `$DIOR
 - `daemon.json` (port and control token, mode 0600)
 
 Delete the folder to reset Diorama. Remove the API key with `diorama key delete`.
+
+### Freeing space: deleting old archived data
+
+Raw captures expire after `retentionDays`, but sessions, decisions and experiments are kept until you delete them. **Settings → Storage** shows how much space the data folder uses. To free space, archive what you no longer need (sessions and experiments from their lists), then choose an age under **Delete archived items older than** and click **Delete…**. Diorama first shows what would go, then deletes it permanently:
+
+- **Archived sessions:** their requests, tool results, rewrites, events and search entries.
+- **Archived experiments:** their runs, trials, trial sessions and run folders.
+
+Only archived items go. Running sessions and experiments with a run in progress are skipped. Rewrite costs move to the spending history first, so its totals don't change, although per-rule usage counts drop for deleted sessions. The database is compacted afterwards, which can pause Diorama briefly on a large database. This can't be undone.
+
+```bash
+diorama storage                                   # sizes and counts
+diorama storage purge --older-than 30 --dry-run   # what would go
+diorama storage purge --older-than 30             # asks, then deletes (--yes skips the question)
+```

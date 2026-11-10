@@ -12,7 +12,7 @@ struct Diorama: AsyncParsableCommand {
         discussion: "Diorama routes Claude Code sessions you start with `diorama run` through a local gateway that can rewrite tool results according to your rules, records everything, and runs A/B experiments.",
         version: DioramaVersion.current,
         subcommands: [
-            Run.self, Hook.self, MCP.self, Spend.self, Search.self, PauseAll.self, ResumeAll.self, Reviews.self, ExportData.self, Folders.self, Launch.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
+            Run.self, Hook.self, MCP.self, Spend.self, Search.self, PauseAll.self, ResumeAll.self, Reviews.self, ExportData.self, Folders.self, Launch.self, Sessions.self, Session.self, Profiles.self, Key.self, Settings.self, Storage.self, Daemon.self, Doctor.self, Experiment.self, Update.self,
         ])
 }
 
@@ -695,14 +695,16 @@ struct Session: AsyncParsableCommand {
 struct Profiles: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Manage profiles (versioned sets of global rules).",
-        subcommands: [List.self, Show.self, Create.self, Update.self, Export.self, Delete.self, Templates.self, Test.self, Stats.self, Diff.self, Check.self, AddTest.self, SyncFolders.self, WriteFile.self], defaultSubcommand: List.self)
+        subcommands: [List.self, Show.self, Create.self, Update.self, Export.self, Archive.self, Unarchive.self, Templates.self, Test.self, Stats.self, Diff.self, Check.self, AddTest.self, SyncFolders.self, WriteFile.self], defaultSubcommand: List.self)
 
     struct List: AsyncParsableCommand {
         @OptionGroup var global: GlobalOptions
         @Flag var json = false
+        @Flag(help: "List archived profiles instead.") var archived = false
         func run() async throws {
-            let ps = try await global.client().profiles()
+            let ps = try await global.client().profiles(archived: archived ? "only" : "hide")
             if json { return try printJSON(ps) }
+            if ps.isEmpty, archived { return print("No archived profiles.") }
             if ps.isEmpty { return print("No profiles. Create one with `diorama profiles create --file profile.json` or `--template N`.") }
             table(["ID", "NAME", "VERSION", "RULES", "UPDATED"], ps.map { [$0.id, $0.name, "v\($0.currentVersionNumber)", String($0.ruleCount), dateText($0.updatedAt)] })
         }
@@ -773,13 +775,53 @@ struct Profiles: AsyncParsableCommand {
         }
     }
 
-    struct Delete: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Archive a profile (its versions stay for audit).")
+    struct Archive: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Archive a profile: hide it from lists and pickers (its versions stay for audit).",
+            discussion: """
+                Sessions, decisions and anything that names the profile by id keep working. Folder
+                defaults, launchers, hooks and experiments that name it by name stop resolving; they
+                are listed before archiving. Bring it back with `diorama profiles unarchive`.
+                """,
+            aliases: ["delete"])
         @OptionGroup var global: GlobalOptions
-        @Argument var id: String
+        @Argument(help: "Profile id or name.") var id: String
+        @Option(help: "First move folder defaults, launchers and hooks that use it to this profile (id or name).") var moveTo: String?
         func run() async throws {
-            try await global.client().archiveProfile(id)
-            print("Archived.")
+            let client = try await global.client()
+            if let moveTo {
+                let moved = try await client.repointProfile(id, to: moveTo)
+                for r in moved { print("  → \(Self.kindText(r.kind)) \(r.label) now uses \(moveTo).") }
+            }
+            let refs = try await client.profileReferences(id)
+            try await client.archiveProfile(id)
+            print("✓ Archived. Show it again with `diorama profiles unarchive \(id)`.")
+            for r in refs where r.byName {
+                print("  ! \(Self.kindText(r.kind)) \(r.label) names it by name and won't find it any more.")
+            }
+            if let file = refs.first(where: { $0.kind == .syncedFile }) {
+                print("  ! It's synced from \(file.label): if that file changes, it comes back as a new profile.")
+            }
+        }
+
+        static func kindText(_ k: ProfileReference.Kind) -> String {
+            switch k {
+            case .folderDefault: "Folder default"
+            case .launcher: "Launcher"
+            case .hook: "Hook in"
+            case .syncedFile: "File"
+            case .experiment: "Experiment"
+            }
+        }
+    }
+
+    struct Unarchive: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Bring an archived profile back (list them with `diorama profiles list --archived`).")
+        @OptionGroup var global: GlobalOptions
+        @Argument(help: "Profile id or name.") var id: String
+        func run() async throws {
+            let d = try await global.client().unarchiveProfile(id)
+            print("✓ Unarchived '\(d.summary.name)' (\(d.summary.id)).")
         }
     }
 

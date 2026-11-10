@@ -187,14 +187,18 @@ public struct ExperimentInfo: Codable, Sendable, Hashable, Identifiable {
     public var definitionHash: String
     public var createdAt: Date
     public var runs: [RunSummary]
+    /// Archived experiments are hidden from the list and keep their runs; nil in older payloads.
+    public var archived: Bool?
+    public var isArchived: Bool { archived == true }
 
-    public init(id: String, name: String, definition: ExperimentDefinition, definitionHash: String, createdAt: Date, runs: [RunSummary]) {
+    public init(id: String, name: String, definition: ExperimentDefinition, definitionHash: String, createdAt: Date, runs: [RunSummary], archived: Bool? = nil) {
         self.id = id
         self.name = name
         self.definition = definition
         self.definitionHash = definitionHash
         self.createdAt = createdAt
         self.runs = runs
+        self.archived = archived
     }
 }
 
@@ -583,6 +587,17 @@ public struct StartRunRequest: Codable, Sendable {
 
 /// An experiment definition prefilled from a session (not yet created), with notes on what was
 /// inferred and what to check before running it.
+extension ExperimentDefinition {
+    /// A copy to edit and create as a new experiment: named "… (copy)", with no seed, so its trial
+    /// order is drawn afresh. Everything else, profile references included, is kept as it was.
+    public var duplicate: ExperimentDefinition {
+        var d = self
+        d.name = name + " (copy)"
+        d.seed = nil
+        return d
+    }
+}
+
 public struct ExperimentDraft: Codable, Sendable, Hashable, Identifiable {
     public var definition: ExperimentDefinition
     public var notes: [String]

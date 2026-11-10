@@ -18,7 +18,7 @@ extension Store {
             SELECT COALESCE(SUM(a.cost_usd), 0) AS c FROM rewrite_attempts a JOIN sessions s ON s.id = a.session_id
             WHERE a.created_at >= ? AND s.trial_id IS NULL
             """
-        var ledger = "SELECT COALESCE(SUM(cost_usd), 0) AS c FROM spend_ledger WHERE created_at >= ?"
+        var ledger = "SELECT COALESCE(SUM(cost_usd), 0) AS c FROM spend_ledger WHERE created_at >= ? AND kind != '\(Self.purgedTrialSpend)'"
         var args: [SQLValue] = [.date(start)]
         if let profileId {
             attempts += " AND s.profile_id = ?"
@@ -37,7 +37,7 @@ extension Store {
             SELECT s.profile_id AS p, SUM(a.cost_usd) AS c FROM rewrite_attempts a JOIN sessions s ON s.id = a.session_id
             WHERE a.created_at >= ? AND s.trial_id IS NULL AND s.profile_id IS NOT NULL GROUP BY s.profile_id
             UNION ALL
-            SELECT profile_id AS p, SUM(cost_usd) AS c FROM spend_ledger WHERE created_at >= ? AND profile_id IS NOT NULL GROUP BY profile_id
+            SELECT profile_id AS p, SUM(cost_usd) AS c FROM spend_ledger WHERE created_at >= ? AND profile_id IS NOT NULL AND kind != '\(Self.purgedTrialSpend)' GROUP BY profile_id
             """, [.date(start), .date(start)])) ?? []
         for r in rows {
             if let p = r.string("p") { out[p, default: 0] += r.double("c") ?? 0 }
@@ -68,10 +68,15 @@ extension Store {
             if let p = r.string("p"), c > 0 { day.byProfile[names[p] ?? p, default: 0] += c }
             byDay[day.day] = day
         }
-        for r in try db.query("SELECT created_at AS t, cost_usd AS c, profile_id AS p FROM spend_ledger WHERE created_at >= ?", [.date(start)]) {
+        for r in try db.query("SELECT created_at AS t, cost_usd AS c, profile_id AS p, kind FROM spend_ledger WHERE created_at >= ?", [.date(start)]) {
             guard let t = r.date("t"), var day = byDay[calendar.startOfDay(for: t)] else { continue }
             let c = r.double("c") ?? 0
-            day.previewsUSD += c
+            // Costs kept from purged sessions and trials count where they did before the purge.
+            switch r.string("kind") {
+            case Self.purgedSessionSpend: day.sessionsUSD += c
+            case Self.purgedTrialSpend: day.trialsUSD += c
+            default: day.previewsUSD += c
+            }
             if let p = r.string("p"), c > 0 { day.byProfile[names[p] ?? p, default: 0] += c }
             byDay[day.day] = day
         }

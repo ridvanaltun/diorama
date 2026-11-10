@@ -2,6 +2,19 @@
 
 This file is kept current while work is in progress, so that progress survives restarts and context limits.
 
+## Archiving, purging and duplicating (2026-11-10, v1.11.0)
+
+| # | Item | State |
+|---|---|---|
+| 1 | Profiles: unarchive, archived list, references (D51) | ✅ Store, control API, client, CLI (`profiles archive/unarchive`, `list --archived`) |
+| 2 | Profiles in the app | ✅ Right-click **Archive…** with a confirmation listing references by name; **Show Archived Profiles**, **Unarchive** |
+| 3 | Experiments: archive (schema v13) | ✅ Store, API, client, CLI, app (right-click, **Show Archived Experiments**) |
+| 4 | Tests and docs | ✅ `ProfileArchiveTests`, `ExperimentArchiveTests`, FormLogic test; user guide, CHANGELOG, D51 |
+| 5 | Purge old archived data (D52) | ✅ `storage` / `storage/purge` API, Settings → Storage, `diorama storage [purge]`; costs kept in the ledger. `PurgeTests` |
+| 6 | Move references when archiving | ✅ `profiles/:id/repoint`, archive sheet picker, `--move-to`; pinned versions stay. `RepointTests` |
+| 7 | Duplicate experiments | ✅ App **Duplicate…**, `experiment init --from`; the form keeps unshown settings. FormLogic tests |
+| 8 | Release v1.11.0 | ✅ Released with `scripts/release.sh 1.11.0` |
+
 ## OpenCode support (2026-11-07, Unreleased)
 
 | # | Item | State |

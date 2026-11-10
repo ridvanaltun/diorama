@@ -7,13 +7,25 @@ struct ExperimentsView: View {
     @Environment(AppModel.self) private var model
     @State private var selection: String?
     @State private var showNew = false
+    @State private var showArchived = false
+    @State private var archivedExperiments: [ExperimentInfo] = []
+    @State private var duplicating: ExperimentDraft?
+
+    var listed: [ExperimentInfo] { showArchived ? archivedExperiments : model.experiments }
 
     var body: some View {
         HSplitView {
+            VStack(spacing: 0) {
+            if showArchived {
+                Label("Archived experiments", systemImage: "archivebox").font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+            }
             List(selection: $selection) {
-                ForEach(model.experiments) { e in
+                ForEach(listed) { e in
                     Section {
                         Label("Definition & new run", systemImage: "doc.text.magnifyingglass").tag("exp:" + e.id)
+                            .contextMenu { archiveMenu(e) }
                         if e.runs.filter({ $0.status == .completed }).count >= 2 {
                             Label("All runs (pooled)", systemImage: "square.stack.3d.up").tag("pool:" + e.id)
                         }
@@ -24,12 +36,15 @@ struct ExperimentsView: View {
                             Spacer()
                             Text(Fmt.plural(e.runs.count, "run")).foregroundStyle(.tertiary)
                         }
+                        .contextMenu { archiveMenu(e) }
                     }
                 }
             }
-            .frame(minWidth: 240, idealWidth: 280, maxWidth: 360)
             .overlay {
-                if model.experiments.isEmpty {
+                if showArchived, archivedExperiments.isEmpty {
+                    ContentUnavailableView("No archived experiments", systemImage: "archivebox",
+                                           description: Text("Archive an experiment from its right-click menu to hide it from the list."))
+                } else if !showArchived, model.experiments.isEmpty {
                     ContentUnavailableView {
                         Label("No experiments", systemImage: "flask")
                     } description: {
@@ -39,13 +54,15 @@ struct ExperimentsView: View {
                     }
                 }
             }
+            }
+            .frame(minWidth: 240, idealWidth: 280, maxWidth: 360)
             Group {
                 if let s = selection, s.hasPrefix("run:") {
                     RunView(runId: String(s.dropFirst(4))).id(s)
                 } else if let s = selection, s.hasPrefix("pool:") {
                     RunView(source: .pooled(experimentId: String(s.dropFirst(5)))).id(s)
-                } else if let s = selection, s.hasPrefix("exp:"), let e = model.experiments.first(where: { $0.id == s.dropFirst(4) }) {
-                    ExperimentSummaryView(experiment: e, onRunStarted: { selection = "run:" + $0 })
+                } else if let s = selection, s.hasPrefix("exp:"), let e = listed.first(where: { $0.id == s.dropFirst(4) }) {
+                    ExperimentSummaryView(experiment: e, onRunStarted: { selection = "run:" + $0 }, onDuplicate: { duplicating = Self.duplicateDraft(e) })
                 } else {
                     ContentUnavailableView("Select an experiment run", systemImage: "chart.bar.xaxis",
                                            description: Text("Facts and heuristic signals per variant, with every trial's record."))
@@ -55,8 +72,24 @@ struct ExperimentsView: View {
         }
         .toolbar {
             ToolbarItem { Button { showNew = true } label: { Label("New Experiment", systemImage: "plus") } }
+            ToolbarItem {
+                Menu {
+                    Toggle("Show Archived Experiments", isOn: $showArchived)
+                } label: { Label("Archive", systemImage: "archivebox") }
+                .help("Hide experiments you're done with (nothing is deleted)")
+            }
+        }
+        .onChange(of: showArchived) { _, _ in
+            if !Self.selection(selection, isIn: listed) { selection = nil }
+            Task { await refreshArchived() }
         }
         .sheet(isPresented: $showNew) { NewExperimentSheet { selection = "exp:" + $0 } }
+        .sheet(item: $duplicating) { d in
+            NewExperimentSheet(draft: d, heading: "Duplicate experiment") { id in
+                showArchived = false
+                selection = "exp:" + id
+            }
+        }
         .onChange(of: model.focusExperimentId, initial: true) { _, id in
             guard let id else { return }
             selection = "exp:" + id
@@ -69,6 +102,46 @@ struct ExperimentsView: View {
         }
         .navigationTitle("Experiments")
         .task { if model.snapshotDir != nil, selection == nil, let r = model.experiments.first?.runs.first { selection = "run:" + r.id } }
+    }
+}
+
+extension ExperimentsView {
+    static func duplicateDraft(_ e: ExperimentInfo) -> ExperimentDraft {
+        ExperimentDraft(definition: e.definition.duplicate, notes: [
+            "A copy of “\(e.name)”. Change what you want, then create it as a new experiment; the original and its runs stay as they are.",
+        ])
+    }
+
+    @ViewBuilder func archiveMenu(_ e: ExperimentInfo) -> some View {
+        Button("Duplicate…") { duplicating = Self.duplicateDraft(e) }
+        Divider()
+        if e.isArchived {
+            Button("Unarchive") { Task { await setArchived(e, false) } }
+        } else {
+            Button("Archive") { Task { await setArchived(e, true) } }
+                .disabled(e.runs.contains { $0.status == .running })
+        }
+    }
+
+    /// Whether a list selection (`exp:`, `pool:` or `run:` plus an id) belongs to one of these experiments.
+    static func selection(_ s: String?, isIn list: [ExperimentInfo]) -> Bool {
+        guard let s else { return false }
+        return list.contains { e in s == "exp:" + e.id || s == "pool:" + e.id || e.runs.contains { s == "run:" + $0.id } }
+    }
+
+    func refreshArchived() async {
+        archivedExperiments = (try? await model.client?.experiments(archived: "only")) ?? []
+    }
+
+    func setArchived(_ e: ExperimentInfo, _ archived: Bool) async {
+        guard await model.perform({ try await $0.setExperimentArchived(e.id, archived) }) != nil else { return }
+        if Self.selection(selection, isIn: [e]) { selection = nil }
+        await model.refreshExperiments()
+        await refreshArchived()
+        if !archived {
+            showArchived = false
+            model.focusExperimentId = e.id
+        }
     }
 }
 
@@ -103,6 +176,7 @@ struct ExperimentSummaryView: View {
     @Environment(AppModel.self) private var model
     let experiment: ExperimentInfo
     let onRunStarted: (String) -> Void
+    var onDuplicate: () -> Void = {}
     @State private var pending: RunSummary?
 
     var body: some View {
@@ -112,6 +186,8 @@ struct ExperimentSummaryView: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text(experiment.name).font(.title2.bold())
                     Spacer()
+                    Button { onDuplicate() } label: { Label("Duplicate…", systemImage: "plus.square.on.square") }
+                        .help("Create a new experiment from this one's settings")
                     Button {
                         Task { pending = await model.perform { try await $0.prepareRun(experimentId: experiment.id) } }
                     } label: {
@@ -689,10 +765,15 @@ struct NewExperimentSheet: View {
     ]
     /// What was inferred when the form was prefilled from a session.
     let notes: [String]
+    let heading: String
+    /// The prefilled definition, for the settings the form doesn't show.
+    let base: ExperimentDefinition?
 
-    init(draft: ExperimentDraft? = nil, created: @escaping (String) -> Void) {
+    init(draft: ExperimentDraft? = nil, heading: String? = nil, created: @escaping (String) -> Void) {
         self.created = created
         notes = draft?.notes ?? []
+        base = draft?.definition
+        self.heading = heading ?? (draft == nil ? "New experiment" : "New experiment from a session")
         guard let d = draft?.definition else { return }
         _name = State(initialValue: d.name)
         _task = State(initialValue: d.task)
@@ -713,7 +794,7 @@ struct NewExperimentSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(notes.isEmpty ? "New experiment" : "New experiment from a session").font(.title2.bold())
+                Text(heading).font(.title2.bold())
                 Text("Runs the same task repeatedly in fresh copies of a project — unmodified and steered — and compares what the agent did.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if !notes.isEmpty {
@@ -808,7 +889,7 @@ struct NewExperimentSheet: View {
                         let def = FormLogic.experimentDefinition(FormLogic.ExperimentForm(
                             name: name, task: task, project: project, claudeModel: claudeModel, allowedTools: allowedTools, maxTurns: maxTurns,
                             budget: budget, trials: trials, concurrency: concurrency, frozen: frozen, isolate: isolate, useJudge: useJudge,
-                            agent: agent, variants: variants))
+                            agent: agent, variants: variants, base: base))
                         if let e = await model.perform({ try await $0.createExperiment(def) }) {
                             await model.refreshExperiments()
                             created(e.id)

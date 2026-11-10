@@ -123,6 +123,61 @@ import Testing
         #expect(d.runsOpenCode && d.claude.maxBudgetUSD == nil && d.claude.model == "claude-sonnet-4-5")
     }
 
+    @Test func archiveMessageListsWhatStopsFindingTheProfile() {
+        let plain = FormLogic.archiveProfileMessage([ProfileReference(kind: .folderDefault, label: "/by/id", byName: false)])
+        #expect(plain.contains("unarchive it later") && !plain.contains("won't find it"))
+        let m = FormLogic.archiveProfileMessage([
+            ProfileReference(kind: .launcher, label: "Start", byName: true),
+            ProfileReference(kind: .experiment, label: "Exp", byName: true),
+            ProfileReference(kind: .folderDefault, label: "/by/id", byName: false),
+            ProfileReference(kind: .syncedFile, label: "/repo/profiles/docs.json", byName: false),
+        ])
+        #expect(m.contains("• Launcher “Start”") && m.contains("• Experiment “Exp” (new runs)"))
+        #expect(!m.contains("/by/id"))
+        #expect(m.contains("synced from /repo/profiles/docs.json"))
+    }
+
+    @Test func duplicateKeepsSettingsTheFormDoesNotShow() {
+        var original = ExperimentDefinition(
+            name: "Pilot", task: "t", projectPath: "/p",
+            claude: ClaudeRunOptions(model: "claude-haiku-5-5", allowedTools: ["WebFetch"], maxTurns: 5),
+            variants: [ExperimentVariant(key: "control", name: "c"), ExperimentVariant(key: "s", name: "s", profile: "pv_abc")], trialsPerVariant: 3,
+            judge: JudgeConfig(model: "claude-sonnet-5-5"))
+        original.claude.disallowedTools = ["Bash"]
+        original.claude.timeoutSeconds = 99
+        original.seed = 42
+        let copy = original.duplicate
+        #expect(copy.name == "Pilot (copy)" && copy.seed == nil && copy.variants == original.variants)
+
+        var f = FormLogic.ExperimentForm(name: copy.name, task: "new task", project: "/p", claudeModel: "claude-haiku-5-5", allowedTools: "WebFetch,Read",
+                                         maxTurns: 5, trials: 10, useJudge: true, variants: copy.variants, base: copy)
+        var d = FormLogic.experimentDefinition(f)
+        #expect(d.task == "new task" && d.trialsPerVariant == 10 && d.claude.allowedTools == ["WebFetch", "Read"])
+        #expect(d.claude.disallowedTools == ["Bash"] && d.claude.timeoutSeconds == 99 && d.judge?.model == "claude-sonnet-5-5")
+        f.useJudge = false
+        d = FormLogic.experimentDefinition(f)
+        #expect(d.judge == nil)
+    }
+
+    @Test func purgeMessageCountsWhatGoes() {
+        let m = FormLogic.purgeMessage(PurgeResult(dryRun: true, sessions: 2, experiments: 1, runs: 3, trialSessions: 6, decisions: 40, exchanges: 12), days: 30)
+        #expect(m.contains("older than 30 days") && m.contains("• 2 sessions") && m.contains("• 1 experiment with 3 runs and 6 trial sessions"))
+        #expect(m.contains("can't be undone"))
+    }
+
+    @Test func archiveMessageShowsWhatMoves() {
+        let refs = [
+            ProfileReference(kind: .launcher, label: "Start", byName: true),
+            ProfileReference(kind: .folderDefault, label: "/pinned", byName: false, pinned: true),
+            ProfileReference(kind: .experiment, label: "Exp", byName: true),
+        ]
+        #expect(FormLogic.movableReferences(refs) == 1)
+        let m = FormLogic.archiveProfileMessage(refs, movingTo: "Other")
+        #expect(m.contains("These will use “Other” instead:\n• Launcher “Start”"))
+        #expect(m.contains("won't find it any more:\n• Experiment “Exp”"))
+        #expect(!m.contains("pinned"))
+    }
+
     @Test func upsertReplacesTheSameNameAndKeepsItsId() {
         let a = Launcher(id: "a", name: "One", folder: "/a")
         let list = FormLogic.upsert(Launcher(id: "new", name: "one", folder: "/b"), into: [a])

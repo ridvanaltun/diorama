@@ -7,24 +7,44 @@ struct ProfilesView: View {
     @Environment(AppModel.self) private var model
     @State private var selection: String?
     @State private var showTemplates = false
+    @State private var showArchived = false
+    @State private var archivedProfiles: [ProfileSummary] = []
+    @State private var archiving: ArchiveProfileRequest?
+
+    var listed: [ProfileSummary] { showArchived ? archivedProfiles : model.profiles }
 
     var body: some View {
         HSplitView {
-            List(model.profiles, selection: $selection) { p in
+            VStack(spacing: 0) {
+            if showArchived {
+                Label("Archived profiles", systemImage: "archivebox").font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+            }
+            List(listed, selection: $selection) { p in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(p.name).font(.headline)
                     Text("v\(p.currentVersionNumber) · \(Fmt.plural(p.ruleCount, "rule"))").font(.caption).foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 2)
                 .tag(p.id)
+                .contextMenu {
+                    if p.isArchived {
+                        Button("Unarchive") { Task { await unarchive(p) } }
+                    } else {
+                        Button("Archive…") { Task { await askToArchive(p) } }
+                    }
+                }
             }
-            .frame(minWidth: 220, idealWidth: 260, maxWidth: 340)
             .dropDestination(for: URL.self) { urls, _ in
                 Task { for url in urls where url.pathExtension.lowercased() == "json" { await importProfile(from: url) } }
                 return urls.contains { $0.pathExtension.lowercased() == "json" }
             }
             .overlay {
-                if model.profiles.isEmpty {
+                if showArchived, archivedProfiles.isEmpty {
+                    ContentUnavailableView("No archived profiles", systemImage: "archivebox",
+                                           description: Text("Archive a profile from its right-click menu to hide it from lists and pickers."))
+                } else if !showArchived, model.profiles.isEmpty {
                     ContentUnavailableView {
                         Label("No profiles", systemImage: "slider.horizontal.3")
                     } description: {
@@ -34,6 +54,8 @@ struct ProfilesView: View {
                     }
                 }
             }
+            }
+            .frame(minWidth: 220, idealWidth: 260, maxWidth: 340)
             Group {
                 if let id = selection {
                     ProfileEditor(profileId: id).id(id)
@@ -52,8 +74,28 @@ struct ProfilesView: View {
             ToolbarItem {
                 Button { showTemplates = true } label: { Label("New Profile", systemImage: "plus") }
             }
+            ToolbarItem {
+                Menu {
+                    Toggle("Show Archived Profiles", isOn: $showArchived)
+                    if let id = selection, let p = model.profiles.first(where: { $0.id == id }), !showArchived {
+                        Divider()
+                        Button("Archive “\(p.name)”…") { Task { await askToArchive(p) } }
+                    }
+                } label: { Label("Archive", systemImage: "archivebox") }
+                .help("Hide profiles you no longer use (nothing is deleted)")
+            }
         }
         .sheet(isPresented: $showTemplates) { NewProfileSheet(selection: $selection) }
+        .sheet(item: $archiving) { req in
+            ArchiveProfileSheet(request: req, others: model.profiles.filter { $0.id != req.profile.id }) { moveTo in
+                Task { await archive(req.profile, moveTo: moveTo) }
+            }
+        }
+        .onChange(of: showArchived) { _, archived in
+            if archived || !model.profiles.contains(where: { $0.id == selection }) { selection = nil }
+            Task { await refreshArchived() }
+        }
+        .onChange(of: model.profiles) { _, _ in if showArchived { Task { await refreshArchived() } } }
         .onChange(of: model.wantsNewProfile, initial: true) { _, wants in
             if wants {
                 showTemplates = true
@@ -62,6 +104,32 @@ struct ProfilesView: View {
         }
         .navigationTitle("Profiles")
         .task { if model.snapshotDir != nil, selection == nil { selection = model.profiles.first?.id } }
+    }
+
+    func refreshArchived() async {
+        archivedProfiles = (try? await model.client?.profiles(archived: "only")) ?? []
+    }
+
+    /// Looks up what names the profile first, so the confirmation can say what stops working.
+    func askToArchive(_ p: ProfileSummary) async {
+        guard let refs = await model.perform({ try await $0.profileReferences(p.id) }) else { return }
+        archiving = ArchiveProfileRequest(profile: p, references: refs)
+    }
+
+    func archive(_ p: ProfileSummary, moveTo: String? = nil) async {
+        if let moveTo, await model.perform({ try await $0.repointProfile(p.id, to: moveTo) }) == nil { return }
+        guard await model.perform({ try await $0.archiveProfile(p.id) }) != nil else { return }
+        if moveTo != nil { await model.refreshSettings() }
+        if selection == p.id { selection = nil }
+        await model.refreshProfiles()
+    }
+
+    func unarchive(_ p: ProfileSummary) async {
+        guard await model.perform({ try await $0.unarchiveProfile(p.id) }) != nil else { return }
+        await model.refreshProfiles()
+        await refreshArchived()
+        showArchived = false
+        selection = p.id
     }
 
     func chooseImport() {
@@ -84,6 +152,47 @@ struct ProfilesView: View {
         } catch {
             model.report(error)
         }
+    }
+}
+
+struct ArchiveProfileRequest: Identifiable {
+    let profile: ProfileSummary
+    let references: [ProfileReference]
+    var id: String { profile.id }
+}
+
+/// Confirms archiving a profile, listing what names it, and offers to move folder defaults,
+/// launchers and hooks to another profile first.
+struct ArchiveProfileSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let request: ArchiveProfileRequest
+    let others: [ProfileSummary]
+    let archive: (_ moveTo: String?) -> Void
+    @State private var moveTo: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Archive “\(request.profile.name)”?").font(.title2.bold())
+            Text(FormLogic.archiveProfileMessage(request.references, movingTo: moveTo.flatMap { id in others.first { $0.id == id }?.name }))
+                .fixedSize(horizontal: false, vertical: true)
+            if FormLogic.movableReferences(request.references) > 0, !others.isEmpty {
+                Picker("Move folder defaults, launchers and hooks to", selection: $moveTo) {
+                    Text("Leave them as they are").tag(String?.none)
+                    ForEach(others) { Text($0.name).tag(String?.some($0.id)) }
+                }
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(moveTo == nil ? "Archive" : "Move and Archive", role: .destructive) {
+                    archive(moveTo)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 520)
     }
 }
 

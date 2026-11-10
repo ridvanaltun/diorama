@@ -3,6 +3,53 @@ import Foundation
 
 /// Pure logic behind the app's forms, kept out of the views so it can be unit-tested.
 enum FormLogic {
+    /// The confirmation shown before purging archived data.
+    static func purgeMessage(_ p: PurgeResult, days: Int) -> String {
+        var lines = ["Archived and older than \(days) days:"]
+        if p.sessions > 0 { lines.append("• \(Fmt.plural(p.sessions, "session"))") }
+        if p.experiments > 0 { lines.append("• \(Fmt.plural(p.experiments, "experiment")) with \(Fmt.plural(p.runs, "run")) and \(Fmt.plural(p.trialSessions, "trial session"))") }
+        lines.append("\(Fmt.plural(p.exchanges, "request")) and \(Fmt.plural(p.decisions, "tool result")) go with them. This can't be undone.")
+        return lines.joined(separator: "\n")
+    }
+
+    /// Folder defaults, launchers and hooks: the references a move can change.
+    static func movableReferences(_ refs: [ProfileReference]) -> Int {
+        refs.filter { [.folderDefault, .launcher, .hook].contains($0.kind) && $0.pinned != true }.count
+    }
+
+    /// The confirmation shown before archiving a profile: what keeps working, and what names it
+    /// by name and so stops finding it (unless it's moved to `movingTo`).
+    static func archiveProfileMessage(_ refs: [ProfileReference], movingTo: String? = nil) -> String {
+        var lines = ["It leaves the list and the pickers. Its versions stay, so past sessions, experiment results and anything that uses its id keep working. You can unarchive it later."]
+        let movable: Set<ProfileReference.Kind> = [.folderDefault, .launcher, .hook]
+        if let target = movingTo {
+            let moving = refs.filter { movable.contains($0.kind) && $0.pinned != true }
+            if !moving.isEmpty {
+                lines.append("These will use “\(target)” instead:")
+                lines += moving.map { "• \(referenceText($0))" }
+            }
+        }
+        let broken = refs.filter { $0.byName && (movingTo == nil || !movable.contains($0.kind)) }
+        if !broken.isEmpty {
+            lines.append("These name it by name and won't find it any more:")
+            lines += broken.map { "• \(referenceText($0))" }
+        }
+        if let file = refs.first(where: { $0.kind == .syncedFile }) {
+            lines.append("It's synced from \(file.label). If that file changes, it comes back as a new profile; remove the file or stop watching its folder to prevent that.")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    static func referenceText(_ r: ProfileReference) -> String {
+        switch r.kind {
+        case .folderDefault: "Folder default for \((r.label as NSString).abbreviatingWithTildeInPath)"
+        case .launcher: "Launcher “\(r.label)”"
+        case .hook: "Hook in \((r.label as NSString).abbreviatingWithTildeInPath)"
+        case .syncedFile: "File \((r.label as NSString).abbreviatingWithTildeInPath)"
+        case .experiment: "Experiment “\(r.label)” (new runs)"
+        }
+    }
+
     struct SessionForm: Equatable {
         var folder: String
         var name = ""
@@ -127,6 +174,9 @@ enum FormLogic {
             ExperimentVariant(key: "control", name: "Unmodified"),
             ExperimentVariant(key: "steered", name: "Steered", prompt: SessionPrompt(text: "")),
         ]
+        /// The definition the form was filled from (a duplicate or a session draft): settings the form
+        /// doesn't show, such as disallowed tools or the judge's model, are kept from it.
+        var base: ExperimentDefinition?
     }
 
     static func experimentDefinition(_ f: ExperimentForm) -> ExperimentDefinition {
@@ -138,12 +188,28 @@ enum FormLogic {
             if let p = v.prompt, p.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { v.prompt = nil }
             return v
         }
-        return ExperimentDefinition(
+        let fresh = ExperimentDefinition(
             name: f.name, task: f.task, projectPath: f.project,
             claude: ClaudeRunOptions(model: f.claudeModel.isEmpty ? nil : f.claudeModel, allowedTools: tools, maxTurns: f.maxTurns,
                                      maxBudgetUSD: f.agent == .opencode ? nil : f.budget, isolateConfiguration: f.isolate),
             variants: variants, trialsPerVariant: f.trials, concurrency: f.concurrency, treatment: f.frozen ? .frozen : .fresh,
             judge: f.useJudge ? JudgeConfig() : nil, agent: f.agent == .opencode ? .opencode : nil)
+        guard var d = f.base else { return fresh }
+        d.name = fresh.name
+        d.task = fresh.task
+        d.projectPath = fresh.projectPath
+        d.claude.model = fresh.claude.model
+        d.claude.allowedTools = fresh.claude.allowedTools
+        d.claude.maxTurns = fresh.claude.maxTurns
+        d.claude.maxBudgetUSD = fresh.claude.maxBudgetUSD
+        d.claude.isolateConfiguration = fresh.claude.isolateConfiguration
+        d.variants = fresh.variants
+        d.trialsPerVariant = fresh.trialsPerVariant
+        d.concurrency = fresh.concurrency
+        d.treatment = fresh.treatment
+        d.judge = f.useJudge ? (d.judge ?? JudgeConfig()) : nil
+        d.agent = fresh.agent
+        return d
     }
 
     /// Problems that would make a rule silently never match or do nothing.

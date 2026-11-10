@@ -463,6 +463,22 @@ public struct HookConfigStore: Sendable {
             return File(configs: configs)
         }
     }
+
+    /// Changes configurations in place under the lock; `change` returns whether it changed one.
+    public func updateAll(_ change: (String, inout HookConfig) -> Bool) {
+        lockedWrite(url) { () -> File? in
+            var configs = all
+            var changed = false
+            for id in configs.keys.sorted() {
+                guard var c = configs[id] else { continue }
+                if change(id, &c) {
+                    configs[id] = c
+                    changed = true
+                }
+            }
+            return changed ? File(configs: configs) : nil
+        }
+    }
 }
 
 /// Writes what `make` returns (nil: leave the file as it is) under an exclusive lock, atomically

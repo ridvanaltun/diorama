@@ -103,7 +103,8 @@ struct ControlAPI: Sendable {
             return try ok(RuleTemplates.all)
         }
         if Self.match(method, route, "GET", "profiles") != nil {
-            return try ok(store.profiles())
+            let archived = req.query["archived"].flatMap(Store.ArchiveFilter.init(rawValue:)) ?? .hide
+            return try ok(store.profiles(archived: archived))
         }
         if Self.match(method, route, "POST", "profiles") != nil {
             return try ok(store.createProfile(try decode(Profile.self, req)), status: 201)
@@ -140,6 +141,20 @@ struct ControlAPI: Sendable {
             guard let current = try store.resolveProfile(id) else { throw notFound("profile") }
             try store.archiveProfile(id: current.profileId)
             return try ok(["archived": current.profileId])
+        }
+        if let c = Self.match(method, route, "POST", "profiles/:id/unarchive") {
+            guard let id = try store.archivedProfileId(c[0]) ?? store.resolveProfile(c[0])?.profileId else { throw notFound("profile") }
+            do { try store.unarchiveProfile(id: id) } catch let e as StoreError { throw Failure(status: 409, message: e.description) }
+            return try ok(try profileDetail(id))
+        }
+        if let c = Self.match(method, route, "POST", "profiles/:id/repoint") {
+            guard let id = try store.resolveProfile(c[0])?.profileId ?? store.archivedProfileId(c[0]) else { throw notFound("profile") }
+            let r = try decode(RepointProfileRequest.self, req)
+            do { return try ok(try daemon.repointProfileReferences(from: id, to: r.to)) } catch let e as StoreError { throw Failure(status: 400, message: e.description) }
+        }
+        if let c = Self.match(method, route, "GET", "profiles/:id/references") {
+            guard let id = try store.resolveProfile(c[0])?.profileId ?? store.archivedProfileId(c[0]) else { throw notFound("profile") }
+            return try ok(try daemon.profileReferences(profileId: id))
         }
         if Self.match(method, route, "GET", "sessions") != nil {
             let kind = req.query["kind"].flatMap(SessionKind.init(rawValue:))
@@ -369,6 +384,14 @@ struct ControlAPI: Sendable {
             let daemon = self.daemon
             return try ok(await offloadBlocking { daemon.doctor() })
         }
+        if Self.match(method, route, "GET", "storage") != nil {
+            return try ok(try store.storageUsage())
+        }
+        if Self.match(method, route, "POST", "storage/purge") != nil {
+            let r = try decode(PurgeRequest.self, req)
+            guard r.olderThanDays >= 1 else { throw Failure(status: 400, message: "olderThanDays must be at least 1") }
+            return try ok(try await offloadBlocking { try store.purgeArchived(olderThanDays: r.olderThanDays, dryRun: r.dryRun) })
+        }
         if Self.match(method, route, "POST", "maintenance/retention") != nil {
             let r = try store.applyRetention(days: store.settings().retentionDays)
             return try ok(MaintenanceResult(exchangesCleared: r.cleared, blobsRemoved: r.blobsRemoved, blobBytes: store.blobs.totalBytes()))
@@ -383,7 +406,13 @@ struct ControlAPI: Sendable {
         }
         // Experiments
         if Self.match(method, route, "GET", "experiments") != nil {
-            return try ok(try store.experiments())
+            let archived = req.query["archived"].flatMap(Store.ArchiveFilter.init(rawValue:)) ?? .hide
+            return try ok(try store.experiments(archived: archived))
+        }
+        if let c = Self.match(method, route, "POST", "experiments/:id/archive") ?? Self.match(method, route, "POST", "experiments/:id/unarchive") {
+            guard try store.experiment(id: c[0]) != nil else { throw notFound("experiment") }
+            do { try store.setExperimentArchived(id: c[0], route.last == "archive") } catch let e as StoreError { throw Failure(status: 409, message: e.description) }
+            return try ok(try store.experiment(id: c[0]))
         }
         if Self.match(method, route, "POST", "experiments") != nil {
             return try ok(try daemon.runner.create(try decode(ExperimentDefinition.self, req)), status: 201)

@@ -113,6 +113,10 @@ public struct ControlClient: Sendable {
         }
     }
     public func applyRetention() async throws -> MaintenanceResult { try await request("POST", "maintenance/retention") }
+    /// Sizes and counts of what Diorama's data folder holds.
+    public func storageUsage() async throws -> StorageUsage { try await request("GET", "storage") }
+    /// Permanently deletes archived sessions and experiments older than the given days (`dryRun` only counts them).
+    public func purgeArchived(_ r: PurgeRequest) async throws -> PurgeResult { try await request("POST", "storage/purge", body: r) }
 
     public func templates() async throws -> [Profile] { try await request("GET", "templates") }
     public func hook(_ event: HookEvent) async throws -> HookReply { try await request("POST", "hook", body: event) }
@@ -163,7 +167,10 @@ public struct ControlClient: Sendable {
         return try await request("GET", "search", query: q)
     }
     public func recentToolResults(limit: Int = 50) async throws -> [RecentToolResult] { try await request("GET", "decisions", query: ["limit": String(limit)]) }
-    public func profiles() async throws -> [ProfileSummary] { try await request("GET", "profiles") }
+    /// `archived`: "hide" (default), "only" or "all".
+    public func profiles(archived: String = "hide") async throws -> [ProfileSummary] {
+        try await request("GET", "profiles", query: archived == "hide" ? [:] : ["archived": archived])
+    }
     public func profile(_ id: String) async throws -> ProfileDetail { try await request("GET", "profiles/\(id.urlPathEscaped)") }
     /// Per-rule usage over the last `days` days (0 = all time).
     public func ruleStats(_ profile: String, days: Int = 30, includeTrials: Bool = false) async throws -> ProfileRuleStats {
@@ -172,6 +179,15 @@ public struct ControlClient: Sendable {
     public func createProfile(_ p: Profile) async throws -> ProfileVersionInfo { try await request("POST", "profiles", body: p) }
     public func updateProfile(_ id: String, _ p: Profile) async throws -> ProfileDetail { try await request("PUT", "profiles/\(id.urlPathEscaped)", body: p) }
     public func archiveProfile(_ id: String) async throws { let _: [String: String] = try await request("DELETE", "profiles/\(id.urlPathEscaped)") }
+    /// Brings an archived profile back (by id or name); fails when an active profile has its name.
+    public func unarchiveProfile(_ id: String) async throws -> ProfileDetail { try await request("POST", "profiles/\(id.urlPathEscaped)/unarchive") }
+    /// Points folder defaults, launchers and hooks that name `id` at `to` instead; returns what moved.
+    /// Version-pinned references and experiments stay.
+    public func repointProfile(_ id: String, to: String) async throws -> [ProfileReference] {
+        try await request("POST", "profiles/\(id.urlPathEscaped)/repoint", body: RepointProfileRequest(to: to))
+    }
+    /// What names the profile (folder defaults, launchers, hooks, its file, experiments).
+    public func profileReferences(_ id: String) async throws -> [ProfileReference] { try await request("GET", "profiles/\(id.urlPathEscaped)/references") }
 
     /// `archived`: "hide" (default), "only" or "all".
     public func sessions(kind: SessionKind? = nil, tag: String? = nil, archived: String = "hide", limit: Int = 200) async throws -> [SessionInfo] {
@@ -244,7 +260,14 @@ public struct ControlClient: Sendable {
         return try await request("GET", "events", query: q)
     }
 
-    public func experiments() async throws -> [ExperimentInfo] { try await request("GET", "experiments") }
+    /// `archived`: "hide" (default), "only" or "all".
+    public func experiments(archived: String = "hide") async throws -> [ExperimentInfo] {
+        try await request("GET", "experiments", query: archived == "hide" ? [:] : ["archived": archived])
+    }
+    /// Hides an experiment from the list, or shows it again; its runs stay. Fails while a run is in progress.
+    public func setExperimentArchived(_ id: String, _ archived: Bool) async throws -> ExperimentInfo {
+        try await request("POST", "experiments/\(id.urlPathEscaped)/\(archived ? "archive" : "unarchive")")
+    }
     public func createExperiment(_ d: ExperimentDefinition) async throws -> ExperimentInfo { try await request("POST", "experiments", body: d) }
     public func experiment(_ id: String) async throws -> ExperimentInfo { try await request("GET", "experiments/\(id)") }
     public func prepareRun(experimentId: String) async throws -> RunSummary { try await request("POST", "experiments/\(experimentId)/runs") }

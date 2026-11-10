@@ -5,6 +5,13 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+### New
+- **Archive profiles in the app.** Right-click a profile → **Archive…** hides it from the list and every picker, and its versions stay for audit. The confirmation lists the folder defaults, launchers, hooks and experiments that name it by name (those stop finding it) and warns when it's synced from a watched file. **Archive → Show Archived Profiles** and **Unarchive** bring it back. CLI: `diorama profiles archive` (`delete` still works and now prints the same warnings), `profiles unarchive`, `profiles list --archived`.
+- **Move references when archiving a profile.** The archive sheet can point the profile's folder defaults, launchers and hooks at another profile first, so they keep working; a name stays a name and an id an id, and version-pinned references stay. CLI: `diorama profiles archive <profile> --move-to <other>`.
+- **Free space: delete old archived data.** **Settings → Storage** shows the data folder's size and permanently deletes archived sessions and experiments older than 7, 30, 90 or 180 days, after showing what would go. Their requests, tool results, rewrites, runs and trials go with them; rewrite costs stay in the spending history. CLI: `diorama storage` and `diorama storage purge --older-than N [--dry-run] [--yes]`.
+- **Duplicate experiments.** **Duplicate…** in an experiment's summary or right-click menu opens New Experiment filled in with its settings, keeping those the form doesn't show. CLI: `diorama experiment init --from <id>`. Experiments drafted from a session now keep those settings too.
+- **Archive experiments.** Right-click an experiment → **Archive** hides it from the list; its runs, reports and exports stay. Not while a run is in progress. **Show Archived Experiments** and **Unarchive** bring it back. CLI: `diorama experiment archive`, `experiment unarchive`, `experiment list --archived`. The database records it (schema v13).
+
 ## 1.10.0 — 2026-11-07
 
 ### New

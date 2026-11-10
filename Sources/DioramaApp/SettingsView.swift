@@ -110,6 +110,7 @@ struct SettingsView: View {
                 }
                 Text("Sessions, decisions, experiment runs and captured bodies live here. API keys are in the Keychain, not in this folder.").font(.caption).foregroundStyle(.secondary)
             }
+            StorageSection()
             Section("Diagnostics") {
                 if let d = doctor {
                     ForEach(d.checks, id: \.self) { c in
@@ -224,6 +225,63 @@ struct NotificationSettingsSection: View {
 }
 
 /// Project folders with a default profile (used by `diorama run` there).
+/// Space used, and permanent deletion of old archived sessions and experiments.
+struct StorageSection: View {
+    @Environment(AppModel.self) private var model
+    @State private var usage: StorageUsage?
+    @State private var days = 30
+    @State private var plan: PurgeResult?
+    @State private var outcome: String?
+    @State private var working = false
+
+    var body: some View {
+        Section {
+            if let u = usage {
+                LabeledContent("Used", value: ByteCountFormatter.string(fromByteCount: u.totalBytes, countStyle: .file))
+                Text("Database \(ByteCountFormatter.string(fromByteCount: u.databaseBytes, countStyle: .file)) · captured content \(ByteCountFormatter.string(fromByteCount: u.blobBytes, countStyle: .file)) · \(Fmt.plural(u.sessions, "session")) (\(u.archivedSessions) archived) · \(Fmt.plural(u.experiments, "experiment")) (\(u.archivedExperiments) archived)")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            HStack {
+                Picker("Delete archived items older than", selection: $days) {
+                    ForEach([7, 30, 90, 180], id: \.self) { Text("\($0) days").tag($0) }
+                }
+                .fixedSize()
+                Spacer()
+                Button("Delete…") { Task { await preview() } }.disabled(working)
+            }
+            if let o = outcome { Text(o).font(.caption).foregroundStyle(.secondary) }
+        } header: {
+            Text("Storage")
+        } footer: {
+            Text("Deletes archived sessions and archived experiments permanently, with their requests, tool results, rewrites, runs and trials. Archive them first from their lists. Rewrite costs stay in the spending history.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .alert("Delete permanently?", isPresented: Binding(get: { plan != nil }, set: { if !$0 { plan = nil } }), presenting: plan) { p in
+            Button("Delete", role: .destructive) { Task { await purge() } }
+            Button("Cancel", role: .cancel) {}
+        } message: { p in
+            Text(FormLogic.purgeMessage(p, days: days))
+        }
+        .task { usage = await model.perform { try await $0.storageUsage() } }
+    }
+
+    func preview() async {
+        outcome = nil
+        guard let p = await model.perform({ try await $0.purgeArchived(PurgeRequest(olderThanDays: days, dryRun: true)) }) else { return }
+        if p.isEmpty { outcome = "Nothing to delete: no archived sessions or experiments older than \(days) days." } else { plan = p }
+    }
+
+    func purge() async {
+        working = true
+        defer { working = false }
+        guard let r = await model.perform({ try await $0.purgeArchived(PurgeRequest(olderThanDays: days)) }) else { return }
+        outcome = "Deleted \(Fmt.plural(r.sessions, "session")) and \(Fmt.plural(r.experiments, "experiment")); freed \(ByteCountFormatter.string(fromByteCount: r.bytesFreed, countStyle: .file))."
+        usage = await model.perform { try await $0.storageUsage() }
+        await model.refreshSessions()
+        await model.refreshExperiments()
+    }
+}
+
 struct FolderDefaultsSection: View {
     @Environment(AppModel.self) private var model
 

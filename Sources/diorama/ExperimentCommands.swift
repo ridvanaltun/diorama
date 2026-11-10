@@ -6,14 +6,23 @@ import Foundation
 struct Experiment: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Define and run A/B experiments (control vs treatment variants, repeated trials in isolated project copies).",
-        subcommands: [Init.self, Create.self, List.self, Show.self, RunCommand.self, Status.self, Cancel.self, Compare.self, ReportCommand.self])
+        subcommands: [Init.self, Create.self, List.self, Show.self, RunCommand.self, Status.self, Cancel.self, Compare.self, ReportCommand.self, Archive.self, Unarchive.self])
 
     struct Init: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             abstract: "Print an example experiment definition to start from.",
-            discussion: "With --agent opencode, trials run `opencode run` (Anthropic models only) instead of `claude -p`.")
+            discussion: """
+                With --agent opencode, trials run `opencode run` (Anthropic models only) instead of `claude -p`.
+                To repeat an experiment with changes: `diorama experiment init --from exp_abc > exp.json`, edit, then `diorama experiment create exp.json`.
+                """)
         @Option(help: "The agent trials run: claude or opencode.") var agent: CodingAgent = .claude
-        func run() throws {
+        @Option(help: "Start from an existing experiment's definition instead (named \"… (copy)\", without its seed).") var from: String?
+        @OptionGroup var global: GlobalOptions
+        func run() async throws {
+            if let from {
+                let e = try await global.client().experiment(from)
+                return print(String(decoding: try DioramaCoding.prettyEncoder.encode(e.definition.duplicate), as: UTF8.self))
+            }
             let opencode = agent == .opencode
             let example = ExperimentDefinition(
                 name: "Docs steering pilot",
@@ -44,13 +53,39 @@ struct Experiment: AsyncParsableCommand {
     struct List: AsyncParsableCommand {
         @OptionGroup var global: GlobalOptions
         @Flag var json = false
+        @Flag(help: "List archived experiments instead.") var archived = false
         func run() async throws {
-            let list = try await global.client().experiments()
+            let list = try await global.client().experiments(archived: archived ? "only" : "hide")
             if json { return try printJSON(list) }
+            if list.isEmpty, archived { return print("No archived experiments.") }
             if list.isEmpty { return print("No experiments. Start with `diorama experiment init > exp.json`.") }
             table(["ID", "NAME", "VARIANTS", "TRIALS/VARIANT", "RUNS", "CREATED"], list.map {
                 [$0.id, short($0.name, 30), $0.definition.variants.map(\.key).joined(separator: ","), String($0.definition.trialsPerVariant), String($0.runs.count), dateText($0.createdAt)]
             })
+        }
+    }
+
+    struct Archive: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Archive experiments: hide them from the list (nothing is deleted; runs, reports and exports stay).",
+            discussion: "An experiment with a run in progress can't be archived. List archived ones with `diorama experiment list --archived`.")
+        @OptionGroup var global: GlobalOptions
+        @Argument(help: "Experiment ids.") var ids: [String]
+        func run() async throws {
+            let client = try await global.client()
+            for id in ids { _ = try await client.setExperimentArchived(id, true) }
+            print("✓ Archived \(ids.count) experiment(s).")
+        }
+    }
+
+    struct Unarchive: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Show archived experiments in the list again.")
+        @OptionGroup var global: GlobalOptions
+        @Argument(help: "Experiment ids.") var ids: [String]
+        func run() async throws {
+            let client = try await global.client()
+            for id in ids { _ = try await client.setExperimentArchived(id, false) }
+            print("✓ Unarchived \(ids.count) experiment(s).")
         }
     }
 

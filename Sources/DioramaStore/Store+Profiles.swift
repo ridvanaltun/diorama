@@ -109,8 +109,40 @@ extension Store {
         return ProfileVersionInfo(id: vid, profileId: id, number: number, createdAt: now, profile: profile)
     }
 
+    /// Hides a profile: it leaves lists and can't be picked by name. Its versions stay, so sessions,
+    /// decisions and anything that names it by id keep working.
     public func archiveProfile(id: String) throws {
+        guard let r = try db.query("SELECT name, archived FROM profiles WHERE id = ?", [.text(id)]).first else { throw StoreError("unknown profile \(id)") }
+        guard r.int("archived") == 0 else { return }
         try db.run("UPDATE profiles SET archived = 1, updated_at = ? WHERE id = ?", [.date(Date()), .text(id)])
+        addEvent(sessionId: nil, kind: .profileUpdated, message: "Archived profile '\(r.string("name") ?? id)'", refId: id)
+    }
+
+    /// Brings an archived profile back under its current version's name. Refuses when an active
+    /// profile already has that name (a profile created after the archive renamed this one out of the way).
+    public func unarchiveProfile(id: String) throws {
+        guard let r = try db.query("SELECT archived FROM profiles WHERE id = ?", [.text(id)]).first,
+              let current = try currentProfileVersion(profileId: id)
+        else { throw StoreError("unknown profile \(id)") }
+        guard r.int("archived") == 1 else { return }
+        let name = current.profile.name
+        if try db.query("SELECT id FROM profiles WHERE name = ? AND archived = 0", [.text(name)]).first != nil {
+            throw StoreError("a profile named '\(name)' already exists; rename or archive it first")
+        }
+        // Another archived profile may hold the name; move it out of the way, as creating does.
+        try db.run("UPDATE profiles SET name = name || ' (archived ' || id || ')' WHERE name = ? AND archived = 1 AND id != ?", [.text(name), .text(id)])
+        try db.run("UPDATE profiles SET archived = 0, name = ?, updated_at = ? WHERE id = ?", [.text(name), .date(Date()), .text(id)])
+        addEvent(sessionId: nil, kind: .profileUpdated, message: "Unarchived profile '\(name)'", refId: id)
+    }
+
+    /// An archived profile by id or by name (its current version's name, or the name it was renamed to).
+    public func archivedProfileId(_ idOrName: String) throws -> String? {
+        try db.query(
+            """
+            SELECT p.id FROM profiles p JOIN profile_versions v ON v.id = p.current_version_id
+            WHERE p.archived = 1 AND (p.id = ? OR p.name = ? OR json_extract(v.body, '$.name') = ?)
+            ORDER BY p.updated_at DESC
+            """, [.text(idOrName), .text(idOrName), .text(idOrName)]).first?.string("id")
     }
 
     public func profileVersion(id: String) throws -> ProfileVersionInfo? {
@@ -149,17 +181,27 @@ extension Store {
     }
 
     public func profiles(includeArchived: Bool = false) throws -> [ProfileSummary] {
+        try profiles(archived: includeArchived ? .all : .hide)
+    }
+
+    public func profiles(archived: ArchiveFilter) throws -> [ProfileSummary] {
+        let filter = switch archived {
+        case .hide: "WHERE p.archived = 0"
+        case .only: "WHERE p.archived = 1"
+        case .all: ""
+        }
         let rows = try db.query(
             """
-            SELECT p.id, p.name, p.current_version_id, p.updated_at, v.number, v.body
+            SELECT p.id, p.name, p.current_version_id, p.updated_at, p.archived, v.number, v.body
             FROM profiles p JOIN profile_versions v ON v.id = p.current_version_id
-            \(includeArchived ? "" : "WHERE p.archived = 0") ORDER BY p.name
+            \(filter) ORDER BY p.name
             """)
         return rows.map { r in
             ProfileSummary(
                 id: r.string("id") ?? "", name: r.string("name") ?? "", currentVersionId: r.string("current_version_id") ?? "",
                 currentVersionNumber: Int(r.int("number") ?? 0),
-                ruleCount: decode(Profile.self, r.string("body"))?.rules.count ?? 0, updatedAt: r.date("updated_at") ?? Date())
+                ruleCount: decode(Profile.self, r.string("body"))?.rules.count ?? 0, updatedAt: r.date("updated_at") ?? Date(),
+                archived: r.int("archived") == 1)
         }
     }
 }
