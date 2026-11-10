@@ -5,6 +5,8 @@ Release notes are generated from this file. Add changes under **Unreleased**;
 
 ## Unreleased
 
+## 1.11.0 — 2026-11-10
+
 ### New
 - **Archive profiles in the app.** Right-click a profile → **Archive…** hides it from the list and every picker, and its versions stay for audit. The confirmation lists the folder defaults, launchers, hooks and experiments that name it by name (those stop finding it) and warns when it's synced from a watched file. **Archive → Show Archived Profiles** and **Unarchive** bring it back. CLI: `diorama profiles archive` (`delete` still works and now prints the same warnings), `profiles unarchive`, `profiles list --archived`.
 - **Move references when archiving a profile.** The archive sheet can point the profile's folder defaults, launchers and hooks at another profile first, so they keep working; a name stays a name and an id an id, and version-pinned references stay. CLI: `diorama profiles archive <profile> --move-to <other>`.
